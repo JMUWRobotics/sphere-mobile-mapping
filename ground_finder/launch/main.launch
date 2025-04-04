@@ -1,0 +1,18 @@
+<launch>
+  <!-- list of arguments that can be given as inputs of the launch file -->
+  <arg name="quiet"     default="false" />
+  <arg name="filter"    default="geo" />
+  <arg name="subcloud"  default="geo" />
+  <arg name="plane"     default="pca" />
+  <arg name="file"      default="default" />
+
+  <!-- C++ Executables /-->
+  <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
+    <param name="quiet" value="$(arg quiet)" type="bool"/>
+    <param name="filter" value="$(arg filter)" type="string"/>
+    <param name="subcloud" value="$(arg subcloud)" type="string"/>
+    <param name="plane" value="$(arg plane)" type="string"/>
+    <param name="file" value="$(arg file)" type="string"/>
+  </node>
+
+</launch>

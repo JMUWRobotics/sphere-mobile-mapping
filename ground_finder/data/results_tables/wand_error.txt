@@ -1,0 +1,24 @@
+\multirow{2}{*}{none-geo}
+& \textbf{\gls{mae} [deg]} & 16.109 & 16.714 & 14.097 & 14.454 & 17.258 \\
+& \textbf{Variance [deg$^2$]} & 1166.633 & 1248.662 & 896.949 & 945.731 & 1311.565 \\
+\hline
+\multirow{2}{*}{none-kdt}
+& \textbf{\gls{mae} [deg]} & 23.984 & 22.907 & 23.593 & 19.268 & 19.350 \\
+& \textbf{Variance [deg$^2$]} & 2457.116 & 2262.005 & 2379.095 & 1652.010 & 1667.894 \\
+\hline
+\multirow{2}{*}{kdt-geo}
+& \textbf{\gls{mae} [deg]} & 13.395 & 13.514 & 9.554 & 10.249 & 15.596 \\
+& \textbf{Variance [deg$^2$]} & 820.830 & 836.082 & 399.909 & 471.169 & 1107.992 \\
+\hline
+\multirow{2}{*}{geo-geo}
+& \textbf{\gls{mae} [deg]} & 13.310 & 13.476 & 9.507 & 10.010 & 15.405 \\
+& \textbf{Variance [deg$^2$]} & 811.650 & 832.319 & 395.842 & 446.090 & 1086.810 \\
+\hline
+\multirow{2}{*}{geo-kdt}
+& \textbf{\gls{mae} [deg]} & 17.074 & 17.276 & 8.815 & 9.777 & 14.908 \\
+& \textbf{Variance [deg$^2$]} & 1298.477 & 1330.224 & 336.189 & 432.958 & 1016.160 \\
+\hline
+\multirow{2}{*}{kdt-kdt}
+& \textbf{\gls{mae} [deg]} & 17.066 & 17.236 & 8.809 & 9.518 & 14.596 \\
+& \textbf{Variance [deg$^2$]} & 1297.396 & 1324.242 & 335.880 & 408.530 & 987.427 \\
+\hline

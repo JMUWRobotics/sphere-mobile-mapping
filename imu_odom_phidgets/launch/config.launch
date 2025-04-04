@@ -1,0 +1,60 @@
+<launch> 
+    <!-- COMPLETE ARGUMENT LIST -->
+    <!-- Arguments for ImuJasper ENTER YOUR PHIDGETS SERIAL NUMBERS HERE -->
+    <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
+    <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
+    <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <arg name="jasper_gain" value="0.1" />
+    <arg name="jasper_alpha" value="0.02" />
+    <arg name="jasper_autogain" value="0.2" /> 
+    <arg name="jasper_pub_rate" value="125" />
+    <arg name="jasper_imu_rate" value="250" />
+    <arg name="jasper_forceflat" value="true" />
+    <arg name="jasper_quiet" value="true" />
+    <arg name="jasper_printRPY" value="false" />
+    <arg name="jasper_slow" value="false" />
+    <arg name="jasper_debug" value="false" />
+    <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
+    <arg name="jasper_lowpass_freq" value="1" />
+    <!-- enter extrinsic X, Y, Z values -->  
+    <!-- defines the vector FROM the IMU TO the center point of the sphere -->
+    <!-- Pay attention to the IMU numbers: imu0 refers to the IMU with serial number jasper_serial0 -->
+    <arg name="imu0_x" value="0.08888" /> <!-- in meters -->  
+    <arg name="imu0_y" value="0.0" />  <!-- in meters -->
+    <arg name="imu0_z" value="-0.02055" /> <!-- in meters -->
+    <arg name="imu1_x" value="0.0" />  <!-- in meters -->
+    <arg name="imu1_y" value="0.0" />  <!-- in meters -->
+    <arg name="imu1_z" value="-0.02055" /> <!-- in meters -->
+    <arg name="imu2_x" value="-0.08888" />  <!-- in meters -->
+    <arg name="imu2_y" value="0.0" />  <!-- in meters -->
+    <arg name="imu2_z" value="-0.02055" /> <!-- in meters -->
+    
+    <!-- Convert arguments to rosparam server -->
+    <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
+    <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
+    <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="jasper_gain" type="double" value="$(arg jasper_gain)" />
+    <param name="jasper_alpha" type="double" value="$(arg jasper_alpha)" />
+    <param name="jasper_autogain" type="double" value="$(arg jasper_autogain)" />
+    <param name="jasper_pub_rate" type="int" value="$(arg jasper_pub_rate)" />
+    <param name="jasper_imu_rate" type="int" value="$(arg jasper_imu_rate)" />
+    <param name="jasper_forceflat" type="bool" value="$(arg jasper_forceflat)" />
+    <param name="jasper_quiet" type="bool" value="$(arg jasper_quiet)" />
+    <param name="jasper_printRPY" type="bool" value="$(arg jasper_printRPY)" />
+    <param name="jasper_slow" type="bool" value="$(arg jasper_slow)" />
+    <param name="jasper_debug" type="bool" value="$(arg jasper_debug)" />
+    <param name="jasper_lowpass_freq" type="double" value="$(arg jasper_lowpass_freq)" />
+    <param name="imu0_x" type="double" value="$(arg imu0_x)" />
+    <param name="imu0_y" type="double" value="$(arg imu0_y)" />
+    <param name="imu0_z" type="double" value="$(arg imu0_z)" />
+    <param name="imu1_x" type="double" value="$(arg imu1_x)" />
+    <param name="imu1_y" type="double" value="$(arg imu1_y)" />
+    <param name="imu1_z" type="double" value="$(arg imu1_z)" />
+    <param name="imu2_x" type="double" value="$(arg imu2_x)" />
+    <param name="imu2_y" type="double" value="$(arg imu2_y)" />
+    <param name="imu2_z" type="double" value="$(arg imu2_z)" />
+    
+    <!-- nodes -->    
+    <node pkg="imuJasper" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
+
+</launch>
