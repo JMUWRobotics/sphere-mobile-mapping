@@ -1,6 +1,6 @@
 # Spherical mobile mapping systems
 
-![prototypeImage](https://github.com/JMUWRobotics/sphere-mobile-mapping/blob/main/delta_pose_filter/img/prototype.png?raw=true)
+![prototypeImage](https://github.com/JMUWRobotics/sphere-mobile-mapping/blob/main/delta_pose_filter/img/prototype.jpg?raw=true)
 
 The source code maintained in this repository contains ROS1 packages (running on the prototype shown above with ROS Melodic on Ubuntu 18.04). Included hardware on the platform is:
 
