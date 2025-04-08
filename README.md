@@ -97,7 +97,7 @@ $ catkin_make
 
 _(Optionally)_ If glibc is manually compiled and installed in /opt/glibc:
 ```
-$ patchelf --set-interpreter /opt/glibc/lib/ld-linux-x86-64.so.2 --set-rpath /opt/glibc/lib:/opt/ros/melodic/lib /home/deadalus/catkin_ws/devel/lib/imu_odom_phidgets/imuJasper
+$ patchelf --set-interpreter /opt/glibc/lib/ld-linux-x86-64.so.2 --set-rpath /opt/glibc/lib:/opt/ros/melodic/lib ~/catkin_ws/devel/lib/imu_odom_phidgets/imuJasper
 ```
 ## Configuration and Execution 
 
