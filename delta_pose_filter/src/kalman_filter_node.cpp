@@ -220,7 +220,7 @@ inline bool decideRollingMode(tf::Vector3 &global_ang_vel, const state_estimator
      && scalingFactorCamera < scalingFactorImu) {
         // We need to swap mode and reset orientation
         model = CAMERA_PASSTROUGH;
-        overwriteAttitude(m);
+        // overwriteAttitude(m);
         ROS_INFO("Kalman filter motion model swapped to PASSTROUGH"); 
     }
     return getRollingModeActive();
@@ -576,7 +576,10 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
     tf::poseStampedMsgToTF(filtered_pose_msg, outputPose);
     current_pose.mult(current_pose, filteredDeltaPose.inverse()); // update der filtered pose
     tf::poseStampedTFToMsg(current_pose, filtered_pose_msg);      // update filtered_Pose_msg
-    
+    // TODO:(?) Reset attitude (except yaw) every iteration -> ugly
+    // Rather look at the covariances to see what's going wrong 
+    overwriteAttitude(m); 
+
     /*
      * Publish to topic
      */
@@ -754,8 +757,8 @@ int main(int argc, char **argv)
     imu_variances[0] = 0.01; 
     imu_variances[1] = 0.01; 
     imu_variances[2] = 0.01; 
-    imu_variances[3] = 0.02;
-    imu_variances[4] = 0.02; 
+    imu_variances[3] = 0.01;
+    imu_variances[4] = 0.01; 
     imu_variances[5] = 0.08; 
     imu_variances[6] = 0.04; 
     imu_variances[7] = 0.04; 

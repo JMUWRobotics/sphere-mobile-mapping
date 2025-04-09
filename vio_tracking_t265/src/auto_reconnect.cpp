@@ -274,21 +274,26 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "custom_t265_node");
 	ROS_INFO("Custom T265 Intel node started. Publishing %s", pose_topic);
 	ros::NodeHandle nh;
+	bool enable_fisheye = false;
+	nh.param<bool>("enable_fisheye_stream", enable_fisheye, false);
 	image_transport::ImageTransport it(nh);
 	cam_pose = std::make_shared<ros::Publisher>(nh.advertise<geometry_msgs::PoseStamped>(pose_topic, 1000));
 	cam_imu = std::make_shared<ros::Publisher>(nh.advertise<sensor_msgs::Imu>(cam_imu_topic, 1000));
 	cam_pose_imu = std::make_shared<ros::Publisher>(nh.advertise<state_estimator_msgs::Estimator>(cam_pose_imu_topic, 1000));
-	cam_imgs_1 = std::make_shared<image_transport::Publisher>(it.advertise(cam_images_topic_1, 1));
-	cam_imgs_2 = std::make_shared<image_transport::Publisher>(it.advertise(cam_images_topic_2, 1));
-	
+	if (enable_fisheye) {
+		cam_imgs_1 = std::make_shared<image_transport::Publisher>(it.advertise(cam_images_topic_1, 1));
+		cam_imgs_2 = std::make_shared<image_transport::Publisher>(it.advertise(cam_images_topic_2, 1));
+	}
 	// Init Realsense camera
 	// Setup Librealsense2 config
 	rs2::log_to_console(RS2_LOG_SEVERITY_INFO); // verbose, can make this _INFO for less or _DEBUG for more
 	rs2::config cfg;
 	cfg.enable_stream(RS2_STREAM_POSE, RS2_FORMAT_6DOF);
 	cfg.enable_stream(RS2_STREAM_GYRO, RS2_FORMAT_MOTION_XYZ32F);
-	cfg.enable_stream(RS2_STREAM_FISHEYE, 1, 848, 800, RS2_FORMAT_Y8);
-	cfg.enable_stream(RS2_STREAM_FISHEYE, 2, 848, 800, RS2_FORMAT_Y8); // we only need left image
+	if (enable_fisheye) {
+		cfg.enable_stream(RS2_STREAM_FISHEYE, 1, 848, 800, RS2_FORMAT_Y8);
+		cfg.enable_stream(RS2_STREAM_FISHEYE, 2, 848, 800, RS2_FORMAT_Y8); // we only need left image
+	}
 
 	// Create librealsense2 pipeline object which gets the data
 	ROS_INFO("Setting up Pipeline");
@@ -311,12 +316,13 @@ int main(int argc, char **argv)
 	ros::Rate rate(1000); // Hz 
 
 	// Setup the video threads
-	std::thread video_handler_thread1(rosHandleRS2VideoFrame1);
-	video_handler_thread1.detach();
-	std::thread video_handler_thread2(rosHandleRS2VideoFrame2);
-	video_handler_thread2.detach();
-
-	ROS_INFO("Video threads started and detached. Now entering main loop");
+	if (enable_fisheye) {
+		std::thread video_handler_thread1(rosHandleRS2VideoFrame1);
+		video_handler_thread1.detach();
+		std::thread video_handler_thread2(rosHandleRS2VideoFrame2);
+		video_handler_thread2.detach();
+		ROS_INFO("Video threads started and detached. Now entering main loop");
+	}
 	// Main thread loop, gets frames data from camera directly, checks for reset, publishes to ROS
 	while (ros::ok())
 	{

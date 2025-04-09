@@ -285,20 +285,13 @@ void combineRAWData()
     }
 }
 
-void madgwick_and_complementary_Filter()
+void madgwick_and_complementary_Filter(bool reuse_dt)
 {
-
-    ros::Time tmp = ros::Time::now();
-    dt = (tmp.toNSec() - lastTime.toNSec()) * 0.000000001;
-    lastTime = tmp;
-
-    // if dt is 10% longer then it should be, we consider Lacking
-    if (dt > data_intervall * 1.1) {
-        ROS_WARN("Phidgets IMUs lagging behind");
-    }
-    if (dt <= data_intervall * 0.1) {
-        //ROS_WARN("Phidgets IMUs jittering!");
-        dt = data_intervall; // TODO: does this make sense??
+    // If the changeAlt() function is used in order to recalculate the filtered values
+    if (!reuse_dt) {
+        ros::Time tmp = ros::Time::now();
+        dt = (tmp.toNSec() - lastTime.toNSec()) * 0.000000001;
+        lastTime = tmp;
     }
 
     // Helper variables
@@ -760,9 +753,9 @@ int main(int argc, char *argv[])
         output_msg.imu.header = output_msg.header;
         output_msg.imu.orientation = output_msg.pose.pose.orientation;
         // Gyroscope data is actually orientation differential 
-        output_msg.imu.angular_velocity.x = gx_filtered;
-        output_msg.imu.angular_velocity.y = gy_filtered;
-        output_msg.imu.angular_velocity.z = gz_filtered;
+        output_msg.imu.angular_velocity.x = gx;//_filtered;
+        output_msg.imu.angular_velocity.y = gy;//_filtered;
+        output_msg.imu.angular_velocity.z = gz;//_filtered;
         // Acceleration data compensates centripetal forces
         output_msg.imu.linear_acceleration.x = ax;
         output_msg.imu.linear_acceleration.y = ay;
@@ -778,8 +771,8 @@ int main(int argc, char *argv[])
         ay = ay_alt;
         az = az_alt;
 
-        // Use alternative data and filter it
-        madgwick_and_complementary_Filter();
+        // Use alternative data and filter it, set reuse_dt = true
+        madgwick_and_complementary_Filter(true);
 
         // Put filtered data inside msg
         output_msg.pose.pose.position.x = pXAlt;

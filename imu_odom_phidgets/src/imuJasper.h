@@ -159,8 +159,8 @@ float lastw;
 int CCONV init();
 //handlign arguments giving to programm
 int argumentHandler(ros::NodeHandle &nh);
-//main filter function
-void madgwick_and_complementary_Filter();
+//main filter function. @param reuse_dt: Set true if filter should be applied with alternative input values
+void madgwick_and_complementary_Filter(bool reuse_dt = false);
 // Data assosciacion and centripetal compensation
 void setValsAndCompensateCentripetal(const int serialNr,
     const double acceleration[3], const double angularRate[3], const double dts,
