@@ -2,7 +2,7 @@
 
 ![prototypeImage](https://github.com/JMUWRobotics/sphere-mobile-mapping/blob/main/delta_pose_filter/img/prototype.jpg?raw=true)
 
-The source code maintained in this repository contains ROS1 packages (running on the prototype shown above with ROS Melodic on Ubuntu 18.04). Included hardware on the platform is:
+The source code maintained in this repository contains ROS1 packages (running on the prototype shown above with ROS Noetic on Ubuntu 20.04). Included hardware on the platform is:
 
 - Computer: [BMAX Maxmini B3 Plus](https://www.bmaxit.com/Maxmini-B3-Plus-pd722218588.html)
 - LiDAR: [Hesai Pandar-XT32](https://www.oxts.com/wp-content/uploads/2021/01/Hesai-PandarXT32_Brochure.pdf)
@@ -54,25 +54,6 @@ $ sudo apt install -y libphidget22 libphidget22-dev
 
 > If the install script fails, visit [this page](https://www.phidgets.com/docs/OS_-_Linux#Non-Root-2) for alternative methods.
 
-> libphidget22 depends on [glibc version 2.29](https://ftp.gnu.org/gnu/glibc/glibc-2.29.tar.xz) or higher! If you don't meet this requirement (check with ```$ ldd --version```), follow the steps below: 
-
-To compile and install glibc yourself carefully follow these instructions. If not followed carefully **this may break your system** since many things depend on glibc!
-
-1. Download [glibc-2.29](https://ftp.gnu.org/gnu/glibc/glibc-2.29.tar.xz) and extract it
-2. A folder called glibc-2.29 should have been extracted. Compile:
-```
-$ mkdir glibc-2.29/build 
-$ cd glibc-2.29/build
-$ ../configure --prefix=/opt/glibc
-$ make 
-```
-3. Install the library:
-```
-$ sudo make install 
-```
-
-> You will have to manually patch the executable of the ROS wrapper later, such that it uses the newly installed glibc version. Prepare for that: ```$ sudo apt install patchelf```
-
 ## Install 
 
 First step is to [install ROS](https://wiki.ros.org/Distributions#List_of_Distributions).
@@ -95,10 +76,6 @@ $ cd ..
 $ catkin_make
 ```
 
-_(Optionally)_ If glibc is manually compiled and installed in /opt/glibc:
-```
-$ patchelf --set-interpreter /opt/glibc/lib/ld-linux-x86-64.so.2 --set-rpath /opt/glibc/lib:/opt/ros/melodic/lib ~/catkin_ws/devel/lib/imu_odom_phidgets/imuJasper
-```
 ## Configuration and Execution 
 
 Use the launch file included in this repository to launch all the nodes.

@@ -41,5 +41,5 @@ include_directories(
 )
 add_executable(imuJasper src/imuJasper.cpp)
 add_dependencies(imuJasper state_estimator_msgs_generate_messages_cpp)
-list( APPEND CMAKE_INSTALL_RPATH "/opt/glibc/lib")
-target_link_libraries(imuJasper -lphidget22 -lm -L/opt/glibc/lib -dynamic-linker=/opt/glibc/lib/ld-linux-x86-64.so.2 ${catkin_LIBRARIES})
+target_link_libraries(imuJasper -lphidget22 -lm ${catkin_LIBRARIES})
+
