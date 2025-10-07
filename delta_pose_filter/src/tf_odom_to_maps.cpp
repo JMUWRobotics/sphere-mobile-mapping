@@ -57,16 +57,16 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "odom_to_maps_publisher");
     ros::NodeHandle nh;
 
-    int spinrate = 1000; // Hz
+    int spinrate = 50; // Hz
     // Topic params 
     std::string topic_listen;
     nh.param<std::string>("topic_listen", topic_listen, std::string(topic_default)); 
     nh.param<std::string>("global_frame", global_frame, std::string(global_frame_default));
     nh.param<std::string>("center_frame", center_frame, std::string(center_frame_default));
     // Publishers and subscribers
-    ros::Subscriber imu_pose_sub = nh.subscribe<state_estimator_msgs::Estimator>(topic_listen, 1000, poseMsgCallback);
-    ros::Subscriber flawed_pose_sub = nh.subscribe<state_estimator_msgs::Estimator>(topic_listen + "_raw", 1000, flawedMsgCallback);
-    ros::Subscriber lkf_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("/lkf/pose", 1000, lkfMsgCallback);
+    ros::Subscriber imu_pose_sub = nh.subscribe<state_estimator_msgs::Estimator>(topic_listen, 1, poseMsgCallback);
+    ros::Subscriber flawed_pose_sub = nh.subscribe<state_estimator_msgs::Estimator>(topic_listen + "_raw", 1, flawedMsgCallback);
+    ros::Subscriber lkf_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("/lkf/pose", 1, lkfMsgCallback);
     // Main processing loop, wait for callbacks to happen
     ros::Rate rate(spinrate);
     while(ros::ok()) {

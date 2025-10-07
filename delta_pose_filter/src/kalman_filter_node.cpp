@@ -111,17 +111,18 @@ inline void waitForAccumulator(double t)
 
     // Check if lagging behind
     if (t < accumulator.front().header.stamp.toSec()) {
-        ROS_INFO("Lagging behind, skipping frame for interpolation");
+        ROS_WARN("Queue lagging behind, skipping frame for interpolation");
         return;
-    }
+    } 
 
     // Wait for the query time to be between the accumulator times
     while (!(accumulator.front().header.stamp.toSec() < t && t < accumulator.back().header.stamp.toSec()) && ros::ok()) {
         // If interpolation is disabled, all msgs have the same queue
-        if (interpolate == NONE)
+        if (interpolate == NONE) {
             ros::spinOnce();
-        else
+        } else {
             callbacks_fast.callOne(ros::WallDuration());
+        }
 
         node_frequency->sleep();
     }
@@ -703,11 +704,11 @@ int main(int argc, char **argv)
     } else if (cam_rate < imu_rate) {
         interpolate = IMU;
         n_acc = std::ceil(cam_t / imu_t) + 1;
-        ROS_INFO("Interpolating Imu Pose measurements using %d samples", n_acc);
+        ROS_WARN("Interpolating Imu Pose measurements using %d samples. This might not work as expected! If so, decrease IMU publish rate.", n_acc);
     } else {
-        interpolate = NONE;
-        n_acc = 1;
-        ROS_INFO("Interpolation disabled.");
+        interpolate = CAM;
+        n_acc = 3;
+        ROS_INFO("Using camera pose interpolation with 3 samples.");
     }
 
     // Initialize variables
@@ -734,14 +735,14 @@ int main(int argc, char **argv)
         imu_pose_sub = nh.subscribe<state_estimator_msgs::Estimator>(topic_pose_imu, 1000, imuMsgCallback);
     }
 
-    filtered_pose_pub = nh.advertise<geometry_msgs::PoseStamped>(topic_publish, 1000);
+    filtered_pose_pub = nh.advertise<geometry_msgs::PoseStamped>(topic_publish, 1);
     if (publish_debug_topic)
         debug_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/lkf/debug", 1000);
 
     // Main processing loop, wait for callbacks to happen
     fast_rate = std::max(cam_rate, imu_rate);
     slow_rate = std::min(cam_rate, imu_rate);
-    node_frequency = std::make_shared<ros::Rate>(ros::Rate(1000));
+    node_frequency = std::make_shared<ros::Rate>(ros::Rate(200));
 
     /*
     *  Initialise covariances

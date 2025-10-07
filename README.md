@@ -90,3 +90,4 @@ roslaunch ~/catkin_ws/src/sphere.launch
 Some packages contain their own README file which includes more detailed information. A 3D model (stl file) of the laser-cut assembly parts will follow shortly. 
 
 Contact: fabian.arzberger@uni-wuerzburg.de 
+

@@ -4,6 +4,12 @@
     <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
     <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
     <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
+    <arg name="jasper_acc_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc1.yaml" />
+    <arg name="jasper_acc_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc2.yaml" />
+    <arg name="jasper_gyr_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
+    <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
+    <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
     <arg name="jasper_gain" value="0.1" />
     <arg name="jasper_alpha" value="0.02" />
     <arg name="jasper_autogain" value="0.2" /> 
@@ -15,7 +21,7 @@
     <arg name="jasper_slow" value="false" />
     <arg name="jasper_debug" value="false" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
-    <arg name="jasper_lowpass_freq" value="1" />
+    <arg name="jasper_lowpass_freq" value="0.1" />
     <!-- enter extrinsic X, Y, Z values -->  
     <!-- defines the vector FROM the IMU TO the center point of the sphere -->
     <!-- Pay attention to the IMU numbers: imu0 refers to the IMU with serial number jasper_serial0 -->
@@ -33,6 +39,12 @@
     <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
     <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
     <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
+    <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
+    <param name="jasper_acc_calib2" type="string" value="$(arg jasper_acc_calib2)" />
+    <param name="jasper_gyr_calib0" type="string" value="$(arg jasper_gyr_calib0)" />
+    <param name="jasper_gyr_calib1" type="string" value="$(arg jasper_gyr_calib1)" />
+    <param name="jasper_gyr_calib2" type="string" value="$(arg jasper_gyr_calib2)" />
     <param name="jasper_gain" type="double" value="$(arg jasper_gain)" />
     <param name="jasper_alpha" type="double" value="$(arg jasper_alpha)" />
     <param name="jasper_autogain" type="double" value="$(arg jasper_autogain)" />
@@ -55,6 +67,6 @@
     <param name="imu2_z" type="double" value="$(arg imu2_z)" />
     
     <!-- nodes -->    
-    <node pkg="imuJasper" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
+    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
 
 </launch>

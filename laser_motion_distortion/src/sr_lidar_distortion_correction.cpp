@@ -109,7 +109,9 @@ void SRLidarDistortionCorrection::pcdCallback(const sensor_msgs::PointCloud2Cons
   double theta_z = rot.z();
 
   pcl::PointCloud<pcl::PointXYZI> pcl_out;
+  pcl_out.reserve(pcd_in->size());
   double scan_x, scan_y, scan_z;
+
   for (unsigned int i = 0; i < pcd_in_->size(); ++i) {
     // offset time from start of the measurement
     auto dt = pcd_in_->points[i].timestamp - pc->header.stamp.toSec();

@@ -5,30 +5,49 @@
     <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
     <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
     <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <!-- Intrinsic calibration (axes misalignment, scale, and bias) 
+        you can calibrate this with https://github.com/fallow24/ros_imu_calib-->
+    <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
+    <arg name="jasper_acc_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc1.yaml" />
+    <arg name="jasper_acc_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc2.yaml" />
+    <arg name="jasper_gyr_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
+    <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
+    <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
+    <!-- Filter paramters, see jaspers paper -->
     <arg name="jasper_gain" value="0.1" />
-    <arg name="jasper_alpha" value="0.02" />
-    <arg name="jasper_autogain" value="0.2" /> 
-    <arg name="jasper_pub_rate" value="125" />
-    <arg name="jasper_imu_rate" value="250" />
+    <arg name="jasper_alpha" value="0.01" />
+    <arg name="jasper_autogain" value="0.02" /> 
+    <arg name="jasper_pub_rate" value="200" />
+    <arg name="jasper_imu_rate" value="200" />
     <arg name="jasper_forceflat" value="true" />
+    <!-- Legacy parameters that dont do anything meaningfull -->
     <arg name="jasper_quiet" value="true" />
     <arg name="jasper_printRPY" value="false" />
     <arg name="jasper_slow" value="false" />
-    <arg name="jasper_debug" value="false" />
+    <!-- If debug is set to true the /imu/X/raw topics will contain calibrated msgs,
+        whereas /imu/X/calib will contain compensated msgs. Compensated msgs have the
+        tangential and centripetal forces subtracted from the accelerometer.
+        If this is set to false, the /imu/X/raw topics will contain uncalibrated msgs,
+        wheras /imu/X/calib will contain calibrated (but uncompensated) msgs. 
+        Use this to debug motion force compensation. -->
+    <arg name="jasper_debug" value="true" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
-    <arg name="jasper_lowpass_freq" value="10" />
-    <!-- enter extrinsic X, Y, Z values -->  
+    <arg name="jasper_lowpass_freq" value="2" />
+    <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
+    <!-- This is used for motion force compensation. 
+        These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
     <!-- defines the vector FROM the IMU TO the center point of the sphere -->
+    <!-- Given in IMU local coordinates (right handed). Y Points in camera looking direction, Z points to LIDAR -->
     <!-- Pay attention to the IMU numbers: imu0 refers to the IMU with serial number jasper_serial0 -->
-    <arg name="imu0_x" value="0.08888" /> <!-- in meters -->  
-    <arg name="imu0_y" value="0.0" />  <!-- in meters -->
-    <arg name="imu0_z" value="-0.02055" /> <!-- in meters -->
-    <arg name="imu1_x" value="0.0" />  <!-- in meters -->
-    <arg name="imu1_y" value="0.0" />  <!-- in meters -->
-    <arg name="imu1_z" value="-0.02055" /> <!-- in meters -->
-    <arg name="imu2_x" value="-0.08888" />  <!-- in meters -->
-    <arg name="imu2_y" value="0.0" />  <!-- in meters -->
-    <arg name="imu2_z" value="-0.02055" /> <!-- in meters -->
+    <arg name="imu0_x" value="0.0778994" /> <!-- in meters -->  
+    <arg name="imu0_y" value="-0.0051701" />  <!-- in meters -->
+    <arg name="imu0_z" value="0.0285271" /> <!-- in meters -->
+    <arg name="imu1_x" value="0.00344343" />  <!-- in meters -->
+    <arg name="imu1_y" value="0.000536298" />  <!-- in meters -->
+    <arg name="imu1_z" value="0.0289397" /> <!-- in meters -->
+    <arg name="imu2_x" value="-0.0718802" />  <!-- in meters -->
+    <arg name="imu2_y" value="-0.000645136" />  <!-- in meters -->
+    <arg name="imu2_z" value="0.0339811" /> 
 
     <!-- Arguments for Kalman pose filter -->
     <arg name="topic_publish" value="/lkf/pose" />
@@ -36,7 +55,6 @@
     <arg name="topic_pose_cam" value="/camera/sphereCenterPose" />
     <arg name="frame_id_imu" value="imu_frame" />
     <arg name="frame_id_cam" value="camera_frame" />
-    <arg name="imu_rate" value="125" /> <!-- in Hz -->
     <arg name="cam_rate" value="200" /> <!-- in Hz -->
     <arg name="sphere_radius" value="0.145" /> <!-- in m -->
     <arg name="debug_topics" value="true" />
@@ -76,7 +94,7 @@
     <arg name="imu_in" default="/posePub_merged_raw" />
     <arg name="points_out" default="/lidar/points_undistorted" />
     <!-- Filter away anything closer to <arg> in cm. Set this to -1 to disable -->  
-    <arg name="radius_filter" default="30" />   
+    <arg name="radius_filter" default="15" />   
 
     <!-- Arguments for the T265 camera -->
     <!-- FROM sphere center TO t265 where Z is down, Y is front, X is left -->
@@ -93,7 +111,7 @@
     <param name="topic_pose_cam" type="string" value="$(arg topic_pose_cam)" />
     <param name="frame_id_imu" type="string" value="$(arg frame_id_imu)" />
     <param name="frame_id_cam" type="string" value="$(arg frame_id_cam)" />
-    <param name="imu_rate" type="int" value="$(arg imu_rate)" />
+    <param name="imu_rate" type="int" value="$(arg jasper_pub_rate)" />
     <param name="cam_rate" type="int" value="$(arg cam_rate)" />
     <param name="sphere_radius" type="double" value="$(arg sphere_radius)" />
     <param name="large_omega" type="double" value="$(arg large_omega)" />
@@ -105,6 +123,12 @@
     <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
     <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
     <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
+    <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
+    <param name="jasper_acc_calib2" type="string" value="$(arg jasper_acc_calib2)" />
+    <param name="jasper_gyr_calib0" type="string" value="$(arg jasper_gyr_calib0)" />
+    <param name="jasper_gyr_calib1" type="string" value="$(arg jasper_gyr_calib1)" />
+    <param name="jasper_gyr_calib2" type="string" value="$(arg jasper_gyr_calib2)" />
     <param name="jasper_gain" type="double" value="$(arg jasper_gain)" />
     <param name="jasper_alpha" type="double" value="$(arg jasper_alpha)" />
     <param name="jasper_autogain" type="double" value="$(arg jasper_autogain)" />
