@@ -355,18 +355,20 @@ void setValsAndCompensateCentripetal(const int serialNr,
     float azval = acceleration[2] - gyr_cross_gyr_cross_r[2] - wdot_cross_r[2];
     
     // For debugging
-    if (serialNr == SERIAL_0) {
-        a0_comp[0] = axval;
-        a0_comp[1] = ayval;
-        a0_comp[2] = azval;
-    } else if (serialNr == SERIAL_1) {
-        a1_comp[0] = axval;
-        a1_comp[1] = ayval;
-        a1_comp[2] = azval;
-    } else if (serialNr == SERIAL_2) {
-        a2_comp[0] = axval;
-        a2_comp[1] = ayval;
-        a2_comp[2] = azval;
+    if (debugMode) {
+        if (serialNr == SERIAL_0) {
+            a0_comp[0] = axval;
+            a0_comp[1] = ayval;
+            a0_comp[2] = azval;
+        } else if (serialNr == SERIAL_1) {
+            a1_comp[0] = axval;
+            a1_comp[1] = ayval;
+            a1_comp[2] = azval;
+        } else if (serialNr == SERIAL_2) {
+            a2_comp[0] = axval;
+            a2_comp[1] = ayval;
+            a2_comp[2] = azval;
+        }
     }
     *ax += axval;
     *ay += ayval;
