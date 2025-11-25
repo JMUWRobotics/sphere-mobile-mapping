@@ -1,0 +1,78 @@
+\multirow{5}{*}{\rotatebox[origin=c]{90}{none-geo}} 
+& \textbf{Downsample [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Radius Search [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Delete [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Cheese Search [ms]} & 4.253 & 1.985 & 2.094 & 5.058 & 2.347 & \textbf{3.147} \\*
+& \textbf{Delete [ms]} & 0.761 & 0.358 & 0.379 & 0.926 & 0.438 & \textbf{0.573} \\*
+& \textbf{Plane [ms]} & 10.323 & 27.607 & 25.087 & 5.246 & 24.156 & \textbf{18.484} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 15.337 & 29.950 & 27.561 & 11.230 & 26.942 & \textbf{22.204} \\*
+& \textbf{Fail Rate [perc]} & 2.017 & 2.073 & 2.465 & 2.129 & 3.978 & \textbf{2.532} \\
+\hline
+\multirow{6}{*}{\rotatebox[origin=c]{90}{none-kdt}} 
+& \textbf{Downsample [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Radius Search [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Delete [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Build Tree [ms]} & 13.373 & 13.137 & 12.850 & 10.847 & 11.153 & \textbf{12.272} \\*
+& \textbf{k-\gls{nns} [ms]} & 0.116 & 0.109 & 0.101 & 0.109 & 0.111 & \textbf{0.109} \\*
+& \textbf{Delete [ms]} & 0.673 & 0.661 & 0.646 & 0.566 & 0.562 & \textbf{0.621} \\*
+& \textbf{Plane [ms]} & 0.231 & 1.049 & 1.076 & 3.532 & 2.025 & \textbf{1.583} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 14.393 & 14.956 & 14.673 & 15.055 & 13.850 & \textbf{14.585} \\*
+& \textbf{Fail Rate [perc]} & 53.333 & 50.196 & 37.479 & 53.165 & 60.056 & \textbf{50.846} \\
+\hline
+\multirow{9}{*}{\rotatebox[origin=c]{90}{kdt-geo}} 
+& \textbf{Downsample [ms]} & 5.432 & 5.182 & 5.203 & 4.539 & 4.535 & \textbf{4.978} \\*
+& \textbf{Build Tree [ms]} & 2.435 & 2.323 & 2.318 & 2.063 & 2.043 & \textbf{2.236} \\*
+& \textbf{Radius Search [ms]} & 0.028 & 0.026 & 0.026 & 0.023 & 0.023 & \textbf{0.025} \\*
+& \textbf{Delete [ms]} & 0.313 & 0.298 & 0.299 & 0.265 & 0.285 & \textbf{0.292} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Cheese Search [ms]} & 0.660 & 0.627 & 0.631 & 0.556 & 0.548 & \textbf{0.604} \\*
+& \textbf{Delete [ms]} & 0.173 & 0.166 & 0.166 & 0.147 & 0.152 & \textbf{0.161} \\*
+& \textbf{Plane [ms]} & 0.357 & 1.601 & 1.671 & 2.139 & 1.537 & \textbf{1.461} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 9.398 & 10.224 & 10.314 & 9.732 & 9.122 & \textbf{9.758} \\*
+& \textbf{Fail Rate [perc]} & 1.849 & 1.849 & 0.056 & 1.064 & 3.754 & \textbf{1.714} \\
+\hline
+\multirow{6}{*}{\rotatebox[origin=c]{90}{geo-geo}} 
+& \textbf{Downsample [ms]} & 5.975 & 5.610 & 5.570 & 4.587 & 5.204 & \textbf{5.389} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Radius Search [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Delete [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Cheese Search [ms]} & 0.818 & 0.759 & 0.755 & 0.657 & 0.736 & \textbf{0.745} \\*
+& \textbf{Delete [ms]} & 0.200 & 0.189 & 0.188 & 0.160 & 0.186 & \textbf{0.185} \\*
+& \textbf{Plane [ms]} & 0.401 & 1.765 & 1.836 & 2.217 & 1.878 & \textbf{1.619} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 7.394 & 8.323 & 8.349 & 7.622 & 8.005 & \textbf{7.939} \\*
+& \textbf{Fail Rate [perc]} & 1.849 & 1.849 & 0.056 & 0.112 & 3.529 & \textbf{1.479} \\
+\hline
+\multirow{9}{*}{\rotatebox[origin=c]{90}{geo-kdt}} 
+& \textbf{Downsample [ms]} & 5.425 & 5.221 & 5.375 & 4.314 & 4.658 & \textbf{4.999} \\*
+& \textbf{Build Tree [ms]} & 0.000 & 0.000 & 0.000 & 0.000 & 0.000 & \textbf{0.000} \\*
+& \textbf{Radius Search [ms]} & 0.262 & 0.254 & 0.248 & 0.206 & 0.228 & \textbf{0.240} \\*
+& \textbf{Delete [ms]} & 0.332 & 0.318 & 0.312 & 0.260 & 0.298 & \textbf{0.304} \\*
+& \textbf{Build Tree [ms]} & 2.588 & 2.471 & 2.399 & 2.019 & 2.081 & \textbf{2.312} \\*
+& \textbf{k-\gls{nns} [ms]} & 0.060 & 0.057 & 0.055 & 0.046 & 0.057 & \textbf{0.055} \\*
+& \textbf{Delete [ms]} & 0.184 & 0.178 & 0.176 & 0.147 & 0.166 & \textbf{0.170} \\*
+& \textbf{Plane [ms]} & 0.343 & 1.552 & 2.283 & 3.849 & 2.256 & \textbf{2.057} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 9.195 & 10.050 & 10.847 & 10.840 & 9.743 & \textbf{10.135} \\*
+& \textbf{Fail Rate [perc]} & 36.022 & 36.415 & 0.728 & 8.011 & 12.325 & \textbf{18.700} \\
+\hline
+\multirow{10}{*}{\rotatebox[origin=c]{90}{kdt-kdt}} 
+& \textbf{Downsample [ms]} & 5.117 & 4.889 & 4.845 & 4.014 & 4.270 & \textbf{4.627} \\*
+& \textbf{Build Tree [ms]} & 2.463 & 2.344 & 2.188 & 1.891 & 1.948 & \textbf{2.167} \\*
+& \textbf{Radius Search [ms]} & 0.034 & 0.025 & 0.025 & 0.021 & 0.022 & \textbf{0.025} \\*
+& \textbf{Delete [ms]} & 0.311 & 0.296 & 0.282 & 0.241 & 0.274 & \textbf{0.281} \\*
+& \textbf{Build Tree [ms]} & 2.353 & 2.257 & 2.108 & 1.830 & 1.874 & \textbf{2.085} \\*
+& \textbf{k-\gls{nns} [ms]} & 0.051 & 0.050 & 0.046 & 0.039 & 0.044 & \textbf{0.046} \\*
+& \textbf{Delete [ms]} & 0.168 & 0.163 & 0.155 & 0.135 & 0.149 & \textbf{0.154} \\*
+& \textbf{Plane [ms]} & 0.314 & 1.418 & 2.042 & 3.538 & 1.999 & \textbf{1.862} \\*
+\cline{2-8}
+& \textbf{Total [ms]} & 10.813 & 11.441 & 11.692 & 11.708 & 10.581 & \textbf{11.247} \\*
+& \textbf{Fail Rate [perc]} & 36.134 & 36.359 & 0.728 & 7.955 & 12.213 & \textbf{18.678} \\
+\hline

@@ -1,0 +1,46 @@
+<launch>
+  <!-- list of arguments that can be given as inputs of the launch file -->
+  <arg name="test"      default="point_cloud" />
+  <arg name="type"      default="ikd" />
+  <arg name="kd_filter" default="true" />
+  <arg name="file"      default="test" />
+
+  <!-- C++ Executables /-->
+  <!-- reading in point cloud test /-->
+  <group if="$(eval arg('test') == 'point_cloud')">
+    <node name="test_node" pkg="ground_finder" type="test_node" output="screen"></node>
+    <!--node name="test_node" pkg="ground_finder" type="test_node" output="screen" respawn="true"></node /-->
+  </group>
+
+  <!-- kd_tree tests /-->
+  <group if="$(eval arg('test') == 'kdt')">
+    <group if="$(eval arg('type') == 'ikd')">
+      <node name="ikd_test_node" pkg="ground_finder" type="ikd_test_node" output="screen">
+        <param name="filter" value="$(arg kd_filter)" type="bool"/>
+        <param name="file" value="$(arg file)" type="string"/>
+      </node>
+    </group>
+
+    <group if="$(eval arg('type') == 'pcl')">
+      <node name="pcl_kd_test_node" pkg="ground_finder" type="pcl_kd_test_node" output="screen">
+        <param name="filter" value="$(arg kd_filter)" type="bool"/>
+        <param name="file" value="$(arg file)" type="string"/>
+      </node>
+    </group>
+  </group>
+
+  <!-- plane tests /-->
+  <group if="$(eval arg('test') == 'plane')">
+    <node name="plane_test_node" pkg="ground_finder" type="plane_test_node" output="screen">
+      <param name="type" value="$(arg type)" type="string"/>
+      <param name="file" value="$(arg file)" type="string"/>
+    </node>
+  </group>
+
+   <!-- cropbox test /-->
+  <group if="$(eval arg('test') == 'cb')">
+    <node name="cropbox_test_node" pkg="ground_finder" type="cropbox_test_node" output="screen"></node>
+  </group>
+
+
+</launch>
