@@ -13,16 +13,25 @@
     <arg name="jasper_gyr_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
     <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
     <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
+    <!-- Filter paramters for mahony filter -->
+    <arg name="mahony_kp" value="1" />
+    <arg name="mahony_ki" value="0.001" />
     <!-- Filter paramters, see jaspers paper -->
-    <arg name="jasper_gain" value="0.1" />
-    <arg name="jasper_alpha" value="0.01" />
-    <arg name="jasper_autogain" value="0.02" /> 
+    <arg name="jasper_gain" value="0.2" />
+    <arg name="jasper_alpha" value="0.02" />
+    <arg name="jasper_autogain" value="0.1" /> 
     <arg name="jasper_pub_rate" value="200" />
     <arg name="jasper_imu_rate" value="200" />
     <arg name="jasper_forceflat" value="true" />
-    <!-- Legacy parameters that dont do anything meaningfull -->
-    <arg name="jasper_quiet" value="true" />
-    <arg name="jasper_printRPY" value="false" />
+    <!-- Kalman filter attitude estimation parameters -->
+    <arg name="sigma_g" value="0.01" />
+    <arg name="sigma_a" value="0.1" />
+    <arg name="P_init" value="0.3" />
+    <!-- Unscented Kalman filter attitude estimation paramters -->
+    <arg name="ukf_alpha" value="0.2" />
+    <arg name="ukf_beta" value="2.0" />
+    <arg name="ukf_kappa" value="0.001" />
+    <!-- Use running average of gyroscope measurements, introduces a bit of lag -->
     <arg name="jasper_slow" value="false" />
     <!-- If debug is set to true the /imu/X/raw topics will contain calibrated msgs,
         whereas /imu/X/calib will contain compensated msgs. Compensated msgs have the
@@ -30,7 +39,7 @@
         If this is set to false, the /imu/X/raw topics will contain uncalibrated msgs,
         wheras /imu/X/calib will contain calibrated (but uncompensated) msgs. 
         Use this to debug motion force compensation. -->
-    <arg name="jasper_debug" value="true" />
+    <arg name="jasper_debug" value="false" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
     <arg name="jasper_lowpass_freq" value="2" />
     <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
@@ -94,7 +103,7 @@
     <arg name="imu_in" default="/posePub_merged_raw" />
     <arg name="points_out" default="/lidar/points_undistorted" />
     <!-- Filter away anything closer to <arg> in cm. Set this to -1 to disable -->  
-    <arg name="radius_filter" default="15" />   
+    <arg name="radius_filter" default="50" />   
 
     <!-- Arguments for the T265 camera -->
     <!-- FROM sphere center TO t265 where Z is down, Y is front, X is left -->
@@ -129,14 +138,20 @@
     <param name="jasper_gyr_calib0" type="string" value="$(arg jasper_gyr_calib0)" />
     <param name="jasper_gyr_calib1" type="string" value="$(arg jasper_gyr_calib1)" />
     <param name="jasper_gyr_calib2" type="string" value="$(arg jasper_gyr_calib2)" />
+    <param name="mahony_kp" type="double" value="$(arg mahony_kp)" />
+    <param name="mahony_ki" type="double" value="$(arg mahony_ki)" />
     <param name="jasper_gain" type="double" value="$(arg jasper_gain)" />
     <param name="jasper_alpha" type="double" value="$(arg jasper_alpha)" />
     <param name="jasper_autogain" type="double" value="$(arg jasper_autogain)" />
     <param name="jasper_pub_rate" type="int" value="$(arg jasper_pub_rate)" />
     <param name="jasper_imu_rate" type="int" value="$(arg jasper_imu_rate)" />
     <param name="jasper_forceflat" type="bool" value="$(arg jasper_forceflat)" />
-    <param name="jasper_quiet" type="bool" value="$(arg jasper_quiet)" />
-    <param name="jasper_printRPY" type="bool" value="$(arg jasper_printRPY)" />
+    <param name="sigma_g" type="double" value="$(arg sigma_g)" />
+    <param name="sigma_a" type="double" value="$(arg sigma_a)" />
+    <param name="P_init" type="double" value="$(arg P_init)" />
+    <param name="ukf_alpha" type="double" value="$(arg ukf_alpha)" />
+    <param name="ukf_beta" type="double" value="$(arg ukf_beta)" />
+    <param name="ukf_kappa" type="double" value="$(arg ukf_kappa)" />
     <param name="jasper_slow" type="bool" value="$(arg jasper_slow)" />
     <param name="jasper_debug" type="bool" value="$(arg jasper_debug)" />
     <param name="jasper_lowpass_freq" type="double" value="$(arg jasper_lowpass_freq)" />
@@ -204,7 +219,11 @@
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
     <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
 
-    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
+    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> -->
+    <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" />
+    <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
+    <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
+
 
     <node pkg="vio_tracking_t265" type="auto_reconnect" name="realsense_pose_node" output="screen" />
     <node pkg="vio_tracking_t265" type="center_extrinsics" name="realsense_extrinsics" output="screen" />
