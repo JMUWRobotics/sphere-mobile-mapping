@@ -826,3 +826,37 @@ void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
     // }
     plane_counter++;
 }
+
+void GroundFinder::lkf_pose_callback(const geometry_msgs::PoseStampedConstPtr &msg)
+{
+    // Extract roll/pitch from KF orientation and compute viewability
+    tf2::Quaternion q;
+    tf2::fromMsg(msg->pose.orientation, q);
+    double roll = 0.0, pitch = 0.0, yaw = 0.0;
+    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+    // visibility: 0 at 0/180 deg, 1 at 90/270 deg
+    last_visibility_score = 0.5 * (std::abs(std::sin(roll)) + std::abs(std::sin(pitch)));
+    enable_view_score = true;
+
+    ROS_DEBUG("KF pose -> roll: %.3f, pitch: %.3f, visibility: %.3f", roll, pitch, last_visibility_score);
+}
+
+std::pair<double, double> GroundFinder::compute_plane_scores(size_t inliers_count, size_t subcloud_size)
+{
+    // visibility fallback to 1.0 (full vis) if no KF pose available
+    double visibility = enable_view_score ? last_visibility_score : 1.0;
+
+    double inlier_ratio = 0.0;
+    if (subcloud_size > 0)
+        inlier_ratio = static_cast<double>(inliers_count) / static_cast<double>(subcloud_size);
+
+    double inlier_normalized = 0.0;
+    if (inliers_count >= min_inliers && inlier_ratio > 0.0)
+        inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
+
+    else
+        inlier_normalized = 0.0;
+
+    return std::make_pair(visibility, inlier_normalized);
+}

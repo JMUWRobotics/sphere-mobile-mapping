@@ -33,19 +33,27 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 // Preprocessing types
-enum Preprocessing {
-    NONE, GEOMETRICAL, KD_TREE
+enum Preprocessing
+{
+    NONE,
+    GEOMETRICAL,
+    KD_TREE
 };
 
 // Plane segmentation types
-enum PlaneSegm {
-    LSF, PCA, RANSAC, RHT, RHT2
+enum PlaneSegm
+{
+    LSF,
+    PCA,
+    RANSAC,
+    RHT,
+    RHT2
 };
 
 // ---------------------- GroundFinder class ----------------------
-class GroundFinder {
+class GroundFinder
+{
 private:
-
     int count_fail;
     int plane_counter;
 
@@ -54,25 +62,25 @@ private:
     visualization_msgs::Marker n_marker;
 
     /* ROS variables for node */
-    ros::NodeHandle nh;           // Node handle
-    ros::Subscriber sub_h;        // Subscriber for hesai topic
-    ros::Subscriber sub_p;        // Subscriber for plane topic
-    ros::Publisher  pub_subcloud; // Publisher of subcloud
-    ros::Publisher  pub_test;     // TODO take out!
-    ros::Publisher  pub_test2;    // TODO take out!
-    ros::Publisher  pub_n;        // Publisher of normal vector in map2 frame
-    ros::Publisher  pub_vis_n;    // Publisher of normal vector marker for rviz
+    ros::NodeHandle nh;          // Node handle
+    ros::Subscriber sub_h;       // Subscriber for hesai topic
+    ros::Subscriber sub_p;       // Subscriber for plane topic
+    ros::Publisher pub_subcloud; // Publisher of subcloud
+    ros::Publisher pub_test;     // TODO take out!
+    ros::Publisher pub_test2;    // TODO take out!
+    ros::Publisher pub_n;        // Publisher of normal vector in map2 frame
+    ros::Publisher pub_vis_n;    // Publisher of normal vector marker for rviz
 
     /* TF2 variables */
     std::shared_ptr<tf2_ros::TransformListener> tf_listener{nullptr}; // Transform listener
-    tf2_ros::Buffer tf_buffer;    // Transform buffer
+    tf2_ros::Buffer tf_buffer;                                        // Transform buffer
 
     /* Preprocessing steps */
     Preprocessing filtering; // Filter type
     Preprocessing subcloud;  // Subcloud type
 
     /* Plane segmentation */
-    PlaneSegm plane_alg;    // Algorithm used for plane segmentation
+    PlaneSegm plane_alg; // Algorithm used for plane segmentation
 
     /* Writing to file varibales */
     std::string filename; // Filename of csv
@@ -92,6 +100,13 @@ private:
     const int k = 150;                 // k used for kNN for kd tree subcloud //TODO: 150 = for ransac; 50 = better for rht
     const int max_iterations_plane_detection = 3;
 
+    // TODO:tune after final implementation in .cpp
+    /* Viewability score variables*/
+    bool enable_view_score = true;
+    double last_visibility_score = 1.0; // most recent viewability score (1.0 = best, 0.0 = worst)
+    size_t min_inliers = 50;            // minimum inliers for plane fitting -> every plane below is too unreliable (?)
+    double inlier_scale = 0.3;          // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
+
     // ---------------------- Init functions  ----------------------
     /** \brief Initalizes values of n_marker for visualization of normal vector in rviz
      */
@@ -105,7 +120,6 @@ private:
      * \return The time [ns] needed for the delete operation.
      */
     int64_t delete_points(pcl::PointCloud<PointType>::Ptr &cur_scan, pcl::PointIndices::Ptr &indices, const bool negativ = false);
-
 
     // ---------------------- Filter cloud ----------------------
     /** \brief Downsamples the point cloud using a VoxelGrid filter
@@ -126,7 +140,6 @@ private:
      */
     int64_t filter_cloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_scan);
 
-
     // ---------------------- Create subcloud ----------------------
     /** \brief Create subcloud (reduction to points that possibly represent ground plane) by looping through entire \a cur_scan and using
      * geometry
@@ -144,7 +157,6 @@ private:
      */
     int64_t create_subcloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_scan, int k, PointType query_point);
 
-
     // ---------------------- Filter + create subcloud in one (geo) ----------------------
     /** \brief Filter + create subcloud (reduction to points that possibly represent ground plane withoud reflections and hands) by looping once
      * through entire \a cur_scan and using geometry
@@ -153,7 +165,6 @@ private:
      * \return The time [ns] needed for filtering and creating the subcloud.
      */
     int64_t filter_create_subcloud_geo(pcl::PointCloud<PointType>::Ptr &cur_scan, PointType query_point);
-
 
     // ---------------------- Normal Vector calculation  ----------------------
     /** \brief Segments the ground plane from the subcloud \a cur_scan and calculates the normal vector of it (pandar_frame)
@@ -172,22 +183,29 @@ private:
      */
     bool convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, const bool &last_iteration = true);
 
-
     // ---------------------- Callback functions ----------------------
     /** \brief Scan callback function - called for each msg @ hesai pandar topic. Filters + creates subcoud then findes normal vector of ground plane.
      */
-    void scan_callback(const sensor_msgs::PointCloud2ConstPtr& msg);
+    void scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg);
 
     /** \brief Scan callback function - called for each msg @ plane topic. Increases plane counter.
      */
-    void scan_callback_count(const std_msgs::EmptyConstPtr& msg);
+    void scan_callback_count(const std_msgs::EmptyConstPtr &msg);
+
+    /** \brief LKF pose callback function - called each msg @ LKF topic. Used for orientation-dependent ground view score. */
+    void lkf_pose_callback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+
+    /** \brief compute ground visibility [0...1] from latest LKF pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
+     *  returns {visibility, inlier_ratio} */
+    std::pair<double, double> compute_plane_scores(size_t inlier_count, size_t subcloud_size);
 
 public:
-    GroundFinder(Preprocessing filtering, Preprocessing subcloud, PlaneSegm plane_alg, bool quiet, bool write2file = false, std::string path = ""){
+    GroundFinder(Preprocessing filtering, Preprocessing subcloud, PlaneSegm plane_alg, bool quiet, bool write2file = false, std::string path = "")
+    {
         // Set private variables
-        this->filtering  = filtering;
-        this->subcloud   = subcloud;
-        this->plane_alg  = plane_alg;
+        this->filtering = filtering;
+        this->subcloud = subcloud;
+        this->plane_alg = plane_alg;
         this->quiet = quiet;
         this->write2file = write2file;
         count_fail = 0;
@@ -195,10 +213,10 @@ public:
 
         // Initialize Topics
         pub_subcloud = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/sub_cloud", 1);
-        pub_test     = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/inliers", 1);
-        pub_test2    = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
-        pub_n   = nh.advertise<geometry_msgs::Vector3Stamped>("/ground_finder/normal_vector", 1);
-        pub_vis_n  = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
+        pub_test = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/inliers", 1);
+        pub_test2 = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
+        pub_n = nh.advertise<geometry_msgs::Vector3Stamped>("/ground_finder/normal_vector", 1);
+        pub_vis_n = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
 
         // Initalize n_marker
         initMarker();
@@ -207,11 +225,15 @@ public:
         tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
         ROS_WARN("Waiting for TF Listener!");
         bool tf_listener_fail = true;
-        while(tf_listener_fail && ros::ok()){
-            try {
+        while (tf_listener_fail && ros::ok())
+        {
+            try
+            {
                 tf_listener_fail = false;
                 geometry_msgs::TransformStamped t = tf_buffer.lookupTransform("map2", "pandar_frame", ros::Time(0));
-            } catch(tf2::TransformException& ex){
+            }
+            catch (tf2::TransformException &ex)
+            {
                 tf_listener_fail = true;
                 ros::Duration(0.1).sleep();
             }
@@ -226,7 +248,8 @@ public:
         // sub = nh.subscribe("/hesai/pandar", 1, &GroundFinder::scan_callback, this);
 
         // Open file stream
-        if(write2file){
+        if (write2file)
+        {
             csv.open(path);
             // Write header (times)
             csv << "Downsample[ns],BuildFilTree[ns],SearchFil[ns],DeleteFil[ns],BuildTreeSub[ns],SearchSub[ns],DeleteSub[ns],PreProcTotal[ns],Plane[ns],Total[ns],";
