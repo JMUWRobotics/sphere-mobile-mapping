@@ -61,8 +61,8 @@
     <arg name="debug_topics" value="true" />
     <arg name="large_omega" value="1.2" /> <!-- in rad/s -->
     <arg name="small_omega" value="0.1" /> <!-- in rad/s -->
-    <arg name="enable_normal_smoothing" value="true" />
-    <arg name="normal_smoothing_alpha" value="0.75" /> <!-- [0,...,1] higher: more responsive, lower: smoother -->
+    <arg name="enable_normal_smoothing" default="true" />
+    <arg name="normal_smoothing_alpha" default="0.1" /> <!-- [0,...,1] higher: more responsive, lower: smoother -->
 
     <!-- Arguments for the vizualiser node: pose to lidar -->
     <arg name="topic_listen" value="/posePub_merged" />

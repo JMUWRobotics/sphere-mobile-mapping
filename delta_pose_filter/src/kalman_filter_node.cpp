@@ -76,6 +76,9 @@ tf::StampedTransform tf_map_imu2cam, tf_axes_imu2cam;
 
 ros::Publisher filtered_pose_pub;
 
+// for debugging of smoothing
+ros::Publisher smoothed_normal_pub;
+
 // Save last interpolated confidence level of camera
 float last_translated_confidence;
 float scalingFactorCamera;
@@ -756,8 +759,8 @@ void normalVectorCallback(const geometry_msgs::Vector3Stamped::ConstPtr &msg)
         }
         n /= n_len; // normalize
 
-        ROS_INFO("Ground normal vector pre smoothing: [%f, %f, %f]",
-                 n.x(), n.y(), n.z());
+        ROS_DEBUG("Ground normal vector pre smoothing: [%f, %f, %f]",
+                  n.x(), n.y(), n.z());
 
         // init smoothed normal if first run
         if (smoothed_normal_tf.length() < small_number)
@@ -784,6 +787,8 @@ void normalVectorCallback(const geometry_msgs::Vector3Stamped::ConstPtr &msg)
         ground_normal_msg.vector.x = smoothed_normal_tf.x();
         ground_normal_msg.vector.y = smoothed_normal_tf.y();
         ground_normal_msg.vector.z = smoothed_normal_tf.z();
+
+        smoothed_normal_pub.publish(ground_normal_msg);
 
         ROS_DEBUG("Updated (smoothed) ground normal vector to: [%f, %f, %f]",
                   ground_normal_msg.vector.x,
@@ -884,6 +889,9 @@ int main(int argc, char **argv)
     filtered_pose_pub = nh.advertise<geometry_msgs::PoseStamped>(topic_publish, 1);
     if (publish_debug_topic)
         debug_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/lkf/debug", 1000);
+
+    // only for normal smoothing debugging
+    smoothed_normal_pub = nh.advertise<geometry_msgs::Vector3Stamped>("/lkf/smoothed_N", 1000);
 
     // Main processing loop, wait for callbacks to happen
     fast_rate = std::max(cam_rate, imu_rate);
