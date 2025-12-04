@@ -5,6 +5,10 @@
   <arg name="subcloud"  default="geo" />
   <arg name="plane"     default="ran" />
   <arg name="file"      default="default" />
+  <arg name="enable_normal_smoothing" default="true" />
+  <arg name="normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+  <arg name="smoothing_cutoff_freq" default="20.0" />               <!-- cut off freq for gaussian kernel smoothing -->
+  <arg name="use_gaussian_smoothing" default="true" />
 
   <!-- C++ Executables /-->
   <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
@@ -13,6 +17,10 @@
     <param name="subcloud" value="$(arg subcloud)" type="string"/>
     <param name="plane" value="$(arg plane)" type="string"/>
     <param name="file" value="$(arg file)" type="string"/>
+    <param name="enable_normal_smoothing" type="bool" value="$(arg enable_normal_smoothing)" />
+    <param name="normal_smoothing_alpha" type="double" value="$(arg normal_smoothing_alpha)" />
+    <param name="smoothing_cutoff_freq" type="double" value="$(arg smoothing_cutoff_freq)" />
+    <param name="use_gaussian_smoothing" type="bool" value="$(arg use_gaussian_smoothing)" />
   </node>
 
 </launch>

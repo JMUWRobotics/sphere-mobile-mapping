@@ -23,14 +23,12 @@
  * ------------Rosparam server defines -----
  * ----------------------------------------*/
 
-int imu_rate, cam_rate;              // in Hz
-int fast_rate, slow_rate;            // Redefinition, same as above
-int n_acc;                           // Accumulation window of slower pose stream
-double r_sphere;                     // Radius of sphere in m
-double large_omega;                  // in rad/s, rotation speed above is considered large
-double small_omega;                  // in rad/s, rotation speed below is considered small
-double normal_smoothing_alpha = 0.1; // usage of EMA (exponential moving average) - [0,...,1]; higher -> more responsive, lower -> smoother
-bool enable_normal_smoothing = true;
+int imu_rate, cam_rate;   // in Hz
+int fast_rate, slow_rate; // Redefinition, same as above
+int n_acc;                // Accumulation window of slower pose stream
+double r_sphere;          // Radius of sphere in m
+double large_omega;       // in rad/s, rotation speed above is considered large
+double small_omega;       // in rad/s, rotation speed below is considered small
 
 /** ---------------------------------------
  * ------------Internal variables----------
@@ -76,9 +74,6 @@ tf::StampedTransform tf_map_imu2cam, tf_axes_imu2cam;
 
 ros::Publisher filtered_pose_pub;
 
-// for debugging of smoothing
-ros::Publisher smoothed_normal_pub;
-
 // Save last interpolated confidence level of camera
 float last_translated_confidence;
 float scalingFactorCamera;
@@ -102,6 +97,8 @@ double small_omega2; // (rad/s)^2
 const float MIN_SCALING_FACTOR = 0.1;
 const float MAX_SCALING_FACTOR = 1000.0;
 const double small_number = 0.00001;
+
+bool use_smoothed_n; // from rosparam server
 
 /** ---------------------------------------
  * ------------Supporting methods----------
@@ -290,9 +287,6 @@ Eigen::MatrixXf R_cam(9, 9);
 // normal vector received from ground_finder node
 geometry_msgs::Vector3Stamped ground_normal_msg; // normal vector received from ground_finder node
 
-// parameters for normal vector smoothing (and outlier removal?)
-tf::Vector3 smoothed_normal_tf; // holds smoothed normal vector
-
 inline void useRollingMotionModel(const double dT)
 {
     // Motion prediction matrix uses angular velocity for position
@@ -317,11 +311,6 @@ inline void useRollingMotionModel(const double dT)
         0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0;
-
-    if (enable_normal_smoothing)
-        ROS_INFO("smoothed N: [%f, %f, %f]", ground_normal_msg.vector.x, ground_normal_msg.vector.y, ground_normal_msg.vector.z);
-    else
-        ROS_INFO("N: [%f, %f, %f]", ground_normal_msg.vector.x, ground_normal_msg.vector.y, ground_normal_msg.vector.z);
 
     // Control input matrix takes rotation and angular velocities
     G << 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -725,76 +714,33 @@ void camMsgCallback(const state_estimator_msgs::Estimator::ConstPtr &m)
 
 void normalVectorCallback(const geometry_msgs::Vector3Stamped::ConstPtr &msg)
 {
-    if (enable_normal_smoothing == false)
+    if (!msg)
+        return;
+
+    geometry_msgs::Vector3Stamped n = *msg;
+
+    double n_x = n.vector.x;
+    double n_y = n.vector.y;
+    double n_z = n.vector.z;
+    double len = std::sqrt(n_x * n_x + n_y * n_y + n_z * n_z);
+
+    if (len < small_number)
     {
-        ground_normal_msg = *msg;
-        double len = std::sqrt(ground_normal_msg.vector.x * ground_normal_msg.vector.x +
-                               ground_normal_msg.vector.y * ground_normal_msg.vector.y +
-                               ground_normal_msg.vector.z * ground_normal_msg.vector.z);
-
-        // Normalize the vector
-        if (len > small_number)
-        {
-            ground_normal_msg.vector.x /= len;
-            ground_normal_msg.vector.y /= len;
-            ground_normal_msg.vector.z /= len;
-        }
-        else
-        {
-            ROS_WARN("Normal vector near zero; using previous normal vector");
-        }
-        ROS_DEBUG("Updated ground normal vector to: [%f, %f, %f]",
-                  ground_normal_msg.vector.x,
-                  ground_normal_msg.vector.y,
-                  ground_normal_msg.vector.z);
+        ROS_WARN_THROTTLE(5.0, "received near-zero ground normal vector - ignoring!");
+        return;
     }
-    else
-    {
-        tf::Vector3 n(msg->vector.x, msg->vector.y, msg->vector.z);
-        double n_len = n.length();
-        if (n_len < small_number)
-        {
-            ROS_WARN("Normal vector near zero; ignoring.");
-            return;
-        }
-        n /= n_len; // normalize
 
-        ROS_DEBUG("Ground normal vector pre smoothing: [%f, %f, %f]",
-                  n.x(), n.y(), n.z());
+    n.vector.x = n_x / len;
+    n.vector.y = n_y / len;
+    n.vector.z = n_z / len;
 
-        // init smoothed normal if first run
-        if (smoothed_normal_tf.length() < small_number)
-        {
-            smoothed_normal_tf = n;
-        }
-        else
-        {
-            // moving avg smoothing:
-            smoothed_normal_tf = tf::Vector3(
-                normal_smoothing_alpha * n.x() + (1.0 - normal_smoothing_alpha) * smoothed_normal_tf.x(),
-                normal_smoothing_alpha * n.y() + (1.0 - normal_smoothing_alpha) * smoothed_normal_tf.y(),
-                normal_smoothing_alpha * n.z() + (1.0 - normal_smoothing_alpha) * smoothed_normal_tf.z());
-        }
-        // normalize
-        double smoothed_len = smoothed_normal_tf.length();
-        if (smoothed_len > small_number)
-        {
-            smoothed_normal_tf /= smoothed_len;
-        }
-        else
-            smoothed_normal_tf = n; // fallback
+    ground_normal_msg = n;
 
-        ground_normal_msg.vector.x = smoothed_normal_tf.x();
-        ground_normal_msg.vector.y = smoothed_normal_tf.y();
-        ground_normal_msg.vector.z = smoothed_normal_tf.z();
-
-        smoothed_normal_pub.publish(ground_normal_msg);
-
-        ROS_DEBUG("Updated (smoothed) ground normal vector to: [%f, %f, %f]",
-                  ground_normal_msg.vector.x,
-                  ground_normal_msg.vector.y,
-                  ground_normal_msg.vector.z);
-    }
+    ROS_INFO_THROTTLE(1.0, "Ground normal updated (smoothed=%s): [%.4f, %.4f, %.4f]",
+                      use_smoothed_n ? "true" : "false",
+                      ground_normal_msg.vector.x,
+                      ground_normal_msg.vector.y,
+                      ground_normal_msg.vector.z);
 }
 
 int main(int argc, char **argv)
@@ -813,7 +759,6 @@ int main(int argc, char **argv)
     nh.param<std::string>("topic_pose_imu", topic_pose_imu, "/posePub_merged");
     nh.param<std::string>("topic_vel_imu", topic_vel_imu, "/orientation");
     nh.param<std::string>("topic_pose_cam", topic_pose_cam, "/camera/sphereCenterPose");
-    nh.param<std::string>("topic_ground_normal", topic_ground_normal, "/ground_finder/normal_vector");
     nh.param<std::string>("frame_id_imu", frame_id_imu, "imu_frame");
     nh.param<std::string>("frame_id_cam", frame_id_cam, "camera_frame");
     nh.param<int>("imu_rate", imu_rate, 125); // Jaspers Code uses 125 Hz by default
@@ -822,8 +767,15 @@ int main(int argc, char **argv)
     nh.param<double>("large_omega", large_omega, 0.5);
     nh.param<double>("small_omega", small_omega, 0.005);
     nh.param<bool>("debug_topics", publish_debug_topic, false);
-    nh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
-    nh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
+    nh.param<bool>("use_smoothed_normal_vector", use_smoothed_n, use_smoothed_n); // whether to use the smoothed ground normal vector or not
+
+    // subscribe to smoothed or raw ground normal vector topic
+    if (use_smoothed_n)
+        nh.param<std::string>("topic_ground_normal", topic_ground_normal, "/ground_finder/smoothed_normal_vector");
+    else
+        nh.param<std::string>("topic_ground_normal", topic_ground_normal, "/ground_finder/normal_vector");
+
+    ROS_INFO("Subscribing to ground normal topic: %s (use_smoothed=%s)", topic_ground_normal.c_str(), use_smoothed_n ? "true" : "false");
 
     // Set omega thresholds
     large_omega2 = large_omega * large_omega;
@@ -858,8 +810,6 @@ int main(int argc, char **argv)
     ground_normal_msg.vector.y = 0.0;
     ground_normal_msg.vector.z = -1.0;
 
-    smoothed_normal_tf = tf::Vector3(0.0, 0.0, -1.0);
-
     // Get static tf between imu and camera frame
     tf::TransformListener tf_listener;
     tf_listener.waitForTransform("axes_cam", "axes_imu", ros::Time(0), ros::Duration(5.0));
@@ -889,9 +839,6 @@ int main(int argc, char **argv)
     filtered_pose_pub = nh.advertise<geometry_msgs::PoseStamped>(topic_publish, 1);
     if (publish_debug_topic)
         debug_pose_pub = nh.advertise<geometry_msgs::PoseStamped>("/lkf/debug", 1000);
-
-    // only for normal smoothing debugging
-    smoothed_normal_pub = nh.advertise<geometry_msgs::Vector3Stamped>("/lkf/smoothed_N", 1000);
 
     // Main processing loop, wait for callbacks to happen
     fast_rate = std::max(cam_rate, imu_rate);

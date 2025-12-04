@@ -32,6 +32,9 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+#include <atomic>
+#include <memory>
+
 // Preprocessing types
 enum Preprocessing
 {
@@ -50,6 +53,67 @@ enum PlaneSegm
     RHT2
 };
 
+// ----------- Guassian Kernel class for smoothing --------------
+class SmoothedGaussian3D
+{
+public:
+    SmoothedGaussian3D(size_t window_size, float sigma, float dt)
+        : window_size_(window_size), dt_(dt), kernel_(compute_gaussian_kernel(window_size, sigma, dt)),
+          buffers_(3, std::vector<float>(window_size, 0.0f)),
+          index_(0)
+    {
+    }
+
+    // Add new sample and get smoothed value
+    std::vector<float> filter(float nx, float ny, float nz)
+    {
+        // write sample into circ buffer
+        size_t write_index = index_.fetch_add(1, std::memory_order_relaxed) % window_size_; // get current index and increment atomically
+        buffers_[0][write_index] = nx;
+        buffers_[1][write_index] = ny;
+        buffers_[2][write_index] = nz;
+
+        std::vector<float> result(3, 0.0f);
+
+        // Compute result (convolution with gaussian kernel)
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            for (size_t k = 0; k < window_size_; ++k)
+            {
+                size_t buff_index = (write_index + window_size_ - k) % window_size_;
+                result[axis] += buffers_[axis][buff_index] * kernel_[k];
+            }
+        }
+        return result;
+    }
+
+private:
+    size_t window_size_;
+    float dt_;
+    std::vector<float> kernel_;
+    std::vector<std::vector<float>> buffers_; // 3 x circ buffer
+    std::atomic<size_t> index_;
+
+    // Compute causal Gaussian kernel (samples at t = 0, -dt, -2dt, ...)
+    std::vector<float> compute_gaussian_kernel(size_t N, float sigma, float dt)
+    {
+        std::vector<float> kernel(N);
+        float sum = 0.0f;
+        for (size_t i = 0; i < N; ++i)
+        {
+            float t = -static_cast<float>(i) * dt; // causal: newest sample at index 0
+            kernel[i] = std::exp(-(t * t) / (2.0f * sigma * sigma));
+            sum += kernel[i];
+        }
+        if (sum > 0.0f)
+        {
+            for (auto &n : kernel)
+                n /= sum; // normalize since gaussian normalization part is missing in kernel[i]=...
+        }
+        return kernel;
+    }
+};
+
 // ---------------------- GroundFinder class ----------------------
 class GroundFinder
 {
@@ -62,14 +126,15 @@ private:
     visualization_msgs::Marker n_marker;
 
     /* ROS variables for node */
-    ros::NodeHandle nh;          // Node handle
-    ros::Subscriber sub_h;       // Subscriber for hesai topic
-    ros::Subscriber sub_p;       // Subscriber for plane topic
-    ros::Publisher pub_subcloud; // Publisher of subcloud
-    ros::Publisher pub_test;     // TODO take out!
-    ros::Publisher pub_test2;    // TODO take out!
-    ros::Publisher pub_n;        // Publisher of normal vector in map2 frame
-    ros::Publisher pub_vis_n;    // Publisher of normal vector marker for rviz
+    ros::NodeHandle nh;            // Node handle
+    ros::Subscriber sub_h;         // Subscriber for hesai topic
+    ros::Subscriber sub_p;         // Subscriber for plane topic
+    ros::Publisher pub_subcloud;   // Publisher of subcloud
+    ros::Publisher pub_test;       // TODO take out!
+    ros::Publisher pub_test2;      // TODO take out!
+    ros::Publisher pub_n;          // Publisher of normal vector in map2 frame
+    ros::Publisher pub_vis_n;      // Publisher of normal vector marker for rviz
+    ros::Publisher pub_smoothed_n; // Publisher of smoothed normal vector in map2 frame
 
     /* TF2 variables */
     std::shared_ptr<tf2_ros::TransformListener> tf_listener{nullptr}; // Transform listener
@@ -99,6 +164,18 @@ private:
     const float ds_size = 0.10;        // leaf size used for downsampling after filtering
     const int k = 150;                 // k used for kNN for kd tree subcloud //TODO: 150 = for ransac; 50 = better for rht
     const int max_iterations_plane_detection = 3;
+
+    /* EMA smoothing parameters */
+    bool enable_normal_smoothing = true;           // Enable smoothing of normal vector
+    double normal_smoothing_alpha = 0.1;           // Smoothing factor alpha for normal vector smoothing [0,...,1] higher: more responsive, lower: smoother
+    geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map2 frame)
+    bool have_smoothed_normal = false;             // flag if smoothed vector is initialized
+
+    /* Gaussian Kernel Smoothing Parameters */
+    std::unique_ptr<SmoothedGaussian3D> gaussian_kernel; // nullptr if not yet created
+    double smoothing_cutoff_freq = 10.0f;                // overridden by rosparam server
+    bool use_gaussian_smoothing = false;                 // overrided by rosparam server
+    double lidar_rate = 20.0f;                           // taken from rostopic hz /hesai/pandar
 
     // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
@@ -195,6 +272,13 @@ private:
     /** \brief LKF pose callback function - called each msg @ LKF topic. Used for orientation-dependent ground view score. */
     void lkf_pose_callback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
+    // ---------------------- Ground Vector Smoothing ----------------
+
+    geometry_msgs::Vector3Stamped ema_smoothing(const geometry_msgs::Vector3Stamped &ground_vector);
+
+    geometry_msgs::Vector3Stamped gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector);
+
+    // ---------------------- Score calculation ----------------------
     /** \brief compute ground visibility [0...1] from latest LKF pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
      *  returns {visibility, inlier_ratio} */
     std::pair<double, double> compute_plane_scores(size_t inlier_count, size_t subcloud_size);
@@ -217,6 +301,25 @@ public:
         pub_test2 = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
         pub_n = nh.advertise<geometry_msgs::Vector3Stamped>("/ground_finder/normal_vector", 1);
         pub_vis_n = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
+        pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_normal_vector", 1);
+
+        // Initialize smoothing parameter
+        // read smoothing params from rosparam serve
+        nh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
+        nh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
+        nh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
+
+        // Initialize Gaussian Kernel Smoothing if enabled
+        if (use_gaussian_smoothing)
+        {
+            double freq_cut;
+            nh.param<double>("smoothing_cutoff_freq", freq_cut, 20);
+            double sigma = 1.0f / (2.0f * M_PI * freq_cut);
+            double dt = lidar_rate > 0.0f ? (1.0f / lidar_rate) : 0.1f; // added safety check
+            int win_size = 6 * sigma / lidar_rate;                      // TODO: woher die 6?
+            win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
+            gaussian_kernel.reset(new SmoothedGaussian3D(win_size, sigma, dt)); // create kernel
+        }
 
         // Initalize n_marker
         initMarker();

@@ -626,7 +626,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     try
     {
         // Listen to tf tree for transformation
-        t = tf_buffer.lookupTransform("map2", "pandar_frame", ros::Time(0));
+        t = tf_buffer.lookupTransform("map2", "pandar_frame", ros::Time(0)); // orientierung von mapMoritz nehmen, nicht map2 (KF)
     }
     catch (tf2::TransformException &ex)
     {
@@ -763,11 +763,11 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         csv << duration_total << ",";
 
     // Publish (filtered) subcloud
-    sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+    sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2()); // TODO: check if mem leak
     pcl::toROSMsg(*cur_scan, *sub_cloud_msg);
     sub_cloud_msg->header.stamp = msg->header.stamp;
     sub_cloud_msg->header.frame_id = msg->header.frame_id;
-    pub_subcloud.publish(*sub_cloud_msg);
+    pub_subcloud.publish(*sub_cloud_msg); // evtl pointer auf subcloud für inliers mit gutem score merken um mehrere zu größerer inlier cloud zu bauen und davon normalenvektor
 
     // ---------------------- Plane segmentation ----------------------
 
@@ -804,6 +804,23 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // Publish normal vector
     pub_n.publish(n_msg);
 
+    // Publish smoothed normal vector (same timestamp)
+    if (enable_normal_smoothing)
+    {
+        geometry_msgs::Vector3Stamped smoothed_n;
+        if (!use_gaussian_smoothing)
+        {
+            smoothed_n = ema_smoothing(n_msg);
+            ROS_INFO_THROTTLE(5.0, "Using EMA Smoothing for normal vector.");
+        }
+        else
+            smoothed_n = gaussian_smoothing(n_msg);
+        ROS_INFO_THROTTLE(5.0, "Using Gaussian Kernel Smoothing for normal vector.");
+        smoothed_n.header.stamp = n_msg.header.stamp;
+        smoothed_n.header.frame_id = n_msg.header.frame_id;
+        pub_smoothed_n.publish(smoothed_n);
+    }
+
     // Update normal vector n_marker
     n_marker.header.frame_id = msg->header.frame_id;
     n_marker.header.stamp = msg->header.stamp;
@@ -835,13 +852,130 @@ void GroundFinder::lkf_pose_callback(const geometry_msgs::PoseStampedConstPtr &m
     double roll = 0.0, pitch = 0.0, yaw = 0.0;
     tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
 
-    // visibility: 0 at 0/180 deg, 1 at 90/270 deg
+    // visibility: 0 at 0/180 deg, 1 at 90/270 deg -- vermutlich eher dazwischen am besten
     last_visibility_score = 0.5 * (std::abs(std::sin(roll)) + std::abs(std::sin(pitch)));
     enable_view_score = true;
 
     ROS_DEBUG("KF pose -> roll: %.3f, pitch: %.3f, visibility: %.3f", roll, pitch, last_visibility_score);
 }
 
+// ---------- Ground Vector Smoothing ----------
+geometry_msgs::Vector3Stamped GroundFinder::ema_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)
+{
+    // pass-through if disabled
+    if (!enable_normal_smoothing)
+    {
+        return ground_vector;
+    }
+
+    geometry_msgs::Vector3Stamped n = ground_vector;
+    double n_x = n.vector.x;
+    double n_y = n.vector.y;
+    double n_z = n.vector.z;
+    double n_norm = std::sqrt(n_x * n_x + n_z * n_z + n_y * n_y);
+
+    if (n_norm > 1e-9)
+    {
+        // normalize input vector
+        n_x /= n_norm;
+        n_y /= n_norm;
+        n_z /= n_norm;
+    }
+    else
+    {
+        // incoming vector invalid -> return existing smoothed normal if present
+        if (have_smoothed_normal)
+            return smoothed_normal;
+        return ground_vector;
+    }
+
+    // for first call: init smoothed_normal
+    if (!have_smoothed_normal)
+    {
+        smoothed_normal.vector.x = n_x;
+        smoothed_normal.vector.y = n_y;
+        smoothed_normal.vector.z = n_z;
+        have_smoothed_normal = true;
+        return smoothed_normal;
+    }
+
+    // exponential moving average
+    double a = normal_smoothing_alpha;    // smoothing factor [0,1] from rosparam
+    double px = smoothed_normal.vector.x; // previous x
+    double py = smoothed_normal.vector.y; // previous y
+    double pz = smoothed_normal.vector.z; // previous z
+
+    double sx = a * n_x + (1.0 - a) * px; // smoothed x
+    double sy = a * n_y + (1.0 - a) * py; // smoothed y
+    double sz = a * n_z + (1.0 - a) * pz; // smoothed z
+
+    double s_norm = std::sqrt(sx * sx + sy * sy + sz * sz);
+    if (s_norm > 1e-9) // smoothed normal is valid
+    {
+        smoothed_normal.vector.x = sx / s_norm;
+        smoothed_normal.vector.y = sy / s_norm;
+        smoothed_normal.vector.z = sz / s_norm;
+    }
+    else
+    {
+        // fallback to normalized input ground_vector
+        smoothed_normal.vector.x = n_x;
+        smoothed_normal.vector.y = n_y;
+        smoothed_normal.vector.z = n_z;
+    }
+
+    smoothed_normal.header = ground_vector.header;
+    return smoothed_normal;
+}
+
+geometry_msgs::Vector3Stamped GroundFinder::gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)
+{
+    if (!use_gaussian_smoothing || !gaussian_kernel)
+    {
+        return ground_vector;
+    }
+    double n_x = ground_vector.vector.x;
+    double n_y = ground_vector.vector.y;
+    double n_z = ground_vector.vector.z;
+    double n_len = std::sqrt(n_x * n_x + n_y * n_y + n_z * n_z);
+
+    if (n_len > 1e-9)
+    {
+        n_x /= n_len;
+        n_y /= n_len;
+        n_z /= n_len;
+    }
+    else
+    {
+        // fallback to curr smoothed_normal if present
+        if (have_smoothed_normal)
+            return smoothed_normal;
+        return ground_vector;
+    }
+    auto result = gaussian_kernel->filter(static_cast<float>(n_x),
+                                          static_cast<float>(n_y),
+                                          static_cast<float>(n_z));
+    geometry_msgs::Vector3Stamped output;
+    double o_x = result[0];
+    double o_y = result[1];
+    double o_z = result[2];
+    double o_len = std::sqrt(o_x * o_x + o_y * o_y + o_z * o_z);
+    if (o_len > 1e-9)
+    {
+        o_x /= o_len;
+        o_y /= o_len;
+        o_z /= o_len;
+    }
+    output.vector.x = o_x;
+    output.vector.y = o_y;
+    output.vector.z = o_z;
+
+    smoothed_normal = output; // internal state for fallback
+    have_smoothed_normal = true;
+    return output;
+}
+
+// ---------- Score computation ----------------
 std::pair<double, double> GroundFinder::compute_plane_scores(size_t inliers_count, size_t subcloud_size)
 {
     // visibility fallback to 1.0 (full vis) if no KF pose available
