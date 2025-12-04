@@ -767,7 +767,7 @@ int main(int argc, char **argv)
     nh.param<double>("large_omega", large_omega, 0.5);
     nh.param<double>("small_omega", small_omega, 0.005);
     nh.param<bool>("debug_topics", publish_debug_topic, false);
-    nh.param<bool>("use_smoothed_normal_vector", use_smoothed_n, use_smoothed_n); // whether to use the smoothed ground normal vector or not
+    nh.param<bool>("use_smoothed_n", use_smoothed_n, use_smoothed_n); // whether to use the smoothed ground normal vector or not
 
     // subscribe to smoothed or raw ground normal vector topic
     if (use_smoothed_n)

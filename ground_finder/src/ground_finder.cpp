@@ -808,14 +808,17 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (enable_normal_smoothing)
     {
         geometry_msgs::Vector3Stamped smoothed_n;
-        if (!use_gaussian_smoothing)
+        ROS_INFO("use gaussian smoothing: %d", use_gaussian_smoothing);
+        if (use_gaussian_smoothing == false)
         {
             smoothed_n = ema_smoothing(n_msg);
-            ROS_INFO_THROTTLE(5.0, "Using EMA Smoothing for normal vector.");
+            ROS_INFO_THROTTLE(1.0, "Using EMA Smoothing for normal vector.");
         }
         else
+        {
             smoothed_n = gaussian_smoothing(n_msg);
-        ROS_INFO_THROTTLE(5.0, "Using Gaussian Kernel Smoothing for normal vector.");
+            ROS_INFO_THROTTLE(1.0, "Using Gaussian Smoothing for normal vector.");
+        }
         smoothed_n.header.stamp = n_msg.header.stamp;
         smoothed_n.header.frame_id = n_msg.header.frame_id;
         pub_smoothed_n.publish(smoothed_n);
@@ -930,7 +933,7 @@ geometry_msgs::Vector3Stamped GroundFinder::ema_smoothing(const geometry_msgs::V
 
 geometry_msgs::Vector3Stamped GroundFinder::gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)
 {
-    if (!use_gaussian_smoothing || !gaussian_kernel)
+    if (use_gaussian_smoothing == false)
     {
         return ground_vector;
     }

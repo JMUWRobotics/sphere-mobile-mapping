@@ -173,7 +173,7 @@ private:
 
     /* Gaussian Kernel Smoothing Parameters */
     std::unique_ptr<SmoothedGaussian3D> gaussian_kernel; // nullptr if not yet created
-    double smoothing_cutoff_freq = 10.0f;                // overridden by rosparam server
+    double smoothing_cutoff_freq;                        // overridden by rosparam server
     bool use_gaussian_smoothing = false;                 // overrided by rosparam server
     double lidar_rate = 20.0f;                           // taken from rostopic hz /hesai/pandar
 
@@ -305,16 +305,22 @@ public:
 
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
-        nh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
-        nh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
-        nh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
+        ros::NodeHandle pnh("~"); // debugging due to errors with rosparams
+        pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
+        pnh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
+        pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
+        pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq, smoothing_cutoff_freq);
+        pnh.param<double>("lidar_rate", lidar_rate, lidar_rate);
+
+        ROS_INFO("Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
+                 enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
+                 use_gaussian_smoothing ? "true" : "false", smoothing_cutoff_freq, lidar_rate);
 
         // Initialize Gaussian Kernel Smoothing if enabled
-        if (use_gaussian_smoothing)
+        if (use_gaussian_smoothing == true)
         {
-            double freq_cut;
-            nh.param<double>("smoothing_cutoff_freq", freq_cut, 20);
-            double sigma = 1.0f / (2.0f * M_PI * freq_cut);
+            ROS_INFO_THROTTLE(1.0, "using gaussian smoothing with cutoff frequency: %.2f Hz", smoothing_cutoff_freq);
+            double sigma = 1.0f / (2.0f * M_PI * smoothing_cutoff_freq);
             double dt = lidar_rate > 0.0f ? (1.0f / lidar_rate) : 0.1f; // added safety check
             int win_size = 6 * sigma / lidar_rate;                      // TODO: woher die 6?
             win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
