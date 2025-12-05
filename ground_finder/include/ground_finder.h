@@ -305,7 +305,7 @@ public:
 
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
-        ros::NodeHandle pnh("~"); // debugging due to errors with rosparams
+        ros::NodeHandle pnh("~"); // for debugging due to errors with rosparams
         pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
         pnh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
         pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
@@ -320,9 +320,9 @@ public:
         if (use_gaussian_smoothing == true)
         {
             ROS_INFO_THROTTLE(1.0, "using gaussian smoothing with cutoff frequency: %.2f Hz", smoothing_cutoff_freq);
-            double sigma = 1.0f / (2.0f * M_PI * smoothing_cutoff_freq);
-            double dt = lidar_rate > 0.0f ? (1.0f / lidar_rate) : 0.1f; // added safety check
-            int win_size = 6 * sigma / lidar_rate;                      // TODO: woher die 6?
+            double sigma = 1.0 / (2.0 * M_PI * smoothing_cutoff_freq); // 1/(1/s) = s
+            double dt = 1.0 / lidar_rate;                              // lidar rate = 20 // 1 / (1/s) = s
+            int win_size = 6 * sigma / dt;                             // no unit but here 1/s (s/(1/s)=s²) --> maybe replacae with dt
             win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
             gaussian_kernel.reset(new SmoothedGaussian3D(win_size, sigma, dt)); // create kernel
         }

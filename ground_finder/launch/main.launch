@@ -7,7 +7,7 @@
   <arg name="file"      default="default" />
   <arg name="enable_normal_smoothing" default="true" />
   <arg name="normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
-  <arg name="smoothing_cutoff_freq" default="10.0" />               <!-- cut off freq for gaussian kernel smoothing -->
+  <arg name="smoothing_cutoff_freq" default="5.0" />               <!-- cut off freq for gaussian kernel smoothing -->
   <arg name="use_gaussian_smoothing" default="true" />
 
   <!-- C++ Executables /-->
