@@ -297,13 +297,12 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             return -1000;
 
         // publish points used for normal computation
-        sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+        sensor_msgs::PointCloud2 sub_cloud_msg;
         pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *final); // copying all points of curr scan (?)
-        pcl::toROSMsg(*final, *sub_cloud_msg);
-        sub_cloud_msg->header.stamp = n_msg.header.stamp;
-        sub_cloud_msg->header.frame_id = "pandar_frame";
-        pub_test.publish(*sub_cloud_msg);
+        pcl::copyPointCloud(*cur_scan, *final);
+        sub_cloud_msg.header.stamp = n_msg.header.stamp;
+        sub_cloud_msg.header.frame_id = "pandar_frame";
+        pub_test.publish(sub_cloud_msg);
 
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
@@ -323,13 +322,13 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             return -1000;
 
         // publish points used for normal computation
-        sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+        sensor_msgs::PointCloud2 sub_cloud_msg;
         pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *final); // copying all points of curr scan (?)
-        pcl::toROSMsg(*final, *sub_cloud_msg);
-        sub_cloud_msg->header.stamp = n_msg.header.stamp;
-        sub_cloud_msg->header.frame_id = "pandar_frame";
-        pub_test.publish(*sub_cloud_msg);
+        pcl::copyPointCloud(*cur_scan, *final);
+        pcl::toROSMsg(*final, sub_cloud_msg);
+        sub_cloud_msg.header.stamp = n_msg.header.stamp;
+        sub_cloud_msg.header.frame_id = "pandar_frame";
+        pub_test.publish(sub_cloud_msg);
 
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
@@ -404,29 +403,33 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
 
-        sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+        sensor_msgs::PointCloud2 sub_cloud_msg;
         pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, inliers_ptr->indices, *final);
-        pcl::toROSMsg(*final, *sub_cloud_msg);
-        sub_cloud_msg->header.stamp = n_msg.header.stamp;
-        sub_cloud_msg->header.frame_id = "pandar_frame";
-        pub_test.publish(*sub_cloud_msg);
+        pcl::copyPointCloud(*cur_scan, *final); // copying all points of curr scan (?)
+        pcl::toROSMsg(*final, sub_cloud_msg);
+        sub_cloud_msg.header.stamp = n_msg.header.stamp;
+        sub_cloud_msg.header.frame_id = "pandar_frame";
+        pub_test.publish(sub_cloud_msg);
 
         break;
     }
     case RHT:
     {
         // Accumulator (90 and 180 = 2° accuracy)
-        int rhoNum = 7, phiNum = 90, thetaNum = 180, rhoMax = 5, accumulatorMax = 10;
+        // int rhoNum = 7, phiNum = 90, thetaNum = 180, rhoMax = 5, accumulatorMax = 10;
+        int rhoNum = 10, phiNum = 39, thetaNum = 100, rhoMax = 5000, accumulatorMax = 2;
         // NOTE: rhoMax = max distance from plane to origin of frame (in our case = radius sphere + little wiggle room with int = 1)
-        // NOTE: rhoNum = no effect on accuracy but makes it faster if low! now = 7 -> roughly speed of ran
-        // NOTE: phiNum and thetaNum define accuracy of plane orientation! but higher = slower!
+        // NOTE: rhoNum = no effect on accuracy but makes it faster if low! now = 7 -> roughly speed of ran  -- increase for finer plane distance resolution
+        // NOTE: phiNum and thetaNum define accuracy of plane orientation! but higher = slower! -- angular resolution for normal direction grid
+        // NOTE: accumulatorMax = Maximal accumulator count; Any cell in accumulator > accumulatorMax = potential plane candidate.
         Accumulator acc(rhoNum, phiNum, thetaNum, rhoMax, accumulatorMax);
         // Hough object
-        // double minDist = 0;                                  // min distance between points
-        // double maxDist = std::numeric_limits<double>::max(); // max distance between points
+        // double minDist = 0;                                  // min distance between points [cm]
+        // double maxDist = std::numeric_limits<double>::max(); // max distance between points [cm]
         double minDist = 50.0;
         double maxDist = 200.0;
+
+        // approach for tuning:
 
         pcl::PointIndices::Ptr inliers(new pcl::PointIndices()); // storing inliers for visualization
         inliers->indices.resize(cur_scan->points.size());
@@ -472,13 +475,13 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 del_points->indices.resize(del_count);
 
                 // publish points used for normal computation
-                sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+                sensor_msgs::PointCloud2 sub_cloud_msg;
                 pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
                 pcl::copyPointCloud(*cur_scan, inliers->indices, *final);
-                pcl::toROSMsg(*final, *sub_cloud_msg);
-                sub_cloud_msg->header.stamp = n_msg.header.stamp;
-                sub_cloud_msg->header.frame_id = "pandar_frame";
-                pub_test.publish(*sub_cloud_msg);
+                pcl::toROSMsg(*final, sub_cloud_msg);
+                sub_cloud_msg.header.stamp = n_msg.header.stamp;
+                sub_cloud_msg.header.frame_id = "pandar_frame";
+                pub_test.publish(sub_cloud_msg);
                 delete_points(cur_scan, inliers, true);
 
                 // delete_points(cur_scan, del_points, true);
@@ -488,18 +491,18 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                 // TODO comment out!
                 // Publish new subcloud for next try
-                sensor_msgs::PointCloud2::Ptr sub_cloud_msg_2(new sensor_msgs::PointCloud2());
-                pcl::toROSMsg(*cur_scan, *sub_cloud_msg_2);
-                sub_cloud_msg_2->header.stamp = n_msg.header.stamp;
-                sub_cloud_msg_2->header.frame_id = "pandar_frame";
-                pub_test2.publish(*sub_cloud_msg_2);
+                sensor_msgs::PointCloud2 sub_cloud_msg_2;
+                pcl::toROSMsg(*cur_scan, sub_cloud_msg_2);
+                sub_cloud_msg_2.header.stamp = n_msg.header.stamp;
+                sub_cloud_msg_2.header.frame_id = "pandar_frame";
+                pub_test2.publish(sub_cloud_msg_2);
             }
         }
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
         break;
     }
-    case RHT2:
+    case RHT2: // RHT followed by PCA -- evaluated to be least recommended
     {
         // Accumulator (36 and 72 = 5° accuracy)
         // int rhoNum = 7, phiNum = 36, thetaNum = 72, rhoMax = 5, accumulatorMax = 10;
@@ -555,13 +558,13 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                     // TODO comment out!
                     // Publish detected inliers
-                    sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
+                    sensor_msgs::PointCloud2 sub_cloud_msg;
                     pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
                     pcl::copyPointCloud(*cur_scan, inliers->indices, *final);
-                    pcl::toROSMsg(*final, *sub_cloud_msg);
-                    sub_cloud_msg->header.stamp = n_msg.header.stamp;
-                    sub_cloud_msg->header.frame_id = "pandar_frame";
-                    pub_test.publish(*sub_cloud_msg);
+                    pcl::toROSMsg(*final, sub_cloud_msg);
+                    sub_cloud_msg.header.stamp = n_msg.header.stamp;
+                    sub_cloud_msg.header.frame_id = "pandar_frame";
+                    pub_test.publish(sub_cloud_msg);
 
                     Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
                     // Set new normal vector
@@ -598,11 +601,11 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                 // TODO comment out!
                 // Publish (filtered) subcloud
-                sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2());
-                pcl::toROSMsg(*cur_scan, *sub_cloud_msg);
-                sub_cloud_msg->header.stamp = n_msg.header.stamp;
-                sub_cloud_msg->header.frame_id = "pandar_frame";
-                pub_test2.publish(*sub_cloud_msg);
+                sensor_msgs::PointCloud2 sub_cloud_msg;
+                pcl::toROSMsg(*cur_scan, sub_cloud_msg);
+                sub_cloud_msg.header.stamp = n_msg.header.stamp;
+                sub_cloud_msg.header.frame_id = "pandar_frame";
+                pub_test2.publish(sub_cloud_msg);
             }
         }
 
@@ -763,11 +766,11 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         csv << duration_total << ",";
 
     // Publish (filtered) subcloud
-    sensor_msgs::PointCloud2::Ptr sub_cloud_msg(new sensor_msgs::PointCloud2()); // TODO: check if mem leak
-    pcl::toROSMsg(*cur_scan, *sub_cloud_msg);
-    sub_cloud_msg->header.stamp = msg->header.stamp;
-    sub_cloud_msg->header.frame_id = msg->header.frame_id;
-    pub_subcloud.publish(*sub_cloud_msg); // evtl pointer auf subcloud für inliers mit gutem score merken um mehrere zu größerer inlier cloud zu bauen und davon normalenvektor
+    sensor_msgs::PointCloud2 sub_cloud_msg;
+    pcl::toROSMsg(*cur_scan, sub_cloud_msg);
+    sub_cloud_msg.header.stamp = msg->header.stamp;
+    sub_cloud_msg.header.frame_id = msg->header.frame_id;
+    pub_subcloud.publish(sub_cloud_msg); // evtl pointer auf subcloud für inliers mit gutem score merken um mehrere zu größerer inlier cloud zu bauen und davon normalenvektor
 
     // ---------------------- Plane segmentation ----------------------
 
