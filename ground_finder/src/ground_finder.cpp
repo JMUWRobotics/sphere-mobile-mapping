@@ -427,7 +427,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         // double minDist = 0;                                  // min distance between points [cm]
         // double maxDist = std::numeric_limits<double>::max(); // max distance between points [cm]
         double minDist = 1.5;
-        double maxDist = 500.0;
+        double maxDist = 50.0;
 
         /* approach for tuning:  */
 
@@ -502,16 +502,16 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
         break;
     }
-    case RHT2: // RHT followed by PCA -- evaluated to be least recommended
+    case RHT2: // RHT followed by PCA -- evaluated to be least recommended but has much more good ground points
     {
         // Accumulator (36 and 72 = 5° accuracy)
         // int rhoNum = 7, phiNum = 36, thetaNum = 72, rhoMax = 5, accumulatorMax = 10;
-        int rhoNum = 10, phiNum = 39, thetaNum = 100, rhoMax = 5000, accumulatorMax = 2;
+        int rhoNum = radius_sphere + 1, phiNum = 180, thetaNum = 360, rhoMax = 1500, accumulatorMax = 2;
         Accumulator acc(rhoNum, phiNum, thetaNum, rhoMax, accumulatorMax);
         // Hough object
         // double minDist = 0;                                  // min distance between points
         // double maxDist = std::numeric_limits<double>::max(); // max distance between points
-        double minDist = 0.0;
+        double minDist = 1.5;
         double maxDist = 50.0;
 
         std::vector<double> temp_n = {0.0, 0.0, 0.0};
