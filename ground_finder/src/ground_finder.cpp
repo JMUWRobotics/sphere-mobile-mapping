@@ -240,7 +240,7 @@ int64_t GroundFinder::filter_create_subcloud_geo(pcl::PointCloud<PointType>::Ptr
         // distance squared to query point
         subtract_points(p_i, query_point, d);
         d2_sqr = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-        // Check if point lies outside of filter radius and within sphere around the query point
+        // Check if point lies outside of filter radius and within sphere around the query RHT
         if (d1_sqr > radius_filter * radius_filter && d2_sqr <= radius_subcloud * radius_subcloud)
         {
             points_backup->indices[count_pb++] = i;
@@ -417,19 +417,19 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
     {
         // Accumulator (90 and 180 = 2° accuracy)
         // int rhoNum = 7, phiNum = 90, thetaNum = 180, rhoMax = 5, accumulatorMax = 10;
-        int rhoNum = 10, phiNum = 39, thetaNum = 100, rhoMax = 5000, accumulatorMax = 2;
-        // NOTE: rhoMax = max distance from plane to origin of frame (in our case = radius sphere + little wiggle room with int = 1)
-        // NOTE: rhoNum = no effect on accuracy but makes it faster if low! now = 7 -> roughly speed of ran  -- increase for finer plane distance resolution
-        // NOTE: phiNum and thetaNum define accuracy of plane orientation! but higher = slower! -- angular resolution for normal direction grid
-        // NOTE: accumulatorMax = Maximal accumulator count; Any cell in accumulator > accumulatorMax = potential plane candidate.
+        int rhoNum = radius_sphere + 1, phiNum = 180, thetaNum = 360, rhoMax = 1500, accumulatorMax = 2;
+        //  NOTE: rhoMax = max distance from plane to origin of frame (in our case = radius sphere + little wiggle room with int = 1)
+        //  NOTE: rhoNum = no effect on accuracy but makes it faster if low! now = 7 -> roughly speed of ran  -- increase for finer plane distance resolution -- distance of plane from origin grid
+        //  NOTE: phiNum and thetaNum define accuracy of plane orientation! but higher = slower! -- angular resolution for normal direction grid
+        //  NOTE: accumulatorMax = Maximal accumulator count; Any cell in accumulator > accumulatorMax = potential plane candidate.
         Accumulator acc(rhoNum, phiNum, thetaNum, rhoMax, accumulatorMax);
         // Hough object
         // double minDist = 0;                                  // min distance between points [cm]
         // double maxDist = std::numeric_limits<double>::max(); // max distance between points [cm]
-        double minDist = 50.0;
-        double maxDist = 200.0;
+        double minDist = 1.5;
+        double maxDist = 500.0;
 
-        // approach for tuning:
+        /* approach for tuning:  */
 
         pcl::PointIndices::Ptr inliers(new pcl::PointIndices()); // storing inliers for visualization
         inliers->indices.resize(cur_scan->points.size());
