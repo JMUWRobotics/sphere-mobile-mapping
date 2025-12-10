@@ -63,7 +63,7 @@ visibility = vis_smooth;
 visibility = (visibility - min(visibility(:))) / (max(visibility(:)) - min(visibility(:))); % [0...1]
 
 % Create figure
-figure('Position', [100, 100, 1400, 600]);
+figure('Position', [100, 100, 1920, 1080]);
 
 % Plot 1: Sphere with visibility coloring
 subplot(1, 3, 1);
@@ -76,8 +76,8 @@ axis equal;
 xlabel('X'); ylabel('Y'); zlabel('Z');
 title('Ground Plane Visibility Zones (4 Pitch × 4 Roll)');
 view(45, 30);
-lighting gouraud;
-light('Position', [1, 1, 1]);
+% lighting gouraud;
+% light('Position', [1, 1, 1]);
 grid on;
 
 % annotations for roll &pitch (maybe remove later)
@@ -96,13 +96,13 @@ ylabel(cb, '0=BAD, 1=GOOD', 'FontSize', 9, 'FontWeight', 'bold');
 axis equal;
 xlabel('X: Roll Axis'); 
 zlabel('Z: Pitch Axis');
-title('Front View: X-Z Plane (showing Roll & Pitch motion)');
+title('Front View: X-Z Plane (showing Roll & Pitch)');
 view(0, 0);
-lighting gouraud;
-light('Position', [1, 1, 1]);
+% lighting gouraud;
+% light('Position', [1, 1, 1]);
 grid on;
 
-% Plot 3: 2D map of visibility (roll vs pitch)
+% Plot 3: 2D map of visibility
 subplot(1, 3, 3);
 [roll_grid, pitch_grid] = meshgrid(0:2:360, -90:1:90);
 vis_map = zeros(size(roll_grid));
@@ -170,11 +170,11 @@ fprintf('  Blue (0.0-0.3): Poor visibility\n');
 function visibility_score = get_visibility(pitch_deg, roll_deg)
     pitch_rad = pitch_deg * pi/180;
     pitch_optim = abs(sin(2 * pitch_rad));
-    pitch_score = 0.2 + 0.8 * pitch_optim;
+    pitch_score = 0.1 + 0.9 * pitch_optim;
 
     roll_rad = roll_deg * pi/180;
     roll_optim = abs(sin(2 * roll_rad));
-    roll_score = 0.2 + 0.8 * roll_optim;
+    roll_score = 0.1 + 0.9 * roll_optim;
 
     visibility_score = pitch_score * roll_score;
 end
