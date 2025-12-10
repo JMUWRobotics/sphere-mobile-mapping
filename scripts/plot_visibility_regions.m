@@ -74,8 +74,8 @@ caxis([0, 1]);
 ylabel(cb, '0=BAD, 1=GOOD', 'FontSize', 9, 'FontWeight', 'bold');
 axis equal;
 xlabel('X'); ylabel('Y'); zlabel('Z');
-title('Ground Plane Visibility Zones (4 Pitch × 4 Roll)');
-view(45, 30);
+title('Ground Plane Visibility Zones');
+view(45, 30); % TODO: adjust view potentially but then also adjust annotations
 % lighting gouraud;
 % light('Position', [1, 1, 1]);
 grid on;
