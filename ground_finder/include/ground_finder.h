@@ -279,9 +279,9 @@ private:
     geometry_msgs::Vector3Stamped gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector);
 
     // ---------------------- Score calculation ----------------------
-    /** \brief compute ground visibility [0...1] from latest LKF pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
+    /** \brief compute ground visibility [0.1...1] from latest LKF pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
      *  returns {visibility, inlier_ratio} */
-    std::pair<double, double> compute_plane_scores(size_t inlier_count, size_t subcloud_size);
+    std::pair<double, double> compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inlier_count, size_t subcloud_size);
 
 public:
     GroundFinder(Preprocessing filtering, Preprocessing subcloud, PlaneSegm plane_alg, bool quiet, bool write2file = false, std::string path = "")

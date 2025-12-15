@@ -3,10 +3,10 @@
 
 clear; close all;
 
-[x, y, z] = sphere(100);
+[x, y, z] = sphere(200); % increase resolution for smoother fields on sphere
 
 % Convert to spherical coordinates (roll = azimuth, pitch = elevation from xy-plane)
-% roll: 0-360 deg 
+% roll: 0-360 deg
 % pitch: -90 to 90 deg
 roll = atan2d(y, x);  % map points on sphere to -180 to 180 deg roll anlge using atan2 (deg) (forward / backward motion)
 roll(roll < 0) = roll(roll < 0) + 360;  % Convert to 0-360 deg
@@ -41,7 +41,7 @@ for i = 1:size(roll, 1)
         roll_optim = abs(sin(2 * roll_rad));  % period of 180° -> Max at 45°, 135°, 225°, 315°, min at 0°/180°; abs for symmetry -- e.g. sin(2*45°)=sin(90°)=1, sin(2*135°)=sin(270°)=1, sin(2*0°)=sin(0°)=0
         roll_score = 0.1 + 0.9 * roll_optim;  % 0.1 at 0°/180°, 1.0 at 45°, 135°, 225°, 315° -- avoids 0 visibility
 
-        % Combined visibility score (0 = bad, 1 = good) 
+        % Combined visibility score (0 = bad, 1 = good)
         visibility(i, j) = pitch_score * roll_score; % TODO:currently only high when both are high -- maybe find better option
     end
 end
@@ -80,11 +80,11 @@ view(45, 30); % TODO: adjust view potentially but then also adjust annotations
 % light('Position', [1, 1, 1]);
 grid on;
 
-% annotations for roll &pitch (maybe remove later)
-text(1.4, 0, 0, 'Roll=0° (BAD)', 'HorizontalAlignment', 'left', 'FontSize', 8, 'FontWeight', 'bold');
-text(0, -1.4, 0, 'Roll=270° (MOD)', 'HorizontalAlignment', 'center', 'FontSize', 8);
-text(0, 0, 1.3, 'Pitch=+90° (BAD)', 'HorizontalAlignment', 'center', 'FontSize', 8, 'FontWeight', 'bold');
-text(0, 0, -1.3, 'Pitch=-90° (BAD)', 'HorizontalAlignment', 'center', 'FontSize', 8, 'FontWeight', 'bold');
+% annotations for roll &pitch
+text(1.4, 0, 0, 'Pitch=-90° (BAD)', 'HorizontalAlignment', 'left', 'FontSize', 8, 'FontWeight', 'bold');
+text(0, -1.4, 0, 'Pitch=90° (BAD)', 'HorizontalAlignment', 'center', 'FontSize', 8);
+text(0, 0, 1.3, 'Roll=270° (MOD)', 'HorizontalAlignment', 'center', 'FontSize', 8, 'FontWeight', 'bold');
+text(0, 0, -1.3, 'Roll=90° (MOD)', 'HorizontalAlignment', 'center', 'FontSize', 8, 'FontWeight', 'bold');
 
 % Plot 2: Frontal view for clarity of symmetry
 subplot(1, 3, 2);
@@ -94,7 +94,7 @@ cb = colorbar;
 caxis([0, 1]);
 ylabel(cb, '0=BAD, 1=GOOD', 'FontSize', 9, 'FontWeight', 'bold');
 axis equal;
-xlabel('X: Roll Axis'); 
+xlabel('X: Roll Axis');
 zlabel('Z: Pitch Axis');
 title('Front View: X-Z Plane (showing Roll & Pitch)');
 view(0, 0);

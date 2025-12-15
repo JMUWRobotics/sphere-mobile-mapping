@@ -417,7 +417,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
     {
         // Accumulator (90 and 180 = 2° accuracy)
         // int rhoNum = 7, phiNum = 90, thetaNum = 180, rhoMax = 5, accumulatorMax = 10;
-        int rhoNum = radius_sphere + 1, phiNum = 180, thetaNum = 360, rhoMax = 1500, accumulatorMax = 2;
+        int rhoNum = radius_sphere + 1, phiNum = 180, thetaNum = 360, rhoMax = 1500, accumulatorMax = 20;
         //  NOTE: rhoMax = max distance from plane to origin of frame (in our case = radius sphere + little wiggle room with int = 1)
         //  NOTE: rhoNum = no effect on accuracy but makes it faster if low! now = 7 -> roughly speed of ran  -- increase for finer plane distance resolution -- distance of plane from origin grid
         //  NOTE: phiNum and thetaNum define accuracy of plane orientation! but higher = slower! -- angular resolution for normal direction grid
@@ -982,11 +982,36 @@ geometry_msgs::Vector3Stamped GroundFinder::gaussian_smoothing(const geometry_ms
 }
 
 // ---------- Score computation ----------------
-std::pair<double, double> GroundFinder::compute_plane_scores(size_t inliers_count, size_t subcloud_size)
+// returns <visibility_score, inlier_normalized>
+std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inliers_count, size_t subcloud_size)
 {
-    // visibility fallback to 1.0 (full vis) if no KF pose available
-    double visibility = enable_view_score ? last_visibility_score : 1.0;
 
+    // --------------visibility_score----------------
+    // visibility fallback to 1.0 (full vis) if no KF pose available
+    double visibility_score = 1.0;
+    if (enable_view_score == false)
+    {
+        ROS_WARN_THROTTLE(5.0, "No LKF pose received, using default visibility_score=1.0 (full visibility)");
+    }
+    else
+    {
+
+        // extract rpy from quaternion
+        tf2::Quaternion q;
+        tf2::fromMsg(msg->pose.orientation, q);
+        double roll = 0.0, pitch = 0.0, yaw = 0.0;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+        double roll_optim = std::abs(std::sin(2.0 * roll)); // Min at (0 and roll=+-90 deg), Max at (roll=+-45 deg)
+        double roll_score = 0.1 + 0.9 * roll_optim;         // [0.1...1.0] to avoid zero visibility
+
+        double pitch_optim = std::abs(std::sin(2.0 * pitch)); // Min at (0 and pitch=+-90 deg), Max at (pitch=+-45 deg)
+        double pitch_score = 0.1 + 0.9 * pitch_optim;         // [0.1...1.0] to avoid zero visibility
+
+        visibility_score = roll_score * pitch_score;
+    }
+
+    // --------------inlier_normalized----------------
     double inlier_ratio = 0.0;
     if (subcloud_size > 0)
         inlier_ratio = static_cast<double>(inliers_count) / static_cast<double>(subcloud_size);
@@ -995,8 +1020,5 @@ std::pair<double, double> GroundFinder::compute_plane_scores(size_t inliers_coun
     if (inliers_count >= min_inliers && inlier_ratio > 0.0)
         inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
 
-    else
-        inlier_normalized = 0.0;
-
-    return std::make_pair(visibility, inlier_normalized);
+    return std::make_pair(visibility_score, inlier_normalized);
 }
