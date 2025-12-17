@@ -1,4 +1,5 @@
 #include "ground_finder.h"
+#include <ground_finder_msgs/ScoredNormalStamped.h>
 
 void GroundFinder::initMarker()
 {
@@ -302,7 +303,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         pcl::copyPointCloud(*cur_scan, *final);
         sub_cloud_msg.header.stamp = n_msg.header.stamp;
         sub_cloud_msg.header.frame_id = "pandar_frame";
-        pub_test.publish(sub_cloud_msg);
+        pub_inliers.publish(sub_cloud_msg);
 
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
@@ -328,7 +329,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         pcl::toROSMsg(*final, sub_cloud_msg);
         sub_cloud_msg.header.stamp = n_msg.header.stamp;
         sub_cloud_msg.header.frame_id = "pandar_frame";
-        pub_test.publish(sub_cloud_msg);
+        pub_inliers.publish(sub_cloud_msg);
 
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
@@ -403,13 +404,15 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
 
-        sensor_msgs::PointCloud2 sub_cloud_msg;
+        sensor_msgs::PointCloud2 sub_cloud_msg; // should contain inliers here ??
         pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *final); // copying all points of curr scan (?)
-        pcl::toROSMsg(*final, sub_cloud_msg);
+        pcl::copyPointCloud(*cur_scan, *final); // copy inliers to final
+        pcl::toROSMsg(*final, sub_cloud_msg);   // copy points from final to sub_cloud_msg
         sub_cloud_msg.header.stamp = n_msg.header.stamp;
         sub_cloud_msg.header.frame_id = "pandar_frame";
-        pub_test.publish(sub_cloud_msg);
+        pub_inliers.publish(sub_cloud_msg);
+
+        last_inlier_count = inliers.size(); // oder inliers_ptr->indices.size()?
 
         break;
     }
@@ -474,14 +477,16 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 inliers->indices.resize(inlier_count);
                 del_points->indices.resize(del_count);
 
-                // publish points used for normal computation
+                last_inlier_count = inlier_count;
+
+                // publish points used for normal computation (should be inliers here)
                 sensor_msgs::PointCloud2 sub_cloud_msg;
                 pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
                 pcl::copyPointCloud(*cur_scan, inliers->indices, *final);
                 pcl::toROSMsg(*final, sub_cloud_msg);
                 sub_cloud_msg.header.stamp = n_msg.header.stamp;
                 sub_cloud_msg.header.frame_id = "pandar_frame";
-                pub_test.publish(sub_cloud_msg);
+                pub_inliers.publish(sub_cloud_msg);
                 delete_points(cur_scan, inliers, true);
 
                 // delete_points(cur_scan, del_points, true);
@@ -491,11 +496,11 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                 // TODO comment out!
                 // Publish new subcloud for next try
-                sensor_msgs::PointCloud2 sub_cloud_msg_2;
-                pcl::toROSMsg(*cur_scan, sub_cloud_msg_2);
-                sub_cloud_msg_2.header.stamp = n_msg.header.stamp;
-                sub_cloud_msg_2.header.frame_id = "pandar_frame";
-                pub_test2.publish(sub_cloud_msg_2);
+                // sensor_msgs::PointCloud2 sub_cloud_msg_2;
+                // pcl::toROSMsg(*cur_scan, sub_cloud_msg_2);
+                // sub_cloud_msg_2.header.stamp = n_msg.header.stamp;
+                // sub_cloud_msg_2.header.frame_id = "pandar_frame";
+                // pub_test2.publish(sub_cloud_msg_2);
             }
         }
         auto end_plane = std::chrono::high_resolution_clock::now();
@@ -556,15 +561,16 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                     pca.setInputCloud(cur_scan);
                     pca.setIndices(inliers);
 
-                    // TODO comment out!
+                    last_inlier_count = inliers->indices.size(); // TODO: double check
+
                     // Publish detected inliers
                     sensor_msgs::PointCloud2 sub_cloud_msg;
                     pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-                    pcl::copyPointCloud(*cur_scan, inliers->indices, *final);
-                    pcl::toROSMsg(*final, sub_cloud_msg);
+                    pcl::copyPointCloud(*cur_scan, inliers->indices, *final); // copy inlier points (filtered by indices) from curr_scan to final
+                    pcl::toROSMsg(*final, sub_cloud_msg);                     // copy points from final to subcloud_msg
                     sub_cloud_msg.header.stamp = n_msg.header.stamp;
                     sub_cloud_msg.header.frame_id = "pandar_frame";
-                    pub_test.publish(sub_cloud_msg);
+                    pub_inliers.publish(sub_cloud_msg);
 
                     Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
                     // Set new normal vector
@@ -601,11 +607,11 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                 // TODO comment out!
                 // Publish (filtered) subcloud
-                sensor_msgs::PointCloud2 sub_cloud_msg;
-                pcl::toROSMsg(*cur_scan, sub_cloud_msg);
-                sub_cloud_msg.header.stamp = n_msg.header.stamp;
-                sub_cloud_msg.header.frame_id = "pandar_frame";
-                pub_test2.publish(sub_cloud_msg);
+                //     sensor_msgs::PointCloud2 sub_cloud_msg;
+                //     pcl::toROSMsg(*cur_scan, sub_cloud_msg);
+                //     sub_cloud_msg.header.stamp = n_msg.header.stamp;
+                //     sub_cloud_msg.header.frame_id = "pandar_frame";
+                //     pub_test2.publish(sub_cloud_msg);
             }
         }
 
@@ -772,6 +778,8 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     sub_cloud_msg.header.frame_id = msg->header.frame_id;
     pub_subcloud.publish(sub_cloud_msg); // evtl pointer auf subcloud für inliers mit gutem score merken um mehrere zu größerer inlier cloud zu bauen und davon normalenvektor
 
+    last_subcloud_size = sub_cloud_msg.data.size(); // TODO: double check
+
     // ---------------------- Plane segmentation ----------------------
 
     geometry_msgs::Vector3Stamped n_msg;
@@ -793,6 +801,77 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         return;
     }
 
+    // ---------------------- Plane Score Computation & Sliding Window ----------------------
+
+    // compute curr score
+    auto [vis_score, inlier_score] = compute_plane_scores(last_lkf_pose, last_inlier_count, last_subcloud_size);
+    double combined_score = combine_scores(vis_score, inlier_score);
+
+    ground_finder_msgs::ScoredNormalStamped scored_msg;
+    scored_msg.header = n_msg.header;
+    scored_msg.normal = n_msg.vector;
+    scored_msg.visibility_score = vis_score;
+    scored_msg.inlier_score = inlier_score;
+    scored_msg.combined_score = combined_score;
+    scored_normals_sliding_window.push_back(scored_msg);
+
+    if (scored_normals_sliding_window.size() > MAX_WINDOW_SIZE)
+    {
+        scored_normals_sliding_window.pop_front();
+    }
+
+    ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f)",
+                      combined_score, vis_score, inlier_score);
+
+    // ---------------------- Fallback Selection from Sliding Window ----------------------
+    geometry_msgs::Vector3Stamped final_n = n_msg;
+    double final_score = combined_score;
+    bool using_fallback = false;
+
+    // If curr score is below threshold, use fallback from sliding window
+    if (combined_score < score_threshold)
+    {
+        ROS_WARN_THROTTLE(2.0, "Current score (%.3f) below threshold (%.3f), searching history...",
+                          combined_score, score_threshold);
+
+        // Find best candidate in sliding window using max_element with custom comparator (lambda function)
+        auto fallback = std::max_element(scored_normals_sliding_window.begin(),
+                                         scored_normals_sliding_window.end(),
+                                         [](const ground_finder_msgs::ScoredNormalStamped &a,
+                                            const ground_finder_msgs::ScoredNormalStamped &b)
+                                         {
+                                             return a.combined_score < b.combined_score;
+                                         });
+        if (fallback != scored_normals_sliding_window.end() && fallback->combined_score >= min_score_sliding_window)
+        {
+            final_n.vector.x = fallback->normal.x;
+            final_n.vector.y = fallback->normal.y;
+            final_n.vector.z = fallback->normal.z;
+            final_score = fallback->combined_score;
+            using_fallback = true;
+
+            // Update scored_msg with fallback's scores and normal
+            scored_msg.normal = fallback->normal;
+            scored_msg.visibility_score = fallback->visibility_score;
+            scored_msg.inlier_score = fallback->inlier_score;
+            scored_msg.combined_score = fallback->combined_score;
+
+            ROS_WARN_THROTTLE(2.0, "Using best historical normal (score=%.5f, age=%.1f ms)",
+                              final_score,
+                              (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
+        }
+        else
+        {
+            ROS_WARN_THROTTLE(2.0, "No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+        }
+    }
+
+    // ---------------------- Timing & Publishing ----------------------
+
+    /*
+    Raw Normal Vector
+    */
+
     // Total time
     duration_total += duration_plane;
     if (!quiet)
@@ -804,27 +883,60 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (write2file)
         csv << plane_counter << "\n";
 
-    // Publish normal vector
+    // Publish raw normal vector
     pub_n.publish(n_msg);
 
-    // Publish smoothed normal vector (same timestamp)
+    /*
+    Scored Normal Vector
+    */
+    // Publish scored normal (contains current or fallback scores)
+    pub_scored_n.publish(scored_msg);
+
+    if (using_fallback)
+    {
+        ROS_INFO_THROTTLE(1.0, "Published scored normal: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                          scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+    }
+    else
+    {
+        ROS_INFO_THROTTLE(1.0, "Published scored normal: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                          scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+    }
+
+    // Publish smoothed normal vectors (same timestamp)
     if (enable_normal_smoothing)
     {
-        geometry_msgs::Vector3Stamped smoothed_n;
-        ROS_INFO("use gaussian smoothing: %d", use_gaussian_smoothing);
+        // Smooth raw normal
+        geometry_msgs::Vector3Stamped smoothed_raw_n;
         if (use_gaussian_smoothing == false)
         {
-            smoothed_n = ema_smoothing(n_msg);
-            ROS_INFO_THROTTLE(1.0, "Using EMA Smoothing for normal vector.");
+            smoothed_raw_n = ema_smoothing(n_msg);
         }
         else
         {
-            smoothed_n = gaussian_smoothing(n_msg);
-            ROS_INFO_THROTTLE(1.0, "Using Gaussian Smoothing for normal vector.");
+            smoothed_raw_n = gaussian_smoothing(n_msg);
         }
-        smoothed_n.header.stamp = n_msg.header.stamp;
-        smoothed_n.header.frame_id = n_msg.header.frame_id;
-        pub_smoothed_n.publish(smoothed_n);
+        smoothed_raw_n.header.stamp = n_msg.header.stamp;
+        smoothed_raw_n.header.frame_id = n_msg.header.frame_id;
+        pub_smoothed_n.publish(smoothed_raw_n);
+
+        // Smooth scored normal (current or fallback)
+        geometry_msgs::Vector3Stamped scored_n_stamped;
+        scored_n_stamped.header = scored_msg.header;
+        scored_n_stamped.vector = scored_msg.normal;
+
+        geometry_msgs::Vector3Stamped smoothed_scored_n;
+        if (use_gaussian_smoothing == false)
+        {
+            smoothed_scored_n = ema_smoothing(scored_n_stamped);
+        }
+        else
+        {
+            smoothed_scored_n = gaussian_smoothing(scored_n_stamped);
+        }
+        smoothed_scored_n.header.stamp = scored_msg.header.stamp;
+        smoothed_scored_n.header.frame_id = scored_msg.header.frame_id;
+        pub_smoothed_scored_n.publish(smoothed_scored_n);
     }
 
     // Update normal vector n_marker
@@ -852,17 +964,10 @@ void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
 
 void GroundFinder::lkf_pose_callback(const geometry_msgs::PoseStampedConstPtr &msg)
 {
-    // Extract roll/pitch from KF orientation and compute viewability
-    tf2::Quaternion q;
-    tf2::fromMsg(msg->pose.orientation, q);
-    double roll = 0.0, pitch = 0.0, yaw = 0.0;
-    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+    last_lkf_pose = msg;
 
-    // visibility: 0 at 0/180 deg, 1 at 90/270 deg -- vermutlich eher dazwischen am besten
-    last_visibility_score = 0.5 * (std::abs(std::sin(roll)) + std::abs(std::sin(pitch)));
-    enable_view_score = true;
-
-    ROS_DEBUG("KF pose -> roll: %.3f, pitch: %.3f, visibility: %.3f", roll, pitch, last_visibility_score);
+    if (!enable_view_score)
+        enable_view_score = true;
 }
 
 // ---------- Ground Vector Smoothing ----------
@@ -1009,6 +1114,7 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
         double pitch_score = 0.1 + 0.9 * pitch_optim;         // [0.1...1.0] to avoid zero visibility
 
         visibility_score = roll_score * pitch_score;
+        last_visibility_score = visibility_score;
     }
 
     // --------------inlier_normalized----------------
@@ -1020,5 +1126,13 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     if (inliers_count >= min_inliers && inlier_ratio > 0.0)
         inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
 
+    ROS_INFO_THROTTLE(5.0, "Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f",
+                      visibility_score, inlier_ratio, inlier_normalized);
     return std::make_pair(visibility_score, inlier_normalized);
+}
+
+double GroundFinder::combine_scores(double visibility_score, double inlier_score)
+{
+    // Weighted sum (TODO: finetune weights)
+    return weight_visibility * visibility_score + weight_inlier_ratio * inlier_score;
 }

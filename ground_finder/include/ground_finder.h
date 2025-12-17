@@ -35,6 +35,8 @@
 #include <atomic>
 #include <memory>
 
+#include <ground_finder_msgs/ScoredNormalStamped.h>
+
 // Preprocessing types
 enum Preprocessing
 {
@@ -126,15 +128,17 @@ private:
     visualization_msgs::Marker n_marker;
 
     /* ROS variables for node */
-    ros::NodeHandle nh;            // Node handle
-    ros::Subscriber sub_h;         // Subscriber for hesai topic
-    ros::Subscriber sub_p;         // Subscriber for plane topic
-    ros::Publisher pub_subcloud;   // Publisher of subcloud
-    ros::Publisher pub_test;       // TODO take out!
-    ros::Publisher pub_test2;      // TODO take out!
-    ros::Publisher pub_n;          // Publisher of normal vector in map2 frame
-    ros::Publisher pub_vis_n;      // Publisher of normal vector marker for rviz
-    ros::Publisher pub_smoothed_n; // Publisher of smoothed normal vector in map2 frame
+    ros::NodeHandle nh;          // Node handle
+    ros::Subscriber sub_h;       // Subscriber for hesai topic
+    ros::Subscriber sub_p;       // Subscriber for plane topic
+    ros::Publisher pub_subcloud; // Publisher of subcloud
+    ros::Publisher pub_inliers;
+    // ros::Publisher pub_test2;             // TODO take out!
+    ros::Publisher pub_n;                 // Publisher of normal vector in map2 frame
+    ros::Publisher pub_vis_n;             // Publisher of normal vector marker for rviz
+    ros::Publisher pub_smoothed_n;        // Publisher of smoothed normal vector in map2 frame
+    ros::Publisher pub_scored_n;          // Publisher of scored normal vector in map2 frame
+    ros::Publisher pub_smoothed_scored_n; // Publisher of smoothed scored normal vector in map2 frameSS
 
     /* TF2 variables */
     std::shared_ptr<tf2_ros::TransformListener> tf_listener{nullptr}; // Transform listener
@@ -180,9 +184,18 @@ private:
     // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
     bool enable_view_score = true;
-    double last_visibility_score = 1.0; // most recent viewability score (1.0 = best, 0.0 = worst)
-    size_t min_inliers = 50;            // minimum inliers for plane fitting -> every plane below is too unreliable (?)
-    double inlier_scale = 0.3;          // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
+    double last_visibility_score = 1.0;                                                // most recent viewability score (1.0 = best, 0.0 = worst)
+    size_t min_inliers = 50;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
+    double inlier_scale = 0.3;                                                         // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
+    std::deque<ground_finder_msgs::ScoredNormalStamped> scored_normals_sliding_window; // sliding window of scored normals
+    static constexpr size_t MAX_WINDOW_SIZE = 40;                                      // for 20Hz normal vecotr rate -> 2s history
+    double weight_visibility = 0.6;                                                    // weight for visibility score in combined score calculation
+    double weight_inlier_ratio = 0.4;                                                  // weight for inlier ratio score in combined score calculation
+    double score_threshold = 0.2;                                                      // normals with score below this threshold are not used but rather fallback value
+    double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
+    geometry_msgs::PoseStampedConstPtr last_lkf_pose;                                  // most recent LKF pose
+    size_t last_inlier_count = 0;                                                      // #inliers from last plane detection
+    size_t last_subcloud_size = 0;                                                     // #points of last filtered subcloud
 
     // ---------------------- Init functions  ----------------------
     /** \brief Initalizes values of n_marker for visualization of normal vector in rviz
@@ -283,6 +296,9 @@ private:
      *  returns {visibility, inlier_ratio} */
     std::pair<double, double> compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inlier_count, size_t subcloud_size);
 
+    /**  \brief combine 2 scores into 1 final score */
+    double combine_scores(double visibility_score, double inlier_score);
+
 public:
     GroundFinder(Preprocessing filtering, Preprocessing subcloud, PlaneSegm plane_alg, bool quiet, bool write2file = false, std::string path = "")
     {
@@ -297,11 +313,13 @@ public:
 
         // Initialize Topics
         pub_subcloud = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/sub_cloud", 1);
-        pub_test = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/inliers", 1);
-        pub_test2 = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
+        pub_inliers = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/inliers", 1);
+        // pub_test2 = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
         pub_n = nh.advertise<geometry_msgs::Vector3Stamped>("/ground_finder/normal_vector", 1);
         pub_vis_n = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
         pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_normal_vector", 1);
+        pub_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/scored_normal_vector", 1);
+        pub_smoothed_scored_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_scored_normal_vector", 1);
 
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
@@ -311,10 +329,17 @@ public:
         pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
         pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq, smoothing_cutoff_freq);
         pnh.param<double>("lidar_rate", lidar_rate, lidar_rate);
+        pnh.param<double>("weight_visibility", weight_visibility, weight_visibility);
+        pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
+        pnh.param<double>("score_threshold", score_threshold, score_threshold);
+        pnh.param<double>("min_score_sliding_window", min_score_sliding_window, min_score_sliding_window);
 
         ROS_INFO("Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
                  enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
                  use_gaussian_smoothing ? "true" : "false", smoothing_cutoff_freq, lidar_rate);
+
+        ROS_INFO("Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
+                 score_threshold, min_score_sliding_window);
 
         // Initialize Gaussian Kernel Smoothing if enabled
         if (use_gaussian_smoothing == true)

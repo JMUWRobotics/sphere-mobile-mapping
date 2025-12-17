@@ -1,0 +1,5 @@
+std_msgs/Header header
+geometry_msgs/Vector3 normal
+float64 visibility_score
+float64 inlier_score
+float64 combined_score
