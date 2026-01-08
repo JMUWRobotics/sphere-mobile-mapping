@@ -128,9 +128,10 @@ private:
     visualization_msgs::Marker n_marker;
 
     /* ROS variables for node */
-    ros::NodeHandle nh;          // Node handle
-    ros::Subscriber sub_h;       // Subscriber for hesai topic
-    ros::Subscriber sub_p;       // Subscriber for plane topic
+    ros::NodeHandle nh;    // Node handle
+    ros::Subscriber sub_h; // Subscriber for hesai topic
+    ros::Subscriber sub_p; // Subscriber for plane topic
+    ros::Subscriber sub_lkf;
     ros::Publisher pub_subcloud; // Publisher of subcloud
     ros::Publisher pub_inliers;
     // ros::Publisher pub_test2;             // TODO take out!
@@ -152,8 +153,9 @@ private:
     PlaneSegm plane_alg; // Algorithm used for plane segmentation
 
     /* Writing to file varibales */
-    std::string filename; // Filename of csv
-    std::ofstream csv;    // File stream
+    std::string filename;             // Filename of csv
+    std::ofstream csv;                // File stream
+    std::ofstream scored_normals_log; // File stream for scored normals log
     bool write2file;
 
     /* Output regulation */
@@ -183,9 +185,9 @@ private:
 
     // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
-    bool enable_view_score = true;
+    bool enable_view_score = false;                                                    // Set to true when first LKF pose is received
     double last_visibility_score = 1.0;                                                // most recent viewability score (1.0 = best, 0.0 = worst)
-    size_t min_inliers = 50;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
+    size_t min_inliers = 20;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
     double inlier_scale = 0.3;                                                         // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
     std::deque<ground_finder_msgs::ScoredNormalStamped> scored_normals_sliding_window; // sliding window of scored normals
     static constexpr size_t MAX_WINDOW_SIZE = 40;                                      // for 20Hz normal vecotr rate -> 2s history
@@ -196,6 +198,8 @@ private:
     geometry_msgs::PoseStampedConstPtr last_lkf_pose;                                  // most recent LKF pose
     size_t last_inlier_count = 0;                                                      // #inliers from last plane detection
     size_t last_subcloud_size = 0;                                                     // #points of last filtered subcloud
+    double last_roll = 0.0;                                                            // most recent roll angle from LKF pose (radians)
+    double last_pitch = 0.0;                                                           // most recent pitch angle from LKF pose (radians)
 
     // ---------------------- Init functions  ----------------------
     /** \brief Initalizes values of n_marker for visualization of normal vector in rviz
@@ -382,6 +386,8 @@ public:
         sub_h = nh.subscribe("/lidar/points_undistorted", 200, &GroundFinder::scan_callback, this);
         // sub = nh.subscribe("/hesai/pandar", 1, &GroundFinder::scan_callback, this);
 
+        sub_lkf = nh.subscribe("/lkf/pose", 1, &GroundFinder::lkf_pose_callback, this);
+
         // Open file stream
         if (write2file)
         {
@@ -391,6 +397,24 @@ public:
             // Wirte header (result = n in map2)
             csv << "nx,ny,nz,planeCount\n";
         }
+
+        // Always write scored normals log
+        // trunc to overwrite existing file
+        std::string scored_normals_path;
+        if (!path.empty() && path.find_last_of('/') != std::string::npos)
+        {
+            scored_normals_path = path.substr(0, path.find_last_of('/')) + "/scored_normals.csv";
+        }
+        else
+        {
+            // Default path when no file is specified
+            const char *home_dir = std::getenv("HOME");
+            std::string default_dir = home_dir ? std::string(home_dir) + "/catkin_ws/src/ground_finder/data/" : "/tmp/";
+            scored_normals_path = default_dir + "scored_normals.csv";
+        }
+        scored_normals_log.open(scored_normals_path, std::ios::out | std::ios::trunc);
+        scored_normals_log << "timestamp,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable\n";
+        ROS_INFO("Scored normals log: %s", scored_normals_path.c_str());
     }
 };
 

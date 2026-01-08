@@ -1,5 +1,6 @@
 #include "ground_finder.h"
 #include <ground_finder_msgs/ScoredNormalStamped.h>
+#include <iomanip>
 
 void GroundFinder::initMarker()
 {
@@ -820,19 +821,20 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         scored_normals_sliding_window.pop_front();
     }
 
-    ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f)",
-                      combined_score, vis_score, inlier_score);
+    ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu",
+                      combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
 
     // ---------------------- Fallback Selection from Sliding Window ----------------------
     geometry_msgs::Vector3Stamped final_n = n_msg;
     double final_score = combined_score;
     bool using_fallback = false;
+    bool fallback_unavailable = false;
 
     // If curr score is below threshold, use fallback from sliding window
     if (combined_score < score_threshold)
     {
-        ROS_WARN_THROTTLE(2.0, "Current score (%.3f) below threshold (%.3f), searching history...",
-                          combined_score, score_threshold);
+        ROS_WARN("Current score (%.3f) below threshold (%.3f), searching history...",
+                 combined_score, score_threshold);
 
         // Find best candidate in sliding window using max_element with custom comparator (lambda function)
         auto fallback = std::max_element(scored_normals_sliding_window.begin(),
@@ -856,17 +858,44 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
             scored_msg.inlier_score = fallback->inlier_score;
             scored_msg.combined_score = fallback->combined_score;
 
-            ROS_WARN_THROTTLE(2.0, "Using best historical normal (score=%.5f, age=%.1f ms)",
-                              final_score,
-                              (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
+            ROS_WARN("Using best historical normal (score=%.5f, age=%.1f ms)",
+                     final_score,
+                     (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
         }
         else
         {
-            ROS_WARN_THROTTLE(2.0, "No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            ROS_WARN("No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            fallback_unavailable = true;
         }
     }
 
     // ---------------------- Timing & Publishing ----------------------
+
+    // Save current scores (before they )might be overwritten by fallback)
+    double curr_vis_score = vis_score;
+    double curr_inlier_score = inlier_score;
+    double curr_combined_score = combined_score;
+
+    double inlier_ratio = (last_subcloud_size > 0) ? static_cast<double>(last_inlier_count) / static_cast<double>(last_subcloud_size) : 0.0;
+    scored_normals_log << std::fixed << std::setprecision(6) << msg->header.stamp.toSec() << ","
+                       << std::defaultfloat
+                       << scored_msg.normal.x << ","
+                       << scored_msg.normal.y << ","
+                       << scored_msg.normal.z << ","
+                       << (last_roll * 180.0 / M_PI) << ","
+                       << (last_pitch * 180.0 / M_PI) << ","
+                       << scored_msg.visibility_score << "," // could be overwritten by fallback msg
+                       << scored_msg.inlier_score << ","     // could be overwritten by fallback msg
+                       << scored_msg.combined_score << ","   // could be overwritten by fallback msg
+                       << curr_vis_score << ","
+                       << curr_inlier_score << ","
+                       << curr_combined_score << ","
+                       << last_inlier_count << ","
+                       << last_subcloud_size << ","
+                       << inlier_ratio << ","
+                       << (using_fallback ? 1 : 0) << ","
+                       << (fallback_unavailable ? 1 : 0) << "\n"; // 1: fallback tried but no good candidate in window
+    scored_normals_log.flush();
 
     /*
     Raw Normal Vector
@@ -1094,18 +1123,110 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     // --------------visibility_score----------------
     // visibility fallback to 1.0 (full vis) if no KF pose available
     double visibility_score = 1.0;
-    if (enable_view_score == false)
+    if (enable_view_score == false || !msg.get())
     {
-        ROS_WARN_THROTTLE(5.0, "No LKF pose received, using default visibility_score=1.0 (full visibility)");
+        ROS_WARN_THROTTLE(2.0, "No LKF pose received, using default visibility_score=1.0 (full visibility)");
     }
     else
     {
+        /*
+        ----
+        Robot Pose in map2 (global) frame used for score
+        ----
+        */
+        // // extract rpy from quaternion
+        // tf2::Quaternion q;
+        // tf2::fromMsg(msg->pose.orientation, q);
+        // double roll = 0.0, pitch = 0.0, yaw = 0.0;
+        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
 
-        // extract rpy from quaternion
-        tf2::Quaternion q;
-        tf2::fromMsg(msg->pose.orientation, q);
-        double roll = 0.0, pitch = 0.0, yaw = 0.0;
-        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+        // last_roll = roll;
+        // last_pitch = pitch;
+        /*
+        ----
+        Robot Pose in local (pandar) frame used for score
+        ----
+        */
+        // Roboter Pose in pandar frame: (unsinnig, weil wir so nur tilt difference von pose in map2 zu lidar frame bekommen aber lidar sich ja mit roboter mitdreht -> ergebnis nahe 0)
+        // // Get transformation from map2 to pandar_frame
+        // geometry_msgs::TransformStamped t_map2_to_pandar;
+        // try
+        // {
+        //     t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0)); // (target_frame, src_frame,...)
+        // }
+        // catch (tf2::TransformException &ex)
+        // {
+        //     ROS_ERROR("Failed to get transform from map2 to pandar_frame: %s", ex.what());
+        //     return std::make_pair(1.0, 0.0);
+        // }
+
+        // geometry_msgs::PoseStamped pose_map2;
+        // pose_map2.header.frame_id = "map2";
+        // pose_map2.pose = msg->pose;
+
+        // // Debug: Extract original angles in map2 frame
+        // tf2::Quaternion q_map2;
+        // tf2::fromMsg(pose_map2.pose.orientation, q_map2);
+        // double roll_map2 = 0.0, pitch_map2 = 0.0, yaw_map2 = 0.0;
+        // tf2::Matrix3x3(q_map2).getRPY(roll_map2, pitch_map2, yaw_map2);
+
+        // // Transform attitude from map2 to pandar_frame
+        // geometry_msgs::PoseStamped pose_pandar;
+        // tf2::doTransform(pose_map2, pose_pandar, t_map2_to_pandar); //(point_in, point_out, transform)
+
+        // // Extract rpy in pandar_frame
+        // tf2::Quaternion q;
+        // tf2::fromMsg(pose_pandar.pose.orientation, q);
+        // double roll = 0.0, pitch = 0.0, yaw = 0.0;
+        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+        // // Debug: Log comparison between map2 and pandar frame angles
+        // // ROS_INFO("Angles - map2: roll=%.1f pitch=%.1f | pandar: roll=%.1f pitch=%.1f",
+        // //          roll_map2 * 180.0 / M_PI, pitch_map2 * 180.0 / M_PI,
+        // //          roll * 180.0 / M_PI, pitch * 180.0 / M_PI);
+
+        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+        // last_roll = roll;
+        // last_pitch = pitch;
+
+        /*
+        ----
+        Lidar Pose in Map2 (Global) Frame  used for score
+        ----
+        */
+        // robot orientation (already in map2 frame)
+        tf2::Quaternion q_robot_map2;
+        tf2::fromMsg(msg->pose.orientation, q_robot_map2);
+
+        // Get transform from map2 to pandar_frame
+        geometry_msgs::TransformStamped t_map2_to_pandar;
+        try
+        {
+            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_ERROR("Failed to get transform from map2 to pandar_frame: %s", ex.what());
+            return std::make_pair(1.0, 0.0);
+        }
+
+        // Get the rotation from map2 to pandar
+        tf2::Quaternion q_map2_to_pandar;
+        tf2::fromMsg(t_map2_to_pandar.transform.rotation, q_map2_to_pandar); // (q_map2_to_pandar will hold rotation from map2 to pandar)
+
+        // pandar orientation in map2 = robot orientation in map2 * map2-to-pandar rot (multiplication for orientation composition)
+        tf2::Quaternion q_lidar_map2 = q_robot_map2 * q_map2_to_pandar;
+
+        // Extract RPY of lidar in map2 frame
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q_lidar_map2).getRPY(roll, pitch, yaw);
+
+        ROS_INFO("Lidar orientation in map2: roll=%.1f pitch=%.1f yaw=%.1f",
+                 roll * 180.0 / M_PI, pitch * 180.0 / M_PI, yaw * 180.0 / M_PI);
+
+        last_roll = roll;
+        last_pitch = pitch;
 
         double roll_optim = std::abs(std::sin(2.0 * roll)); // Min at (0 and roll=+-90 deg), Max at (roll=+-45 deg)
         double roll_score = 0.1 + 0.9 * roll_optim;         // [0.1...1.0] to avoid zero visibility
@@ -1126,8 +1247,8 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     if (inliers_count >= min_inliers && inlier_ratio > 0.0)
         inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
 
-    ROS_INFO_THROTTLE(5.0, "Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f",
-                      visibility_score, inlier_ratio, inlier_normalized);
+    // ROS_INFO_THROTTLE(5.0, "Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f (inliers=%zu, min_inliers=%zu, inlier_scale=%.3f)",
+    //                   visibility_score, inlier_ratio, inlier_normalized, inliers_count, min_inliers, inlier_scale);
     return std::make_pair(visibility_score, inlier_normalized);
 }
 

@@ -621,7 +621,7 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
      */
 
     // Construct msg
-    filtered_pose_msg.header.frame_id = "map";
+    filtered_pose_msg.header.frame_id = "map2"; // was map before
     filtered_pose_msg.header.stamp = stamp_current;
     filtered_pose_msg.header.seq = sequence++;
 

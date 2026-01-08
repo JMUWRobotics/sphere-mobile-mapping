@@ -23,9 +23,9 @@
     <param name="smoothing_cutoff_freq" type="double" value="$(arg smoothing_cutoff_freq)" />
     <param name="use_gaussian_smoothing" type="bool" value="$(arg use_gaussian_smoothing)" />
     <param name="weight_visibility" type="double" value="0.6" />
-    <param name="weight_inlier_ratio" type"double" value="0.4" />
-    <param name="score_threshold" value="0.2" type="double"/>
-<param name="min_score_sliding_window" value="0.3" type="double"/>
+    <param name="weight_inlier_ratio" type="double" value="0.4" />
+    <param name="score_threshold" value="0.2" type="double" />
+    <param name="min_score_sliding_window" value="0.3" type="double "/>
   </node>
 
 </launch>
