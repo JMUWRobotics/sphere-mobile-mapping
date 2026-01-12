@@ -186,6 +186,7 @@ private:
     // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
     bool enable_view_score = false;                                                    // Set to true when first LKF pose is received
+    bool enable_scoring = true;                                                        // Enable/disable scoring and fallback mechanism (ROS param)
     double last_visibility_score = 1.0;                                                // most recent viewability score (1.0 = best, 0.0 = worst)
     size_t min_inliers = 20;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
     double inlier_scale = 0.3;                                                         // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
@@ -333,6 +334,7 @@ public:
         pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
         pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq, smoothing_cutoff_freq);
         pnh.param<double>("lidar_rate", lidar_rate, lidar_rate);
+        pnh.param<bool>("enable_scoring", enable_scoring, enable_scoring);
         pnh.param<double>("weight_visibility", weight_visibility, weight_visibility);
         pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
         pnh.param<double>("score_threshold", score_threshold, score_threshold);
@@ -342,8 +344,12 @@ public:
                  enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
                  use_gaussian_smoothing ? "true" : "false", smoothing_cutoff_freq, lidar_rate);
 
-        ROS_INFO("Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
-                 score_threshold, min_score_sliding_window);
+        ROS_INFO("Scoring and fallback: %s", enable_scoring ? "ENABLED" : "DISABLED");
+        if (enable_scoring)
+        {
+            ROS_INFO("Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
+                     score_threshold, min_score_sliding_window);
+        }
 
         // Initialize Gaussian Kernel Smoothing if enabled
         if (use_gaussian_smoothing == true)

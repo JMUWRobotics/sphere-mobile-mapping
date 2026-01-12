@@ -804,34 +804,50 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     // ---------------------- Plane Score Computation & Sliding Window ----------------------
 
-    // compute curr score
-    auto [vis_score, inlier_score] = compute_plane_scores(last_lkf_pose, last_inlier_count, last_subcloud_size);
-    double combined_score = combine_scores(vis_score, inlier_score);
-
     ground_finder_msgs::ScoredNormalStamped scored_msg;
     scored_msg.header = n_msg.header;
     scored_msg.normal = n_msg.vector;
-    scored_msg.visibility_score = vis_score;
-    scored_msg.inlier_score = inlier_score;
-    scored_msg.combined_score = combined_score;
-    scored_normals_sliding_window.push_back(scored_msg);
 
-    if (scored_normals_sliding_window.size() > MAX_WINDOW_SIZE)
+    bool using_fallback = false;
+    bool fallback_unavailable = false;
+    double vis_score = 1.0;
+    double inlier_score = 1.0;
+    double combined_score = 1.0;
+
+    if (enable_scoring)
     {
-        scored_normals_sliding_window.pop_front();
-    }
+        // compute curr score
+        auto [vis_score_computed, inlier_score_computed] = compute_plane_scores(last_lkf_pose, last_inlier_count, last_subcloud_size);
+        vis_score = vis_score_computed;
+        inlier_score = inlier_score_computed;
+        combined_score = combine_scores(vis_score, inlier_score);
 
-    ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu",
-                      combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
+        scored_msg.visibility_score = vis_score;
+        scored_msg.inlier_score = inlier_score;
+        scored_msg.combined_score = combined_score;
+        scored_normals_sliding_window.push_back(scored_msg);
+
+        if (scored_normals_sliding_window.size() > MAX_WINDOW_SIZE)
+        {
+            scored_normals_sliding_window.pop_front();
+        }
+
+        ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu",
+                          combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
+    }
+    else
+    {
+        // Scoring disabled, use default score of 1.0
+        scored_msg.visibility_score = 1.0;
+        scored_msg.inlier_score = 1.0;
+        scored_msg.combined_score = 1.0;
+    }
 
     // ---------------------- Fallback Selection from Sliding Window ----------------------
     geometry_msgs::Vector3Stamped final_n = n_msg;
     double final_score = combined_score;
-    bool using_fallback = false;
-    bool fallback_unavailable = false;
 
-    // If curr score is below threshold, use fallback from sliding window
-    if (combined_score < score_threshold)
+    if (enable_scoring && combined_score < score_threshold)
     {
         ROS_WARN("Current score (%.3f) below threshold (%.3f), searching history...",
                  combined_score, score_threshold);
@@ -921,15 +937,19 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // Publish scored normal (contains current or fallback scores)
     pub_scored_n.publish(scored_msg);
 
-    if (using_fallback)
+    if (!enable_scoring)
     {
-        ROS_INFO_THROTTLE(1.0, "Published scored normal: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
-                          scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+        ROS_INFO("Published scored normal: SCORING DISABLED (score=1.0)");
+    }
+    else if (using_fallback)
+    {
+        ROS_INFO("Published scored normal: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                 scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
     else
     {
-        ROS_INFO_THROTTLE(1.0, "Published scored normal: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
-                          scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+        ROS_INFO("Published scored normal: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                 scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
 
     // Publish smoothed normal vectors (same timestamp)

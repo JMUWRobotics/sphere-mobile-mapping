@@ -9,6 +9,7 @@
   <arg name="normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
   <arg name="smoothing_cutoff_freq" default="0.2" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
   <arg name="use_gaussian_smoothing" default="true" />
+  <arg name="enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
 
   <!-- C++ Executables /-->
   <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
@@ -26,6 +27,7 @@
     <param name="weight_inlier_ratio" type="double" value="0.4" />
     <param name="score_threshold" value="0.2" type="double" />
     <param name="min_score_sliding_window" value="0.3" type="double "/>
+    <param name="enable_scoring" value="$(arg enable_scoring)" type="bool"/>
   </node>
 
 </launch>
