@@ -24,7 +24,6 @@ def compute_statistics(df):
     stats['fallback_count'] = df['using_fallback'].sum()
     stats['fallback_rate'] = stats['fallback_count'] / stats['total_samples'] * 100
     
-    # Fallback unavailable statistics
     if 'fallback_unavailable' in df.columns:
         stats['fallback_unavailable_count'] = df['fallback_unavailable'].sum()
         stats['fallback_unavailable_rate'] = stats['fallback_unavailable_count'] / stats['total_samples'] * 100
@@ -32,7 +31,6 @@ def compute_statistics(df):
         stats['fallback_unavailable_count'] = 0
         stats['fallback_unavailable_rate'] = 0.0
     
-    # Score statistics
     stats['mean_combined_score'] = df['pub_combined_score'].mean()
     stats['mean_visibility_score'] = df['pub_vis_score'].mean()
     stats['mean_inlier_score'] = df['pub_inlier_score'].mean()
