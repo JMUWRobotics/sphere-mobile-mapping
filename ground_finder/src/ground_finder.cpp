@@ -1149,81 +1149,15 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     }
     else
     {
-        /*
-        ----
-        Robot Pose in map2 (global) frame used for score
-        ----
-        */
-        // // extract rpy from quaternion
-        // tf2::Quaternion q;
-        // tf2::fromMsg(msg->pose.orientation, q);
-        // double roll = 0.0, pitch = 0.0, yaw = 0.0;
-        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+        // ----
+        // Robot Pose in local (pandar) frame used for score
+        // ----
 
-        // last_roll = roll;
-        // last_pitch = pitch;
-        /*
-        ----
-        Robot Pose in local (pandar) frame used for score
-        ----
-        */
-        // Roboter Pose in pandar frame: (unsinnig, weil wir so nur tilt difference von pose in map2 zu lidar frame bekommen aber lidar sich ja mit roboter mitdreht -> ergebnis nahe 0)
-        // // Get transformation from map2 to pandar_frame
-        // geometry_msgs::TransformStamped t_map2_to_pandar;
-        // try
-        // {
-        //     t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0)); // (target_frame, src_frame,...)
-        // }
-        // catch (tf2::TransformException &ex)
-        // {
-        //     ROS_ERROR("Failed to get transform from map2 to pandar_frame: %s", ex.what());
-        //     return std::make_pair(1.0, 0.0);
-        // }
-
-        // geometry_msgs::PoseStamped pose_map2;
-        // pose_map2.header.frame_id = "map2";
-        // pose_map2.pose = msg->pose;
-
-        // // Debug: Extract original angles in map2 frame
-        // tf2::Quaternion q_map2;
-        // tf2::fromMsg(pose_map2.pose.orientation, q_map2);
-        // double roll_map2 = 0.0, pitch_map2 = 0.0, yaw_map2 = 0.0;
-        // tf2::Matrix3x3(q_map2).getRPY(roll_map2, pitch_map2, yaw_map2);
-
-        // // Transform attitude from map2 to pandar_frame
-        // geometry_msgs::PoseStamped pose_pandar;
-        // tf2::doTransform(pose_map2, pose_pandar, t_map2_to_pandar); //(point_in, point_out, transform)
-
-        // // Extract rpy in pandar_frame
-        // tf2::Quaternion q;
-        // tf2::fromMsg(pose_pandar.pose.orientation, q);
-        // double roll = 0.0, pitch = 0.0, yaw = 0.0;
-        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-
-        // // Debug: Log comparison between map2 and pandar frame angles
-        // // ROS_INFO("Angles - map2: roll=%.1f pitch=%.1f | pandar: roll=%.1f pitch=%.1f",
-        // //          roll_map2 * 180.0 / M_PI, pitch_map2 * 180.0 / M_PI,
-        // //          roll * 180.0 / M_PI, pitch * 180.0 / M_PI);
-
-        // tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-
-        // last_roll = roll;
-        // last_pitch = pitch;
-
-        /*
-        ----
-        Lidar Pose in Map2 (Global) Frame  used for score
-        ----
-        */
-        // robot orientation (already in map2 frame)
-        tf2::Quaternion q_robot_map2;
-        tf2::fromMsg(msg->pose.orientation, q_robot_map2);
-
-        // Get transform from map2 to pandar_frame
+        //  Get transformation from map2 to pandar_frame
         geometry_msgs::TransformStamped t_map2_to_pandar;
         try
         {
-            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
+            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0)); // (target_frame, src_frame,...)
         }
         catch (tf2::TransformException &ex)
         {
@@ -1231,19 +1165,11 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
             return std::make_pair(1.0, 0.0);
         }
 
-        // Get the rotation from map2 to pandar
-        tf2::Quaternion q_map2_to_pandar;
-        tf2::fromMsg(t_map2_to_pandar.transform.rotation, q_map2_to_pandar); // (q_map2_to_pandar will hold rotation from map2 to pandar)
-
-        // pandar orientation in map2 = robot orientation in map2 * map2-to-pandar rot (multiplication for orientation composition)
-        tf2::Quaternion q_lidar_map2 = q_robot_map2 * q_map2_to_pandar;
-
-        // Extract RPY of lidar in map2 frame
-        double roll, pitch, yaw;
-        tf2::Matrix3x3(q_lidar_map2).getRPY(roll, pitch, yaw);
-
-        ROS_INFO("Lidar orientation in map2: roll=%.1f pitch=%.1f yaw=%.1f",
-                 roll * 180.0 / M_PI, pitch * 180.0 / M_PI, yaw * 180.0 / M_PI);
+        // Debug: Extract original angles in map2 frame
+        tf2::Quaternion q_temp;
+        tf2::fromMsg(t_map2_to_pandar.transform.rotation, q_temp);
+        double roll = 0.0, pitch = 0.0, yaw = 0.0;
+        tf2::Matrix3x3(q_temp).getRPY(roll, pitch, yaw);
 
         last_roll = roll;
         last_pitch = pitch;
