@@ -1,5 +1,8 @@
 <launch> 
 <!-- COMPLETE ARGUMENT LIST -->
+    
+    <!-- Most important parameter, used by (almost) all subsystems -->
+    <arg name="sphere_radius" value="0.145" /> <!-- in m -->
 
     <!-- Arguments for ImuJasper ENTER YOUR PHIDGETS SERIAL NUMBERS HERE -->
     <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
@@ -41,22 +44,22 @@
         Use this to debug motion force compensation. -->
     <arg name="jasper_debug" value="false" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
-    <arg name="jasper_lowpass_freq" value="2" />
+    <arg name="jasper_lowpass_freq" value="5" />
     <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
     <!-- This is used for motion force compensation. 
-        These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
+    These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
     <!-- defines the vector FROM the IMU TO the center point of the sphere -->
     <!-- Given in IMU local coordinates (right handed). Y Points in camera looking direction, Z points to LIDAR -->
     <!-- Pay attention to the IMU numbers: imu0 refers to the IMU with serial number jasper_serial0 -->
-    <arg name="imu0_x" value="0.0778994" /> <!-- in meters -->  
-    <arg name="imu0_y" value="-0.0051701" />  <!-- in meters -->
-    <arg name="imu0_z" value="0.0285271" /> <!-- in meters -->
-    <arg name="imu1_x" value="0.00344343" />  <!-- in meters -->
-    <arg name="imu1_y" value="0.000536298" />  <!-- in meters -->
-    <arg name="imu1_z" value="0.0289397" /> <!-- in meters -->
-    <arg name="imu2_x" value="-0.0718802" />  <!-- in meters -->
-    <arg name="imu2_y" value="-0.000645136" />  <!-- in meters -->
-    <arg name="imu2_z" value="0.0339811" /> 
+    <arg name="imu0_x" value="0.0771818" /> <!-- in meters -->  
+    <arg name="imu0_y" value="0.000661447" />  <!-- in meters -->
+    <arg name="imu0_z" value="0.0284866" /> <!-- in meters -->
+    <arg name="imu1_x" value="0.00330667" />  <!-- in meters -->
+    <arg name="imu1_y" value="0.000373831" />  <!-- in meters -->
+    <arg name="imu1_z" value="0.0287838" /> <!-- in meters -->
+    <arg name="imu2_x" value="-0.07202" />  <!-- in meters -->
+    <arg name="imu2_y" value="-0.00149266" />  <!-- in meters -->
+    <arg name="imu2_z" value="0.0325564" /> 
 
     <!-- Arguments for Kalman pose filter -->
     <arg name="topic_publish" value="/lkf/pose" />
@@ -65,7 +68,6 @@
     <arg name="frame_id_imu" value="imu_frame" />
     <arg name="frame_id_cam" value="camera_frame" />
     <arg name="cam_rate" value="200" /> <!-- in Hz -->
-    <arg name="sphere_radius" value="0.145" /> <!-- in m -->
     <arg name="debug_topics" value="true" />
     <arg name="large_omega" value="1.2" /> <!-- in rad/s -->
     <arg name="small_omega" value="0.1" /> <!-- in rad/s --> 
@@ -111,6 +113,21 @@
     <arg name="offset_x" value="0.02865" />
     <arg name="offset_y" value="0.11092" />
     <arg name="offset_z" value="0.01189" />
+    
+    <!-- LIO ARGS MORITZ TODO !!  -->
+    <arg name="visualize" default="true"/>
+    <arg name="odom_frame" default="odom"/>
+    <arg name="base_frame" default="base_link"/>
+    <arg name="topic" default=""/>
+
+    <!-- set config parameters -->
+    <arg name="deskew" default="false"/>
+    <arg name="max_range" default="100.0" />
+    <arg name="min_range" default="5.0" />
+    <arg name="voxel_size" default="0.5" />
+
+    <arg name="pose_extractor" default="false"/>
+    <arg name="rviz" default="true"/>
 
 <!-- END ARGUMENT LIST -->
 <!-- CONVERT EVERYTHING TO ROSPARAM -->
@@ -201,6 +218,7 @@
         <param name="fixed_frame"  type="string" value="$(arg fixed_frame)"/>
         <param name="target_frame"  type="string" value="$(arg target_frame)"/>
     </node>
+    
 
     <!-- SETUP TF TREE: Order of transforms: x y z rz ry rx -->
     <!-- intrinsic rotation order: rx first, new ry second, new rz third -->
@@ -219,8 +237,8 @@
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
     <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
 
-    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> -->
-    <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" />
+    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
+    <!-- <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
 
@@ -230,6 +248,7 @@
 
     <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/>
     <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
+
 
     <!-- node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /-->
     <!-- Ground Finder - CARO MA /-->

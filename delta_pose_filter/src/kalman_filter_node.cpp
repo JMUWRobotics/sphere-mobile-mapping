@@ -264,13 +264,6 @@ Eigen::MatrixXf H = Eigen::MatrixXf::Identity(9, 9);
 
 // process noise covariance matrix Q / System prediction noise
 Eigen::MatrixXf Q = Eigen::MatrixXf::Identity(9, 9);
-/*
-1
- 1
-  0.01
-      1
-       ...
-*/
 
 // measurement noise covariance matrix
 Eigen::MatrixXf R_imu(9, 9);
@@ -593,7 +586,7 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
      */
 
     // Construct msg
-    filtered_pose_msg.header.frame_id = "map";
+    filtered_pose_msg.header.frame_id = "map2";
     filtered_pose_msg.header.stamp = stamp_current;
     filtered_pose_msg.header.seq = sequence++;
 
@@ -764,7 +757,7 @@ int main(int argc, char **argv)
     // manually set
     imu_variances[0] = 0.01; 
     imu_variances[1] = 0.01; 
-    imu_variances[2] = 1; 
+    imu_variances[2] = 0.01; 
     imu_variances[3] = 0.01;
     imu_variances[4] = 0.01; 
     imu_variances[5] = 0.08; 

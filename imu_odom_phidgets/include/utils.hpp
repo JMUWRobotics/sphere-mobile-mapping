@@ -298,7 +298,10 @@ class passive_time_sync
     };
 };
 
-
+/** 
+ * Implements a smooth derivative using Derivative of Gaussian (DoG) kernel.
+ * Convolution with the kernel is implemented with a thread safe circular buffer.
+ */
 class SmoothedDerivative3D {
 public:
     SmoothedDerivative3D(size_t window_size, float sigma, float dt)
@@ -306,22 +309,28 @@ public:
           kernel_(compute_derivative_gaussian_kernel(window_size, sigma, dt)),
           buffers_(3, std::vector<float>(window_size, 0.0f)),
           index_(0)
-    {}
+    {
+        // Ensure window_size is odd (2K+1 form)
+        if (window_size_ % 2 == 0) {
+            throw std::invalid_argument("window_size must be odd (2K+1 form)");
+        }
+    }
 
     // Add new sample and get smoothed derivative
     std::vector<float> filter(float gx, float gy, float gz) {
         // Write sample into circular buffer
+        // This needs to happen atomically (increment and return current index is one op.)
         size_t write_index = index_.fetch_add(1, std::memory_order_relaxed) % window_size_;
         buffers_[0][write_index] = gx;
         buffers_[1][write_index] = gy;
         buffers_[2][write_index] = gz;
 
-        // Compute result
+        // Compute result using shifted non-causal kernel
         std::vector<float> result(3, 0.0f);
         for (int axis = 0; axis < 3; ++axis) {
-            for (size_t k = 0; k < window_size_; ++k) {
-                size_t buf_index = (write_index + window_size_ - k) % window_size_;
-                result[axis] += buffers_[axis][buf_index] * kernel_[k];
+            for (size_t i = 0; i < window_size_; ++i) {
+                size_t buf_index = (write_index + window_size_ - i) % window_size_;
+                result[axis] += buffers_[axis][buf_index] * kernel_[i];
             }
         }
         return result;
@@ -331,27 +340,29 @@ private:
     size_t window_size_;
     float dt_;
     std::vector<float> kernel_;
-    std::vector<std::vector<float>> buffers_;  // 3 × circular buffers
+    // 3 × circular buffers
+    std::vector<std::vector<float>> buffers_; 
     std::atomic<size_t> index_;
 
-    // Compute causal derivative-of-Gaussian kernel
+    // Compute DoG kernel (causal)
     std::vector<float> compute_derivative_gaussian_kernel(size_t N, float sigma, float dt) {
+        // N must be odd: N = 2K+1
+        size_t K = (N - 1) / 2;
         std::vector<float> kernel(N);
 
+        const float sigma3 = sigma * sigma * sigma;
+        const float two_sigma2 = 2.0f * sigma * sigma;
+        const float norm_factor = 1.0f / (sigma3 * std::sqrt(2.0f * M_PI));
+
+        // Compute non-causal DoG kernel for k in [-K, K]
         for (size_t i = 0; i < N; ++i) {
-            float t = -static_cast<float>(i) * dt;
-            // derivative of Gaussian 
-            kernel[i] = -(t / (sigma * sigma)) * std::exp(-t * t / (2.0f * sigma * sigma));
+            // k ranges from -K to K
+            int k = static_cast<int>(i) - static_cast<int>(K);
+            float t_k = static_cast<float>(k) * dt;
+            
+            // h[k] = -(t_k / (sigma^3 * sqrt(2*pi))) * exp(-t_k^2 / (2*sigma^2)) * dt
+            kernel[i] = -norm_factor * t_k * std::exp(-t_k * t_k / two_sigma2) * dt;
         }
-
-        // 1. Zero mean 
-        float mean = std::accumulate(kernel.begin(), kernel.end(), 0.0f) / static_cast<float>(N);
-        for (auto &v : kernel) v -= mean;
-
-        // 2. Normalize energy 
-        float energy = std::sqrt(std::inner_product(kernel.begin(), kernel.end(), kernel.begin(), 0.0f));
-        if (energy > 0.0f)
-            for (auto &v : kernel) v /= energy;
 
         return kernel;
     }

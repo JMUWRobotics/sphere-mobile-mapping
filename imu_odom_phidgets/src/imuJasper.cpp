@@ -527,7 +527,8 @@ void calc_position(float gx, float gy, float gz)
     vel_x_world_rot = std::copysign(1.0, vel_x_world_rot) * sqrt(vel_x_world_rot * vel_x_world_rot - vz2);
     vel_y_world_rot = std::copysign(1.0, vel_y_world_rot) * sqrt(vel_y_world_rot * vel_y_world_rot - vz2);
     
-    if (sqrt(vel_x_world_rot*vel_x_world_rot + vel_y_world_rot * vel_y_world_rot) > 0.001) {
+    if (vel_x_world_rot*vel_x_world_rot > 0.001 
+        ||  vel_y_world_rot*vel_y_world_rot > 0.001) {
         px += vel_x_world_rot * dt;
         py += vel_y_world_rot * dt;
         pz = 0;
@@ -579,6 +580,10 @@ void apply_attitude_filter(double stamp_ms, bool reuse_dt) {
 
 int argumentHandler(ros::NodeHandle &nh)
 {
+    nh.param<float>("sphere_radius", r, 0.0);
+    if (r <= 0.0) {
+        ROS_WARN("Sphere radius not set (r = %f)! This leads to issues with position calculation!", r);
+    }
 #ifdef MAHONY
     nh.param<double>("mahony_kp", Kp, 1.0);
     nh.param<double>("mahony_ki", Ki, 0.001);
@@ -619,6 +624,8 @@ int argumentHandler(ros::NodeHandle &nh)
     nh.param<int>("jasper_serial0", SERIAL_0, 0);
     nh.param<int>("jasper_serial1", SERIAL_1, 0);
     nh.param<int>("jasper_serial2", SERIAL_2, 0);
+    nh.param<float>("small_omega", small_omega2, 0.1);
+    small_omega2 *= small_omega2;
     
     /*
         INTRINSIC PARAMETERS
@@ -683,8 +690,9 @@ int argumentHandler(ros::NodeHandle &nh)
     nh.param<float>("jasper_lowpass_freq", freq_cut, 10);
     float sigma = 1.0 / (2 * M_PI * freq_cut);
     float imu_data_dt = 1.0 / imu_data_rate;
-    int win_size = 6 * sigma / imu_data_rate;
+    int win_size = 6 * sigma / imu_data_dt;
     win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
+    ROS_WARN("Window size: %d, Cutoff_freq %f, Sigma %f, dt %f", win_size, freq_cut, sigma, imu_data_dt);
     smooth_deriv_kernel = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
     return 0;
 }
@@ -746,7 +754,7 @@ int CCONV init()
     PhidgetSpatial_zeroAlgorithm(spatial2);
     ROS_WARN("Gyroscope calibration succesfull!");
     
-
+    
     // Assign any event handlers you need before calling open so that no events are missed.
     PhidgetSpatial_setOnSpatialDataHandler(spatial0, onSpatial0_SpatialData, NULL);
     PhidgetSpatial_setOnSpatialDataHandler(spatial1, onSpatial0_SpatialData, NULL);
@@ -760,6 +768,9 @@ int CCONV init()
     vel_x = 0;
     vel_y = 0;
     vel_z = 0;
+    px = 0;
+    py = 0;
+    pz = 0;
     
     // initilaize output message
     seq = 0; seq0 = 0; seq1 = 0; seq2 = 0;
@@ -831,6 +842,7 @@ int main(int argc, char *argv[])
         loop_rate_StartUp.sleep();
     }
     lastTime = ros::Time::now().toSec() * 1000.0;
+
 
     ROS_INFO("Phidigets IMUs are now properly initialized!");
     while (ros::ok() && !g_request_shutdown) {

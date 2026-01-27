@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>lio_sphere</name>
+  <version>0.0.0</version>
+  <description>The lio_sphere package</description>
+
+  <maintainer email="moritz.schauerte@stud-mail.uni-wuerzburg.de">Moritz Schauerte</maintainer>
+  <license>TODO</license>
+
+  <depend>catkin</depend>
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>tf2_ros</depend>
+  <depend>state_estimator_msgs</depend>
+
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>

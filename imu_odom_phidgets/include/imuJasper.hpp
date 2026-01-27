@@ -160,6 +160,8 @@ float gz0;
 float gx_filtered;
 float gy_filtered;
 float gz_filtered;
+// threshold on rot speed for position integration
+float small_omega2;
 // accelerometer
 float ax; 
 float ay; 
