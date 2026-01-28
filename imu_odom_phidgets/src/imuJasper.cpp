@@ -356,9 +356,9 @@ void setValsAndCompensateCentripetal(const int serialNr,
 void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
 {   
     int n = 0;
-    mtx_n0.lock();
-    mtx_n1.lock();
-    mtx_n2.lock();
+    // mtx_n0.lock();
+    // mtx_n1.lock();
+    // mtx_n2.lock();
     // n = n0 + n1 + n2;
     if (use0) n += n0;
     if (use1) n += n1;
@@ -406,6 +406,9 @@ void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
         ax /= n;
         ay /= n;
         az /= n;
+        ax_alt /= n;
+        ay_alt /= n;
+        az_alt /= n;
         a0_alt[0] = 0; a0_alt[1] = 0; a0_alt[2] = 0;
         a1_alt[0] = 0; a1_alt[1] = 0; a1_alt[2] = 0;
         a2_alt[0] = 0; a2_alt[1] = 0; a2_alt[2] = 0;
@@ -414,9 +417,9 @@ void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
         ax1 = 0; ay1 = 0; az1 = 0;
         ax2 = 0; ay2 = 0; az2 = 0;
     }
-    mtx_n0.unlock();
-    mtx_n1.unlock();
-    mtx_n2.unlock();
+    // mtx_n0.unlock();
+    // mtx_n1.unlock();
+    // mtx_n2.unlock();
 
     /* HANDLE GYROSCOPE */
     if (firstRead < 4) {
