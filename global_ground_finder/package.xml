@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>global_ground_finder</name>
+  <version>1.0.0</version>
+  <description>
+    Global map-based ground plane normal vector estimation.
+    Extracts local region from global map at current pose and computes ground normal.
+  </description>
+
+  <maintainer email="user@example.com">Your Name</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Dependencies -->
+  <depend>roscpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
+  <depend>ground_finder_msgs</depend>
+
+  <export>
+  </export>
+</package>

@@ -1,0 +1,91 @@
+<launch>
+  <!-- Launch file for Global Ground Finder -->
+  <!-- Computes ground normal from global map at current pose -->
+
+  <!-- Arguments -->
+  <arg name="quiet" default="false" 
+       doc="Suppress verbose logging"/>
+  
+  <arg name="plane_algorithm" default="ransac" 
+       doc="Plane fitting algorithm: 'pca', 'ransac', 'rht', or 'rht2'"/>
+  
+  <arg name="extraction_radius" default="3.0" 
+       doc="Radius [m] for local map extraction around pose"/>
+  
+  <arg name="extraction_height" default="0.5" 
+       doc="Height limit [m] for vertical filtering around pose"/>
+  
+  <arg name="enable_scoring" default="true" 
+       doc="Enable quality scoring and fallback mechanism"/>
+  
+  <arg name="score_threshold" default="0.2" 
+       doc="Minimum score to accept current normal (else use fallback)"/>
+  
+  <arg name="min_score_window" default="0.3" 
+       doc="Minimum acceptable score from history window"/>
+
+  <arg name="pose_topic" default="/lkf_pose" 
+       doc="Topic for robot pose (geometry_msgs/PoseStamped in map3 frame)"/>
+
+  <!-- Smoothing parameters -->
+  <arg name="enable_normal_smoothing" default="true" 
+       doc="Enable smoothing of normal vectors"/>
+  
+  <arg name="use_gaussian_smoothing" default="false" 
+       doc="Use Gaussian kernel smoothing (true) or EMA (false)"/>
+  
+  <arg name="normal_smoothing_alpha" default="0.1" 
+       doc="EMA smoothing factor [0,1]: higher=more responsive, lower=smoother"/>
+  
+  <arg name="smoothing_cutoff_freq" default="0.2" 
+       doc="Gaussian kernel cutoff frequency (Hz)"/>
+  
+  <arg name="update_rate" default="20.0" 
+       doc="Expected normal update rate (Hz) for Gaussian kernel"/>
+
+  <arg name="file" default="default"
+       doc="CSV log filename. Use 'default' to disable logging."/>
+
+  <!-- Node -->
+  <node name="global_ground_finder_node" 
+        pkg="global_ground_finder" 
+        type="global_ground_finder_node" 
+        output="screen">
+    
+    <!-- Basic parameters -->
+    <param name="quiet" type="bool" value="$(arg quiet)"/>
+    <param name="plane_algorithm" type="string" value="$(arg plane_algorithm)"/>
+    
+    <!-- Extraction parameters -->
+    <param name="extraction_radius" type="double" value="$(arg extraction_radius)"/>
+    <param name="extraction_height" type="double" value="$(arg extraction_height)"/>
+    <param name="min_points_for_plane" type="double" value="10.0"/>
+    
+    <!-- Plane validation -->
+    <param name="wall_threshold" type="double" value="0.707"/>  <!-- cos(45°) -->
+    <param name="max_iterations_plane_detection" type="int" value="3"/>
+    
+    <!-- Scoring parameters -->
+    <param name="enable_scoring" type="bool" value="$(arg enable_scoring)"/>
+    <param name="score_threshold" type="double" value="$(arg score_threshold)"/>
+    <param name="min_score_window" type="double" value="$(arg min_score_window)"/>
+    <param name="weight_visibility" type="double" value="0.6"/>
+    <param name="weight_inlier_ratio" type="double" value="0.4"/>
+    <param name="min_inliers" type="double" value="20.0"/>
+    <param name="inlier_scale" type="double" value="0.3"/>
+
+    <!-- Smoothing parameters -->
+    <param name="enable_normal_smoothing" type="bool" value="$(arg enable_normal_smoothing)"/>
+    <param name="use_gaussian_smoothing" type="bool" value="$(arg use_gaussian_smoothing)"/>
+    <param name="normal_smoothing_alpha" type="double" value="$(arg normal_smoothing_alpha)"/>
+    <param name="smoothing_cutoff_freq" type="double" value="$(arg smoothing_cutoff_freq)"/>
+    <param name="update_rate" type="double" value="$(arg update_rate)"/>
+
+    <!-- File logging -->
+    <param name="file" type="string" value="$(arg file)"/>
+
+    <!-- Topic remapping -->
+    <remap from="/current_pose" to="$(arg pose_topic)"/>
+  </node>
+
+</launch>
