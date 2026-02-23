@@ -15,6 +15,7 @@
 #include <chrono>
 // ROS
 #include <ros/ros.h>
+#include <ros/package.h>
 // Message types used
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/Vector3Stamped.h>
@@ -87,6 +88,26 @@ public:
             }
         }
         return result;
+    }
+
+    // Export kernel to CSV for plotting
+    void exportKernelToCSV(const std::string &filepath) const
+    {
+        std::ofstream file(filepath);
+        if (!file.is_open())
+        {
+            ROS_ERROR("Failed to open kernel export file: %s", filepath.c_str());
+            return;
+        }
+
+        file << "index,time_s,weight\n";
+        for (size_t i = 0; i < window_size_; ++i)
+        {
+            float t = -static_cast<float>(i) * dt_;
+            file << i << "," << t << "," << kernel_[i] << "\n";
+        }
+        file.close();
+        ROS_INFO("Gaussian kernel exported to: %s", filepath.c_str());
     }
 
 private:
@@ -354,13 +375,16 @@ public:
         // Initialize Gaussian Kernel Smoothing if enabled
         if (use_gaussian_smoothing == true)
         {
-            double sigma = 1.0 / (2.0 * M_PI * smoothing_cutoff_freq); // 1/(1/s) = s
-            double dt = 1.0 / lidar_rate;                              // lidar rate = 20 // 1 / (1/s) = s
-            int win_size = 6 * sigma / dt;                             // unitless -- 19 for cutoff_freq of 1 Hz -- 39 FOR 0.5 Hz
+            double sigma = (sqrt(2.0 * log(2))) / (2.0 * M_PI * smoothing_cutoff_freq); // 1.0 / (2.0 * M_PI * smoothing_cutoff_freq); // 1/(1/s) = s // maybe change to (ln(2) / (2 * M_PI * cutoff_freq)) to get -3dB cutoff point?
+            double dt = 1.0 / lidar_rate;                                               // lidar rate = 20 // 1 / (1/s) = s
+            int win_size = 6 * sigma / dt;                                              // unitless -- 19 for cutoff_freq of 1 Hz -- 39 FOR 0.5 Hz
             win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
             gaussian_kernel.reset(new SmoothedGaussian3D(win_size, sigma, dt)); // create kernel
 
             ROS_INFO("created gaussian kernel smoothing with \n window size: %d, sigma: %.4f s, dt: %.4f s, cutoff freq: %.4f Hz, lidar_rate: %.4f Hz", win_size, sigma, dt, smoothing_cutoff_freq, lidar_rate);
+
+            // Export kernel for plotting
+            gaussian_kernel->exportKernelToCSV("/tmp/gaussian_kernel.csv");
         }
 
         // Initalize n_marker

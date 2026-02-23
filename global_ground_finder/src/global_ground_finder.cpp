@@ -49,14 +49,14 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing_, true);
     pnh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha_, 0.1);
     pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing_, false);
-    pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq_, 0.2);
+    pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq_, 2.0);
     pnh.param<double>("update_rate", update_rate_, 20.0);
     have_smoothed_normal_ = false;
 
     if (use_gaussian_smoothing_)
     {
         float dt = 1.0f / static_cast<float>(update_rate_);
-        float sigma = 1.0f / (2.0f * M_PI * static_cast<float>(smoothing_cutoff_freq_));
+        double sigma = (sqrt(2.0 * log(2))) / (2.0 * M_PI * smoothing_cutoff_freq_); // nominator ensures signal gain of -3dB at cutoff freq. -> see ipynb
         size_t win_size = 6.0f * sigma / dt;
         win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
         gaussian_kernel_.reset(new SmoothedGaussian3D(win_size, sigma, dt));
@@ -775,7 +775,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
 
     // Check against down vector [0, 0, -1]
     std::vector<double> down = {0.0, 0.0, -1.0};
-    double dot = dot_product(normal, down);
+    double dot = dot_product(normal, down); // TODO: make sure we are in the correct frame here for "normal"
 
     // Check if it's a wall (perpendicular to down)
     if (std::abs(dot) < wall_threshold_)

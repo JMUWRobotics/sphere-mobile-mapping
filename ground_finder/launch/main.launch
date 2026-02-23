@@ -7,13 +7,14 @@
   <arg name="file"      default="default" />
   <arg name="enable_normal_smoothing" default="true" />
   <arg name="normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
-  <arg name="smoothing_cutoff_freq" default="0.2" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+  <arg name="smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
   <arg name="use_gaussian_smoothing" default="true" />
   <arg name="enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
 
   <!-- C++ Executables /-->
   <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
     <!-- Parameters -->
+    <!-- param name="use_sim_time" value="true" type=""/ -->
     <param name="quiet" value="$(arg quiet)" type="bool"/>
     <param name="filter" value="$(arg filter)" type="string"/>
     <param name="subcloud" value="$(arg subcloud)" type="string"/>

@@ -37,7 +37,7 @@
   <arg name="normal_smoothing_alpha" default="0.1" 
        doc="EMA smoothing factor [0,1]: higher=more responsive, lower=smoother"/>
   
-  <arg name="smoothing_cutoff_freq" default="0.2" 
+  <arg name="smoothing_cutoff_freq" default="2.0" 
        doc="Gaussian kernel cutoff frequency (Hz)"/>
   
   <arg name="update_rate" default="20.0" 
