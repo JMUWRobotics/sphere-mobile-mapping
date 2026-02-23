@@ -937,18 +937,51 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // Publish scored normal (contains current or fallback scores)
     pub_scored_n.publish(scored_msg);
 
+    // Transform and Publish scored normal in local pandar_frame
+
+    ground_finder_msgs::ScoredNormalStamped scored_msg_pandar;
+    scored_msg_pandar.header.stamp = scored_msg.header.stamp;
+    scored_msg_pandar.header.frame_id = "pandar_frame";
+    scored_msg_pandar.visibility_score = scored_msg.visibility_score;
+    scored_msg_pandar.inlier_score = scored_msg.inlier_score;
+    scored_msg_pandar.combined_score = scored_msg.combined_score;
+
+    geometry_msgs::TransformStamped t_map2_to_pandar;
+    try
+    {
+        t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
+        geometry_msgs::Vector3Stamped normal_map2;
+        normal_map2.header = scored_msg.header;
+        normal_map2.vector = scored_msg.normal;
+
+        geometry_msgs::Vector3Stamped normal_pandar;
+        tf2::doTransform(normal_map2, normal_pandar, t_map2_to_pandar);
+        scored_msg_pandar.normal = normal_pandar.vector; // now holds scored normal in pandar frame
+    }
+    catch (tf2::TransformException &ex)
+    {
+        ROS_WARN("Transforming scored normal to pandar_frame failed: %s", ex.what());
+
+        // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
+        scored_msg_pandar.normal.x = n[0];
+        scored_msg_pandar.normal.y = n[1];
+        scored_msg_pandar.normal.z = n[2];
+    }
+
+    pub_scored_n_pandar.publish(scored_msg_pandar);
+
     if (!enable_scoring)
     {
         ROS_INFO("Published scored normal: SCORING DISABLED (score=1.0)");
     }
     else if (using_fallback)
     {
-        ROS_INFO("Published scored normal: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
+        ROS_INFO("Published scored normal [map2]: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
                  scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
     else
     {
-        ROS_INFO("Published scored normal: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
+        ROS_INFO("Published scored normal [map2]: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
                  scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
 
@@ -965,6 +998,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         {
             smoothed_raw_n = gaussian_smoothing(n_msg);
         }
+
         smoothed_raw_n.header.stamp = n_msg.header.stamp;
         smoothed_raw_n.header.frame_id = n_msg.header.frame_id;
         pub_smoothed_n.publish(smoothed_raw_n);
@@ -974,18 +1008,54 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         scored_n_stamped.header = scored_msg.header;
         scored_n_stamped.vector = scored_msg.normal;
 
-        geometry_msgs::Vector3Stamped smoothed_scored_n;
+        // overwrite scored_n_stamped with smoothed values
         if (use_gaussian_smoothing == false)
         {
-            smoothed_scored_n = ema_smoothing(scored_n_stamped);
+            scored_n_stamped = ema_smoothing(scored_n_stamped);
         }
         else
         {
-            smoothed_scored_n = gaussian_smoothing(scored_n_stamped);
+            scored_n_stamped = gaussian_smoothing(scored_n_stamped);
         }
-        smoothed_scored_n.header.stamp = scored_msg.header.stamp;
-        smoothed_scored_n.header.frame_id = scored_msg.header.frame_id;
-        pub_smoothed_scored_n.publish(smoothed_scored_n);
+
+        // Wrap smoothed Vector3Stamped into ScoredNormalStamped Msg for publishing
+        ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg;
+        smoothed_scored_msg.header = scored_n_stamped.header;
+        smoothed_scored_msg.normal = scored_n_stamped.vector;
+        smoothed_scored_msg.visibility_score = scored_msg.visibility_score;
+        smoothed_scored_msg.inlier_score = scored_msg.inlier_score;
+        smoothed_scored_msg.combined_score = scored_msg.combined_score;
+        pub_smoothed_scored_n.publish(smoothed_scored_msg);
+
+        // Transform and publish smoothed & scored normal in local pandar_frame
+        ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg_pandar;
+        smoothed_scored_msg_pandar.header.stamp = smoothed_scored_msg.header.stamp;
+        smoothed_scored_msg_pandar.header.frame_id = "pandar_frame";
+        smoothed_scored_msg_pandar.visibility_score = smoothed_scored_msg.visibility_score;
+        smoothed_scored_msg_pandar.inlier_score = smoothed_scored_msg.inlier_score;
+        smoothed_scored_msg_pandar.combined_score = smoothed_scored_msg.combined_score;
+
+        geometry_msgs::TransformStamped t_map2_to_pandar;
+        try
+        {
+            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
+            geometry_msgs::Vector3Stamped normal_map2;
+            normal_map2.header = smoothed_scored_msg.header;
+            normal_map2.vector = smoothed_scored_msg.normal;
+
+            geometry_msgs::Vector3Stamped normal_pandar;
+            tf2::doTransform(normal_map2, normal_pandar, t_map2_to_pandar);
+            smoothed_scored_msg_pandar.normal = normal_pandar.vector; // now holds smoothed & scored normal in pandar frame
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_WARN("Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
+            // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
+            smoothed_scored_msg_pandar.normal.x = n[0];
+            smoothed_scored_msg_pandar.normal.y = n[1];
+            smoothed_scored_msg_pandar.normal.z = n[2];
+        }
+        pub_smoothed_scored_n_pandar.publish(smoothed_scored_msg_pandar);
     }
 
     // Update normal vector n_marker

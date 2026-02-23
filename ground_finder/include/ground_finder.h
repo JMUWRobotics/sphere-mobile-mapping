@@ -155,12 +155,14 @@ private:
     ros::Subscriber sub_lkf;
     ros::Publisher pub_subcloud; // Publisher of subcloud
     ros::Publisher pub_inliers;
-    // ros::Publisher pub_test2;             // TODO take out!
-    ros::Publisher pub_n;                 // Publisher of normal vector in map2 frame
-    ros::Publisher pub_vis_n;             // Publisher of normal vector marker for rviz
-    ros::Publisher pub_smoothed_n;        // Publisher of smoothed normal vector in map2 frame
-    ros::Publisher pub_scored_n;          // Publisher of scored normal vector in map2 frame
-    ros::Publisher pub_smoothed_scored_n; // Publisher of smoothed scored normal vector in map2 frameSS
+    // ros::Publisher pub_test2;                 // TODO take out!
+    ros::Publisher pub_n;                        // Publisher of normal vector in map2 frame
+    ros::Publisher pub_vis_n;                    // Publisher of normal vector marker for rviz
+    ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map2 frame
+    ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map2 frame
+    ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map2 frame
+    ros::Publisher pub_scored_n_pandar;          // Publisher of scored normal vector in pandar frame
+    ros::Publisher pub_smoothed_scored_n_pandar; // Publisher of smoothed scored normal vector in pandar frame
 
     /* TF2 variables */
     std::shared_ptr<tf2_ros::TransformListener> tf_listener{nullptr}; // Transform listener
@@ -345,7 +347,9 @@ public:
         pub_vis_n = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
         pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_normal_vector", 1);
         pub_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/scored_normal_vector", 1);
-        pub_smoothed_scored_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_scored_normal_vector", 1);
+        pub_smoothed_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/smoothed_scored_normal_vector", 1);
+        pub_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/scored_normal_vector_pandar", 1);
+        pub_smoothed_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/smoothed_scored_normal_vector_pandar", 1);
 
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
