@@ -1,4 +1,5 @@
 #pragma once
+#define PCL_NO_PRECOMPILE
 #include <ros/ros.h>
 
 //ROS headers
@@ -12,16 +13,19 @@
 #include <tf2_ros/buffer.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <pcl_ros/point_cloud.h>
+#include <std_msgs/Float64MultiArray.h>
 
 //other headers
 #include <pcl/point_types.h>
 #include <pcl/filters/approximate_voxel_grid.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/common/transforms.h>
 #include <sophus/se3.hpp>
 //#include <sophus/so3.hpp>
 //#include <Eigen/Core>
 #include <boost/circular_buffer.hpp>
 #include <condition_variable>
+#include <mutex>
 #include "VoxelHashMap.hpp"
 #include "Threshold.hpp"
 #include <ikd_Tree.h>
@@ -32,23 +36,86 @@
 
 
 #include <state_estimator_msgs/Estimator.h>
+#include <evaluation_msgs/Runtime.h>
+#include <evaluation_msgs/Error.h>
+#include <evaluation_msgs/Treesize.h>
 
 //global configuration
-struct LIOConfig {
+    enum InitialMethod{
+        KALMAN=0, IMU=1
+    };
+    enum MapInitMethod{
+        OFF=0, COMBINE=1, SLAM=2
+    };
+    struct LIOConfig {
+    /*--------------
+        coordinate frames
+            ------------*/
+    std::string base_frame{"odom"};
+    std::string odom_frame{"map3"};
+    std::string kalman_odom_frame{"map2"};
+    std::string imu_odom_frame{"map"};
+    std::string imu_frame{"imu_frame"};
+    std::string lidar_frame{"pandar_frame"};
+    
+    /*--------------
+      preprocessing
+      ------------*/
+    // deskewing
+    bool deskewing; //true: on, false: off
+    // range filter
+    double min_range; //lower limit for accepted point distances in m
+    double max_range; //upper limit for accepted point distances in m
+    //subsampling
+    double vox_l_map; //voxel size for point cloud added to map in m
+    double vox_l_gicp; //voxel size for point cloud utilized in GICP in m
+    /*--------------
+      Initial Guess Determination
+                    ------------*/
+    InitialMethod initial_method;
+    /*--------------
+    GICP Scan Matching
+         ------------*/
+    bool robust_kernel; //true: active, false: inactive
+    int target_NN_k; // number of points found for each point in source to construct the target set
+    int gicp_max_it; //maximum allowed number of iterations for the GICP loop
+    double gicp_th_fitness; //convergence criterium for the fitness value
+    double gicp_th_rmse; //convergence criterium for the RMSE value
+    double gicp_max_corr_dist; //maximum correspondence distance for GICP scan matching in m (only used when adaptive thresholding inactive)
+    double gicp_kernel_value;
+    /*--------------
+    Adaptive Thresholding
+            ------------*/
+    bool adaptive_th; //true: active, false: inactive
+    double initial_th; //sigma_0 (the initial threshold) which is assumed as long as no other corrections were computed
+    double min_motion_th; //delta_min (the minimum motion) that have to be measured so that a computed correction is considered in the adaptive threshold determination
     // map params
-    double voxel_size = 0.5;
-    double overlap_map_voxel_size = 3;
-    double max_range = 30.0;
-    double min_range = 0.2;
-    int max_points_per_voxel = 1;
-    int overlap_map_max_points_per_voxel = 1;
+    double voxel_size;
+    double overlap_map_voxel_size;
+    int max_points_per_voxel;
+    int overlap_map_max_points_per_voxel;
+    /*--------------
+    Global Map Management
+            ------------*/
+    MapInitMethod map_init_method; //choose map init method (no method, take and combine raw scans, apply GraphSLAM)
+    double map_init_angle; //angle in degree the sphere has to be rotated so that the map initialization is performed
+    double map_init_vox_l; //voxel size for point cloud utilized in initialization
+    int SLAM_max_it; //maximum number of iterations allowed to be executed by GraphSLAM
+    double SLAM_epsilon; //convergence threshold for GraphSLAM
+    double SLAM_max_dist_2; //maximum allowed point distance in GraphSLAM
+    int SLAM_min_corr; //minimum number of correspondences that need to be found so that GraphSLAM assumes two scans as overlapping
+    float ikd_alpha_del; //delete criterium for the dynamic re-balancing of the ikd-Tree
+    float ikd_alpha_bal; //balance criterium for the dynamic re-balancing of the ikd-Tree
+    float ikd_downsample_l; //l_box (cuboid box length) of downsample boxes for the automatized point reduction
+    int ikd_downsample_n; //n_box^max (maximum point number) of the downsample boxes
+    bool sliding_map; //true: active, false: inactive
+    double sliding_map_L; //L (length of the cuboid) of the sliding map window
+    float sliding_map_gamma; //gamma (relaxation) of the sliding map window
+    bool publish_clouds; //true: active, false: inactive
+    bool publish_traj; //true: active, false: inactive
+    bool publish_poses; //true: active, false: inactive
+    bool print_runtime; //true: active, false: inactive
 
-    // th parms
-    double min_motion_th = 0.1;
-    double initial_threshold = 2.0;
-
-    // Motion compensation
-    bool deskew = false;
 };
 
 //custom PointType
@@ -105,8 +172,20 @@ typedef KDTreeVectorOfVectorsAdaptor<std::vector<Eigen::Vector3d>, double> kd_tr
 class LIONode{
     public:
     //constructor
-    LIONode(const ros::NodeHandle &nh);
+    LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh);
     private:
+    //runtime analysis
+    std::chrono::high_resolution_clock::time_point runtime_t0;
+    std::chrono::high_resolution_clock::time_point runtime_t1;
+    std::chrono::high_resolution_clock::time_point runtime_pp_t0;
+    std::chrono::high_resolution_clock::time_point runtime_pp_t1;
+    std::chrono::high_resolution_clock::time_point runtime_ig_t0;
+    std::chrono::high_resolution_clock::time_point runtime_ig_t1;
+    std::chrono::high_resolution_clock::time_point runtime_gicp_t0;
+    std::chrono::high_resolution_clock::time_point runtime_gicp_t1;
+    std::chrono::high_resolution_clock::time_point runtime_map_t0;
+    std::chrono::high_resolution_clock::time_point runtime_map_t1;
+
     //configuration
     LIOConfig config_;
     //subscriber
@@ -115,13 +194,25 @@ class LIONode{
     ros::Subscriber pose_sub_;
     //publisher
     ros::Publisher odom_pub_;
-    ros::Publisher traj_pub_;
+    ros::Publisher traj_all_pub_;
+    ros::Publisher traj_all2_pub_;
+    ros::Publisher traj_reg_pub_;
+    ros::Publisher pose_all_pub_;
+    ros::Publisher pose_all2_pub_;
+    ros::Publisher pose_reg_pub_;
+    ros::Publisher init_pose_pub_;
+
     ros::Publisher pc_pub_;
+    ros::Publisher pc_reg_pub_;
     ros::Publisher pc_debug_pub_;
     ros::Publisher map_pub_;
     // GICP debug publishers
     ros::Publisher source_pc_pub_;
     ros::Publisher target_pc_pub_;
+
+    ros::Publisher runtime_pub_;
+    ros::Publisher error_pub_;
+    ros::Publisher treesize_pub_;
     //tf stuff
     tf2_ros::Buffer tf2_buffer_;
     tf2_ros::TransformListener tf2_listener_;
@@ -131,26 +222,23 @@ class LIONode{
     Sophus::SE3d tf_lidar2base_;
     //node handle
     ros::NodeHandle nh_;
+    ros::NodeHandle pnh_;
     //callback functions
     void processPoints(const sensor_msgs::PointCloud2ConstPtr &msg);
     void processIMU(const state_estimator_msgs::EstimatorConstPtr &msg);
     void processPose(const geometry_msgs::PoseStampedConstPtr &msg);
     //publisher/tf broadcaster calls
-    void publishPointClouds(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc, const ros::Time &stamp, Sophus::SE3d &pose);
+    void publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc, const ros::Time &stamp, Sophus::SE3d &pose);
     void publishOdometry(const ros::Time &stamp);
+    void publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::SE3d &registered_pose, bool reg_suc, const ros::Time &stamp);
     //attributes
-    std::string base_frame_{"odom"};
-    std::string odom_frame_{"map3"};
-    std::string prev_odom_frame_{"map2"};
-    std::string imu_frame_{"imu_frame"};
-    std::string lidar_frame_{"pandar_frame"};
     bool publish_clouds_;
 
     // _____________________
     
     // process LiDAR points
     // functions:
-    bool distort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr &pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_out, Sophus::SE3d& initial_guess);
+    bool undistort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr &pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_out, Sophus::SE3d& initial_guess);
     bool registerPoints(const pcl::PointCloud<PointType>::Ptr &pc_in, const Sophus::SE3d &initial_guess, Sophus::SE3d &registered_pose, double max_correspondence_distance, int max_num_iterations, double kernel);
     // attributes:
     Sophus::SE3d initial_guess;
@@ -183,12 +271,18 @@ class LIONode{
     int no_match_counter_ = 0;
     double rel_cov_th_=0.9;
     double max_distance_ = 3.0;
+    std::mutex mtx_kdtree_;
+    std::mutex mtx_pose_;
+    std::vector<BoxPointType> cub_needrm_;
+    Eigen::Vector3d pos_lid_ = Eigen::Vector3d::Zero();
+    BoxPointType local_map_points_;
+    bool localmap_initialized_ = false;
     //maps and poses
     KD_TREE<PointType>::Ptr ikdtree_ptr_;
     VoxelHashMap overlap_map_=VoxelHashMap(config_.overlap_map_voxel_size, config_.max_range, config_.overlap_map_max_points_per_voxel);
     std::vector<Sophus::SE3d> poses_;
     //adaptive threshold
-    AdaptiveThreshold adaptive_threshold_ = AdaptiveThreshold(config_.initial_threshold, config_.min_motion_th, config_.max_range);
+    AdaptiveThreshold adaptive_threshold_ = AdaptiveThreshold(config_.initial_th, config_.min_motion_th, config_.max_range);
     
     
     //GICP
@@ -203,9 +297,10 @@ class LIONode{
     bool registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in,
                             const Sophus::SE3d &initial_guess,
                             Sophus::SE3d &registered_pose,
-                            bool &max_it_reached, double max_correspondence_distance,
+                            double kernel, double max_correspondence_distance,
                             int max_num_iterations,
-                            double sigma);
+                            double sigma,
+                            double &matching_error);
     // Build linear system for GICP
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> BuildLinearSystemGICP(
         const std::vector<Eigen::Vector3d> &source,
@@ -266,7 +361,10 @@ class LIONode{
     boost::circular_buffer<ImuMeas> imu_buffer_;
     std::mutex mtx_imu_;
     std::condition_variable cv_imu_stamp_;
-
+    //store poses and paths
+    nav_msgs::Path all_path_msg_; //all poses (initial if not registered)
+    nav_msgs::Path all_path2_msg_; //all poses (up to now if not registered)
+    nav_msgs::Path reg_path_msg_; //only successful registration
     //DEBUGGING
     double imu_x_ = 0;
     double imu_y_ = 0;
@@ -276,13 +374,15 @@ class LIONode{
     //helpers
     Sophus::SE3d LookupTransform(const std::string &target_frame, const std::string &source_frame, const ros::Time &time = ros::Time(0)) const;
     void voxelize(const pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointCloud<PointType>::Ptr& pc_out, float voxel_size);
-    void dist_filter(pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointCloud<PointType>::Ptr& pc_out, double max_range, double min_range);
+    void voxelize_XYZITR(const pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out, float voxel_size);
+    void dist_filter(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out, double max_range, double min_range);
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem(const std::vector<Eigen::Vector3d> &source, const std::vector<Eigen::Vector3d> &target, double kernel);
     
     void move_map(int &kdtree_delete_counter, const Sophus::SE3d &current_pose);
     std::tuple<Sophus::SE3d, Sophus::SE3d>  getInitialGuess(const ros::Time &timestamp);
     double GetAdaptiveThreshold();
     bool HasMoved();
+    bool no_match = false;
     
     //conversions
     inline Sophus::SE3d transformToSophus(const geometry_msgs::TransformStamped &transform) const{
@@ -317,6 +417,20 @@ class LIONode{
         t.rotation.y = q.y();
         t.rotation.z = q.z();
         t.rotation.w = q.w();
+
+        return t;
+    }
+    inline geometry_msgs::Pose sophusToPose(const Sophus::SE3d &T) {
+        geometry_msgs::Pose t;
+        t.position.x = T.translation().x();
+        t.position.y = T.translation().y();
+        t.position.z = T.translation().z();
+
+        Eigen::Quaterniond q(T.so3().unit_quaternion());
+        t.orientation.x = q.x();
+        t.orientation.y = q.y();
+        t.orientation.z = q.z();
+        t.orientation.w = q.w();
 
         return t;
     }

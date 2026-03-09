@@ -75,7 +75,7 @@ bool LIONode::registerPointsNanoGICP(const pcl::PointCloud<PointType>::Ptr &pc_i
         sensor_msgs::PointCloud2 source_msg;
         pcl::toROSMsg(*source_pc, source_msg);
         source_msg.header.stamp = ros::Time::now();
-        source_msg.header.frame_id = odom_frame_; // already transformed by initial_guess
+        source_msg.header.frame_id = config_.odom_frame; // already transformed by initial_guess
         source_pc_pub_.publish(source_msg);
     }
     if (!target_pc->points.empty()) {
@@ -88,7 +88,7 @@ bool LIONode::registerPointsNanoGICP(const pcl::PointCloud<PointType>::Ptr &pc_i
         sensor_msgs::PointCloud2 target_msg;
         pcl::toROSMsg(*target_pc, target_msg);
         target_msg.header.stamp = ros::Time::now();
-        target_msg.header.frame_id = odom_frame_; // map frame
+        target_msg.header.frame_id = config_.odom_frame; // map frame
         target_pc_pub_.publish(target_msg);
     }
     nano_gicp::NanoGICP<PointType, PointType> m_nano_gicp;

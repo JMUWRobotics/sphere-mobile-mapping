@@ -46,11 +46,11 @@ double AdaptiveThreshold::ComputeThreshold() {
     }
     return std::sqrt(model_error_sse2_ / num_samples_);
 }
-double AdaptiveThreshold::ComputeThresholdNoMatch(int &n) {
+double AdaptiveThreshold::ComputeThresholdNoMatch() {
     double model_error = ComputeModelError(model_deviation_, max_range_);
     if (num_samples_ < 1) {
         return initial_threshold_;
     }
     double threshold = std::sqrt(model_error_sse2_ / num_samples_);
-    return threshold*n;
+    return threshold;
 }

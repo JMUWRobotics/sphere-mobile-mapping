@@ -1,5 +1,5 @@
 #include "lio_node.hpp"
-bool LIONode::distort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_out, Sophus::SE3d& initial_pose){
+bool LIONode::undistort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_out, Sophus::SE3d& initial_pose){
     
     //get corresponding IMU measurements
     double end_time = pc_in->points[pc_in->points.size()-1].timestamp;
@@ -127,6 +127,7 @@ bool LIONode::distort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl
         //alpha = (imu_1.ang_vel-imu_0.ang_vel)/dt;
         //tf::lerp() for interpolation
     
+        //TODO: first measurement
         while (imu_1.stamp > lidar_it->timestamp && lidar_it != pc_in->points.end()){
             dt_i = lidar_it->timestamp - (lidar_it-1)->timestamp;
             dt = (lidar_it-1)->timestamp+dt_i/2-imu_0.stamp;

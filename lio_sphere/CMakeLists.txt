@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(lio_sphere)
 set(CMAKE_BUILD_TYPE "Release")
-
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FindOpenMP)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -15,6 +16,7 @@ nav_msgs
 pcl_ros
 tf2_ros
 state_estimator_msgs
+evaluation_msgs
 )
 
 find_package(Eigen3 REQUIRED)

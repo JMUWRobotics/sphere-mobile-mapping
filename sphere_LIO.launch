@@ -1,0 +1,351 @@
+<launch> 
+<!-- COMPLETE ARGUMENT LIST -->
+    
+    <!-- Most important parameter, used by (almost) all subsystems -->
+    <arg name="sphere_radius" value="0.145" /> <!-- in m -->
+
+    <!-- Arguments for ImuJasper ENTER YOUR PHIDGETS SERIAL NUMBERS HERE -->
+    <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
+    <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
+    <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <!-- Intrinsic calibration (axes misalignment, scale, and bias) 
+        you can calibrate this with https://github.com/fallow24/ros_imu_calib-->
+    <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
+    <arg name="jasper_acc_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc1.yaml" />
+    <arg name="jasper_acc_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc2.yaml" />
+    <arg name="jasper_gyr_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
+    <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
+    <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
+    <!-- Filter paramters for mahony filter -->
+    <arg name="mahony_kp" value="1" />
+    <arg name="mahony_ki" value="0.001" />
+    <!-- Filter paramters, see jaspers paper -->
+    <arg name="jasper_gain" value="0.2" />
+    <arg name="jasper_alpha" value="0.02" />
+    <arg name="jasper_autogain" value="0.1" /> 
+    <arg name="jasper_pub_rate" value="200" />
+    <arg name="jasper_imu_rate" value="200" />
+    <arg name="jasper_forceflat" value="true" />
+    <!-- Kalman filter attitude estimation parameters -->
+    <arg name="sigma_a" value="0.00001" />
+    <arg name="sigma_g" value="0.1" />
+    <arg name="P_init" value="10.0" />
+    <!-- Unscented Kalman filter attitude estimation paramters -->
+    <arg name="ukf_alpha" value="0.2" />
+    <arg name="ukf_beta" value="2.0" />
+    <arg name="ukf_kappa" value="0.001" />
+    <!-- Use running average of gyroscope measurements, introduces a bit of lag -->
+    <arg name="jasper_slow" value="false" />
+    <!-- If debug is set to true the /imu/X/raw topics will contain calibrated msgs,
+        whereas /imu/X/calib will contain compensated msgs. Compensated msgs have the
+        tangential and centripetal forces subtracted from the accelerometer.
+        If this is set to false, the /imu/X/raw topics will contain uncalibrated msgs,
+        wheras /imu/X/calib will contain calibrated (but uncompensated) msgs. 
+        Use this to debug motion force compensation. -->
+    <arg name="jasper_debug" value="false" />
+    <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
+    <arg name="jasper_lowpass_freq" value="5" />
+    <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
+    <!-- This is used for motion force compensation. 
+    These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
+    <!-- defines the vector FROM the IMU TO the center point of the sphere -->
+    <!-- Given in IMU local coordinates (right handed). Y Points in camera looking direction, Z points to LIDAR -->
+    <!-- Pay attention to the IMU numbers: imu0 refers to the IMU with serial number jasper_serial0 -->
+    <arg name="imu0_x" value="0.0771818" /> <!-- in meters -->  
+    <arg name="imu0_y" value="0.000661447" />  <!-- in meters -->
+    <arg name="imu0_z" value="0.0284866" /> <!-- in meters -->
+    <arg name="imu1_x" value="0.00330667" />  <!-- in meters -->
+    <arg name="imu1_y" value="0.000373831" />  <!-- in meters -->
+    <arg name="imu1_z" value="0.0287838" /> <!-- in meters -->
+    <arg name="imu2_x" value="-0.07202" />  <!-- in meters -->
+    <arg name="imu2_y" value="-0.00149266" />  <!-- in meters -->
+    <arg name="imu2_z" value="0.0325564" /> 
+
+    <!-- Arguments for Kalman pose filter -->
+    <arg name="topic_publish" value="/lkf/pose" />
+    <arg name="topic_pose_imu" value="/posePub_merged" />
+    <arg name="topic_pose_cam" value="/camera/sphereCenterPose" />
+    <arg name="frame_id_imu" value="imu_frame" />
+    <arg name="frame_id_cam" value="camera_frame" />
+    <arg name="cam_rate" value="200" /> <!-- in Hz -->
+    <arg name="debug_topics" value="true" />
+    <arg name="large_omega" value="1.2" /> <!-- in rad/s -->
+    <arg name="small_omega" value="0.1" /> <!-- in rad/s --> 
+
+    <!-- Arguments for the vizualiser node: pose to lidar -->
+    <arg name="topic_listen" value="/posePub_merged" />
+    <arg name="global_frame" value="map" />
+    <arg name="center_frame" value="odom" />
+    <arg name="lidar_frame" value="pandar_frame" />
+
+    <!-- Arguments for the LiDAR -->
+    <arg name="pcap_file"  default=""/>
+    <arg name="server_ip" default="192.168.1.201"/>
+    <arg name="lidar_recv_port"  default="2368"/>
+    <arg name="gps_port"  default="10110"/>
+    <arg name="start_angle"  default="0"/>
+    <!--“lidar_type” represents the model of the lidar-->
+    <arg name="lidar_type" default="PandarXT-32"/>
+    <!--"frame_id" represents the id of the point cloud data published to ROS-->
+    <arg name="frame_id" default="pandar_frame"/>
+    <arg name="pcldata_type" default="1"/>
+    <arg name="publish_type" default="points"/>
+    <arg name="timestamp_type" default="realtime"/>
+    <arg name="data_type" default=""/>
+    <arg name="namespace" default="hesai"/>
+    <arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/>
+    <arg name="multicast_ip"  default=""/>
+    <arg name="coordinate_correction_flag"  default="false"/>
+    <arg name="manager" default="pandar_nodelet_manager" />
+    <arg name="fixed_frame"  default=""/>
+    <arg name="target_frame"  default=""/>
+
+    <!-- LiDAR point cloud motion distortion compensation node -->
+    <arg name="points_in" default="/hesai/pandar"/>
+    <arg name="imu_in" default="/posePub_merged" />
+    <arg name="points_out" default="/lidar/points_undistorted" />
+    <!-- Filter away anything closer to <arg> in cm. Set this to -1 to disable -->  
+    <arg name="radius_filter" default="50" />   
+
+    <!-- Arguments for the T265 camera -->
+    <!-- FROM sphere center TO t265 where Z is down, Y is front, X is left -->
+    <arg name="enable_fisheye_stream" value="false" />
+    <arg name="offset_x" value="0.02865" />
+    <arg name="offset_y" value="0.11092" />
+    <arg name="offset_z" value="0.01189" />
+    
+    <!-- LIO ARGS  -->
+
+    <!-- <arg name="points_in" value="/hesai/pandar"/> -->
+    <!-- <arg name="imu_in" value="/posePub_merged"/> -->
+    <!-- <arg name="use_sim_time" value="true"/> -->
+
+      <arg name="deskewing" value="true"/>                    <!-- true: on, false: off -->
+      <arg name="min_range" value="0.5"/>                     <!-- lower limit for accepted point distances in m -->
+      <arg name="max_range" value="100.0"/>                    <!-- upper limit for accepted point distances in m -->
+      <arg name="vox_l_map" value="0.2"/>                    <!-- voxel size for point cloud added to map in m -->
+      <arg name="vox_l_gicp" value="0.5"/>                   <!-- voxel size for point cloud utilized in GICP in m -->
+      
+      <arg name="initial_method" value="IMU"/>             <!-- choose initial pose source: KALMAN or IMU -->
+      
+      <arg name="robust_kernel" value="true"/>                <!-- true: active, false: inactive -->
+      <arg name="target_NN_k" value="3"/>                     <!-- number of points found per source point to construct the target set -->
+      <arg name="gicp_max_it" value="15"/>                    <!-- maximum allowed number of iterations for the GICP loop -->
+      <arg name="gicp_th_fitness" value="1e-6"/>              <!-- convergence criterion for the fitness value -->
+      <arg name="gicp_th_rmse" value="1e-6"/>                 <!-- convergence criterion for the RMSE value -->
+      <arg name="gicp_max_corr_dist" value="0.15"/>            <!-- maximum correspondence distance for GICP (m) when adaptive thresholding inactive -->
+      <arg name="gicp_kernel_value" value="0.3"/>            <!-- kernel value c -->
+      <!-- deactivated -->
+      <arg name="adaptive_th" value="true"/>                  <!-- true: active, false: inactive -->
+      <arg name="initial_th" value="2.0"/>                    <!-- sigma_0: initial threshold used before any corrections -->
+      <arg name="min_motion_th" value="0.1"/>                 <!-- delta_min: minimum motion to consider a correction in adaptive threshold -->
+     
+      <arg name="map_init_method" value="OFF"/>              <!-- choose map init method (OFF, COMBINE, SLAM) -->
+      <arg name="map_init_angle" value="180.0"/>              <!-- angle in degrees the sphere must rotate to trigger map initialization -->
+      <arg name="map_init_vox_l" value="0.5"/>                <!-- voxel size for point cloud utilized in initialization -->
+      <arg name="SLAM_max_it" value="10"/>                    <!-- maximum iterations allowed for GraphSLAM -->
+      <arg name="SLAM_epsilon" value="0.01"/>                 <!-- convergence threshold for GraphSLAM -->
+      <arg name="SLAM_max_dist_2" value="0.5"/>               <!-- maximum allowed point distance in GraphSLAM -->
+      <arg name="SLAM_min_corr" value="70"/>                 <!-- minimum correspondences for scans to be considered overlapping in GraphSLAM -->
+      <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
+      <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
+      <arg name="ikd_downsample_l" value="0.5"/>              <!-- l_box: cuboid box length for automated point reduction -->
+      <arg name="ikd_downsample_n" value="1"/>                <!-- n_box^max: maximum point number per downsample box -->
+      <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
+      <arg name="sliding_map_L" value="300"/>               <!-- L: length of the cuboid for the sliding map window -->
+      <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
+      
+      <arg name="publish_clouds" value="true"/>               <!-- true: active, false: inactive -->
+      <arg name="publish_traj" value="false"/>                 <!-- true: active, false: inactive -->
+      <arg name="publish_poses" value="true"/>                <!-- true: active, false: inactive -->
+      <arg name="print_runtime" value="false"/>                <!-- true: active, false: inactive -->              <!-- true: active, false: inactive -->
+
+<!-- END ARGUMENT LIST -->
+<!-- CONVERT EVERYTHING TO ROSPARAM -->
+
+    <param name="topic_publish" type="string" value="$(arg topic_publish)" />
+    <param name="topic_pose_imu" type="string" value="$(arg topic_pose_imu)" />
+    <param name="topic_pose_cam" type="string" value="$(arg topic_pose_cam)" />
+    <param name="frame_id_imu" type="string" value="$(arg frame_id_imu)" />
+    <param name="frame_id_cam" type="string" value="$(arg frame_id_cam)" />
+    <param name="imu_rate" type="int" value="$(arg jasper_pub_rate)" />
+    <param name="cam_rate" type="int" value="$(arg cam_rate)" />
+    <param name="sphere_radius" type="double" value="$(arg sphere_radius)" />
+    <param name="large_omega" type="double" value="$(arg large_omega)" />
+    <param name="small_omega" type="double" value="$(arg small_omega)" /> 
+    <param name="debug_topics" type="bool" value="$(arg debug_topics)"/> 
+    <param name="topic_listen" type="string" value="$(arg topic_listen)" />
+    <param name="global_frame" type="string" value="$(arg global_frame)" />
+    <param name="center_frame" type="string" value="$(arg center_frame)" />
+    <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
+    <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
+    <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
+    <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
+    <param name="jasper_acc_calib2" type="string" value="$(arg jasper_acc_calib2)" />
+    <param name="jasper_gyr_calib0" type="string" value="$(arg jasper_gyr_calib0)" />
+    <param name="jasper_gyr_calib1" type="string" value="$(arg jasper_gyr_calib1)" />
+    <param name="jasper_gyr_calib2" type="string" value="$(arg jasper_gyr_calib2)" />
+    <param name="mahony_kp" type="double" value="$(arg mahony_kp)" />
+    <param name="mahony_ki" type="double" value="$(arg mahony_ki)" />
+    <param name="jasper_gain" type="double" value="$(arg jasper_gain)" />
+    <param name="jasper_alpha" type="double" value="$(arg jasper_alpha)" />
+    <param name="jasper_autogain" type="double" value="$(arg jasper_autogain)" />
+    <param name="jasper_pub_rate" type="int" value="$(arg jasper_pub_rate)" />
+    <param name="jasper_imu_rate" type="int" value="$(arg jasper_imu_rate)" />
+    <param name="jasper_forceflat" type="bool" value="$(arg jasper_forceflat)" />
+    <param name="sigma_g" type="double" value="$(arg sigma_g)" />
+    <param name="sigma_a" type="double" value="$(arg sigma_a)" />
+    <param name="P_init" type="double" value="$(arg P_init)" />
+    <param name="ukf_alpha" type="double" value="$(arg ukf_alpha)" />
+    <param name="ukf_beta" type="double" value="$(arg ukf_beta)" />
+    <param name="ukf_kappa" type="double" value="$(arg ukf_kappa)" />
+    <param name="jasper_slow" type="bool" value="$(arg jasper_slow)" />
+    <param name="jasper_debug" type="bool" value="$(arg jasper_debug)" />
+    <param name="jasper_lowpass_freq" type="double" value="$(arg jasper_lowpass_freq)" />
+    <param name="imu0_x" type="double" value="$(arg imu0_x)" />
+    <param name="imu0_y" type="double" value="$(arg imu0_y)" />
+    <param name="imu0_z" type="double" value="$(arg imu0_z)" />
+    <param name="imu1_x" type="double" value="$(arg imu1_x)" />
+    <param name="imu1_y" type="double" value="$(arg imu1_y)" />
+    <param name="imu1_z" type="double" value="$(arg imu1_z)" />
+    <param name="imu2_x" type="double" value="$(arg imu2_x)" />
+    <param name="imu2_y" type="double" value="$(arg imu2_y)" />
+    <param name="imu2_z" type="double" value="$(arg imu2_z)" />
+
+    <!-- Camera to center extrinsics -->
+    <param name="offset_x" type="double" value="$(arg offset_x)" />
+    <param name="offset_y" type="double" value="$(arg offset_y)" />
+    <param name="offset_z" type="double" value="$(arg offset_z)" />
+    <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
+
+<!-- LAUNCH ALL THE NODES -->
+
+    <node pkg="lio_sphere" type="lio_node" name="lio_node" output="screen" if="true">
+
+        <remap from="/points_in" to="$(arg points_in)"/>
+        <remap from="/imu_in" to="$(arg imu_in)"/>
+        
+        <!-- <param name="use_sim_time" value="$(arg use_sim_time)"/> -->
+
+        <!-- Preprocessing -->
+        <param name="deskewing" value="$(arg deskewing)"/>                      <!-- true: on, false: off -->
+        <param name="min_range" value="$(arg min_range)"/>                      <!-- lower limit for accepted point distances in m -->
+        <param name="max_range" value="$(arg max_range)"/>                      <!-- upper limit for accepted point distances in m -->
+        <param name="vox_l_map" value="$(arg vox_l_map)"/>                      <!-- voxel size for point cloud added to map in m -->
+        <param name="vox_l_gicp" value="$(arg vox_l_gicp)"/>                    <!-- voxel size for point cloud utilized in GICP in m -->
+        
+        <!-- Initial Guess Determination -->
+        <param name="initial_method" value="$(arg initial_method)"/>
+
+        <!-- GICP Scan Matching -->
+        <param name="robust_kernel" value="$(arg robust_kernel)"/>              <!-- true: active, false: inactive -->
+        <param name="target_NN_k" value="$(arg target_NN_k)"/>                  <!-- number of points found for each point in source to construct the target set -->
+        <param name="gicp_max_it" value="$(arg gicp_max_it)"/>                  <!-- maximum allowed number of iterations for the GICP loop -->
+        <param name="gicp_th_fitness" value="$(arg gicp_th_fitness)"/>          <!-- convergence criterium for the fitness value -->
+        <param name="gicp_th_rmse" value="$(arg gicp_th_rmse)"/>                <!-- convergence criterium for the RMSE value -->
+        <param name="gicp_max_corr_dist" value="$(arg gicp_max_corr_dist)"/>    <!-- maximum correspondence distance for GICP scan matching in m (only used when adaptive thresholding inactive) -->
+        <param name="gicp_kernel_value" value="$(arg gicp_kernel_value)"/>      <!-- kernel value c -->
+        
+        <!-- Adaptive Thresholding -->
+        <param name="adaptive_th" value="$(arg adaptive_th)"/><!-- true: active, false: inactive -->
+        <param name="initial_th" value="$(arg initial_th)"/><!-- sigma_0 (the initial threshold) which is assumed as long as no other corrections were computed -->
+        <param name="min_motion_th" value="$(arg min_motion_th)"/><!-- delta_min (the minimum motion) that have to be measured so that a computed correction is considered in the adaptive threshold determination -->
+
+        <!--  Global Map Management -->
+        <param name="map_init_method" value="$(arg map_init_method)"/><!-- choose map init method (no method, take and combine raw scans, apply GraphSLAM) -->
+        <param name="map_init_angle" value="$(arg map_init_angle)"/><!-- angle in degree the sphere has to be rotated so that the map initialization is performed -->
+        <param name="map_init_vox_l" value="$(arg map_init_vox_l)"/><!-- voxel size for point cloud utilized in initialization -->
+
+        <param name="SLAM_max_it" value="$(arg SLAM_max_it)"/><!-- maximum number of iterations allowed to be executed by GraphSLAM -->
+        <param name="SLAM_epsilon" value="$(arg SLAM_epsilon)"/><!-- convergence threshold for GraphSLAM -->
+        <param name="SLAM_max_dist_2" value="$(arg SLAM_max_dist_2)"/><!-- maximum allowed point distance in GraphSLAM -->
+        <param name="SLAM_min_corr" value="$(arg SLAM_min_corr)"/><!-- minimum number of correspondences that need to be found so that GraphSLAM assumes two scans as overlapping -->
+
+        <param name="ikd_alpha_del" value="$(arg ikd_alpha_del)"/><!-- delete criterium for the dynamic re-balancing of the ikd-Tree -->
+        <param name="ikd_alpha_bal" value="$(arg ikd_alpha_bal)"/><!-- balance criterium for the dynamic re-balancing of the ikd-Tree -->
+        <param name="ikd_downsample_l" value="$(arg ikd_downsample_l)"/><!-- l_box (cuboid box length) of downsample boxes for the automatized point reduction -->
+        <param name="ikd_downsample_n" value="$(arg ikd_downsample_n)"/><!-- n_box^max (maximum point number) of the downsample boxes -->
+
+        <param name="sliding_map" value="$(arg sliding_map)"/><!-- true: active, false: inactive -->
+        <param name="sliding_map_L" value="$(arg sliding_map_L)"/><!-- L (length of the cuboid) of the sliding map window -->
+        <param name="sliding_map_gamma" value="$(arg sliding_map_gamma)"/><!-- gamma (relaxation) of the sliding map window -->
+
+        <!-- Publishers -->
+        <param name="publish_clouds" value="$(arg publish_clouds)"/><!-- true: active, false: inactive -->
+        <param name="publish_traj" value="$(arg publish_traj)"/><!-- true: active, false: inactive -->
+        <param name="publish_poses" value="$(arg publish_poses)"/><!-- true: active, false: inactive -->
+        <param name="print_runtime" value="$(arg print_runtime)"/><!-- true: active, false: inactive -->
+
+    </node>
+    
+  
+    <!-- start LIDAR HESAI nodelet manager -->
+    <!-- <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" /> -->
+    <node pkg="nodelet" type="nodelet" name="$(arg manager)" ns="$(arg namespace)" args="manager" output="screen" />
+    <node pkg="nodelet" type="nodelet" name="$(arg manager)_cloud" ns="$(arg namespace)" args="load pandar_pointcloud/CloudNodelet $(arg manager)" output="screen">
+        <param name="pcap_file" type="string" value="$(arg pcap_file)"/>
+        <param name="server_ip" type="string" value="$(arg server_ip)"/>
+        <param name="lidar_recv_port"  type="int" value="$(arg lidar_recv_port)"/>
+        <param name="gps_port"  type="int" value="$(arg gps_port)"/>
+        <param name="start_angle"  type="double" value="$(arg start_angle)"/>
+        <param name="lidar_type"  type="string" value="$(arg lidar_type)"/>
+        <param name="frame_id"  type="string" value="$(arg frame_id)"/>
+        <param name="pcldata_type"  type="int" value="$(arg pcldata_type)"/>
+        <param name="publish_type"  type="string" value="$(arg publish_type)"/>
+        <param name="timestamp_type"  type="string" value="$(arg timestamp_type)"/>
+        <param name="data_type"  type="string" value="$(arg data_type)"/>
+        <param name="lidar_correction_file"  type="string" value="$(arg lidar_correction_file)"/>
+        <param name="multicast_ip"  type="string" value="$(arg multicast_ip)"/>
+        <param name="coordinate_correction_flag"  type="bool" value="$(arg coordinate_correction_flag)"/>
+        <param name="fixed_frame"  type="string" value="$(arg fixed_frame)"/>
+        <param name="target_frame"  type="string" value="$(arg target_frame)"/>
+    </node>
+    
+
+    <!-- SETUP TF TREE: Order of transforms: x y z rz ry rx -->
+    <!-- intrinsic rotation order: rx first, new ry second, new rz third -->
+    <!-- extrinsic rotation order: rx first, old ry second, old rz third -->
+
+    <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
+    <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
+    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 axes_cam axes_imu 200" />
+    
+    <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
+    <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
+    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 map_cam map_imu 200" />
+    
+    <!-- Defines the transform between CAM and Center -->
+    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 odom camera_frame 200" />
+    <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
+    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
+
+    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> --> 
+    <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" />
+    <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
+    <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
+
+
+    <node pkg="vio_tracking_t265" type="auto_reconnect" name="realsense_pose_node" output="screen" />
+    <node pkg="vio_tracking_t265" type="center_extrinsics" name="realsense_extrinsics" output="screen" />
+
+    <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/>
+    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
+
+
+    <!-- node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /-->
+    <!-- Ground Finder - CARO MA /-->
+    <!-- <arg name="quiet"     default="true" />
+    <arg name="filter"    default="geo" />
+    <arg name="subcloud"  default="geo" />
+    <arg name="plane"     default="ran" />
+    <arg name="file"      default="default" />
+    <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
+        <param name="quiet" value="$(arg quiet)" type="bool"/>
+        <param name="filter" value="$(arg filter)" type="string"/>
+        <param name="subcloud" value="$(arg subcloud)" type="string"/>
+        <param name="plane" value="$(arg plane)" type="string"/>
+        <param name="file" value="$(arg file)" type="string"/>
+    </node> -->
+
+</launch>

@@ -5,7 +5,7 @@
 #include "lio_node.hpp"
 
 bool LIONode::registerPoints(const pcl::PointCloud<PointType>::Ptr &pc_in, const Sophus::SE3d &initial_guess, Sophus::SE3d &registered_pose, double max_correspondence_distance, int max_num_iterations, double sigma){
-    
+    ROS_INFO_STREAM("registerPoints called");
     double estimation_threshold = 0.0001;
     if (ikdtree_ptr_->Root_Node == nullptr) {registered_pose = initial_guess; return true;}
     using clock = std::chrono::high_resolution_clock;

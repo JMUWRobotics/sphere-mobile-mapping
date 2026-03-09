@@ -194,7 +194,8 @@ private:
     float alpha_bal_tmp = 0.5, alpha_del_tmp = 0.0;
     float delete_criterion_param = 0.5f;
     float balance_criterion_param = 0.7f;
-    float downsample_size = 0.2f;
+    float downsample_size = 0.5f;
+    int downsample_max_point_num = 20;
     bool Delete_Storage_Disabled = false;
     KD_TREE_NODE * STATIC_ROOT_NODE = nullptr;
     PointVector Points_deleted;
@@ -224,7 +225,7 @@ private:
     static bool point_cmp_z(PointType a, PointType b); 
 
 public:
-    KD_TREE(float delete_param = 0.5, float balance_param = 0.6 , float box_length = 0.2);
+    KD_TREE(float delete_param = 0.5, float balance_param = 0.6 , float box_length = 0.2, int box_capacity = 5);
     ~KD_TREE();
     void Set_delete_criterion_param(float delete_param);
     void Set_balance_criterion_param(float balance_param);

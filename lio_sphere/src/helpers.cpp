@@ -22,12 +22,19 @@ Sophus::SE3d LIONode::LookupTransform(const std::string &target_frame,
     return {};
 }
 void LIONode::voxelize(const pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointCloud<PointType>::Ptr& pc_out, float voxel_size){
-    pcl::ApproximateVoxelGrid<PointType> sor;
+    pcl::VoxelGrid<PointType> sor;
     sor.setInputCloud(pc_in);
     sor.setLeafSize(voxel_size, voxel_size, voxel_size);
     sor.filter(*pc_out);
 }
-void LIONode::dist_filter(pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointCloud<PointType>::Ptr& pc_out,
+void LIONode::voxelize_XYZITR(const pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out, float voxel_size){
+    pcl::VoxelGrid<custom_type::PointXYZITR> sor;
+    sor.setInputCloud(pc_in);
+    sor.setDownsampleAllData(false);
+    sor.setLeafSize(voxel_size, voxel_size, voxel_size);
+    sor.filter(*pc_out);
+}
+void LIONode::dist_filter(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out,
                                         double max_range,
                                         double min_range) {
     for (const auto& pt : pc_in->points) {
@@ -37,95 +44,113 @@ void LIONode::dist_filter(pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointClou
         }
     }
 }
-float DET_RANGE = 100.0f;
-const float MOV_THRESHOLD = 1.5f;
-std::vector<BoxPointType> cub_needrm;
-Eigen::Vector3d pos_LiD;
-double cube_len = 40;
-BoxPointType LocalMap_Points;
-bool Localmap_Initialized = false;
-
 void LIONode::move_map(int &kdtree_delete_counter, const Sophus::SE3d &current_pose)
 {
-    pos_LiD = current_pose.translation();
-    cub_needrm.clear();
-    if (!Localmap_Initialized){
+    float DET_RANGE = config_.max_range;
+    float MOV_THRESHOLD = config_.sliding_map_gamma;
+    double cube_len = config_.sliding_map_L;
+    pos_lid_ = current_pose.translation();
+    cub_needrm_.clear();
+    if (!localmap_initialized_){
         for (int i = 0; i < 3; i++){
-            LocalMap_Points.vertex_min[i] = pos_LiD(i) - cube_len / 2.0;
-            LocalMap_Points.vertex_max[i] = pos_LiD(i) + cube_len / 2.0;
+            local_map_points_.vertex_min[i] = pos_lid_(i) - cube_len / 2.0;
+            local_map_points_.vertex_max[i] = pos_lid_(i) + cube_len / 2.0;
+ //           ROS_INFO_STREAM("bound_min: " << local_map_points_.vertex_min[i]<< ", " <<i);
+ //           ROS_INFO_STREAM("bound_max: " << local_map_points_.vertex_max[i]<< ", " <<i);
         }
-        Localmap_Initialized = true;
+        localmap_initialized_ = true;
         return;
     }
     float dist_to_map_edge[3][2];
     bool need_move = false;
     for (int i = 0; i < 3; i++){
-        dist_to_map_edge[i][0] = fabs(pos_LiD(i) - LocalMap_Points.vertex_min[i]);
-        dist_to_map_edge[i][1] = fabs(pos_LiD(i) - LocalMap_Points.vertex_max[i]);
+        dist_to_map_edge[i][0] = fabs(pos_lid_(i) - local_map_points_.vertex_min[i]);
+        dist_to_map_edge[i][1] = fabs(pos_lid_(i) - local_map_points_.vertex_max[i]);
+   //     ROS_INFO_STREAM("min: " << dist_to_map_edge[i][0]<< ", " <<i);
+   //     ROS_INFO_STREAM("max: " << dist_to_map_edge[i][1]<< ", " <<i);
         if (dist_to_map_edge[i][0] <= MOV_THRESHOLD * DET_RANGE || dist_to_map_edge[i][1] <= MOV_THRESHOLD * DET_RANGE) need_move = true;
     }
-    if (!need_move) return;
+    if (!need_move) {return;}
     BoxPointType New_LocalMap_Points, tmp_boxpoints;
-    New_LocalMap_Points = LocalMap_Points;
+    New_LocalMap_Points = local_map_points_;
     float mov_dist = max((cube_len - 2.0 * MOV_THRESHOLD * DET_RANGE) * 0.5 * 0.9, double(DET_RANGE * (MOV_THRESHOLD -1)));
     for (int i = 0; i < 3; i++){
-        tmp_boxpoints = LocalMap_Points;
+        tmp_boxpoints = local_map_points_;
         if (dist_to_map_edge[i][0] <= MOV_THRESHOLD * DET_RANGE){
             New_LocalMap_Points.vertex_max[i] -= mov_dist;
             New_LocalMap_Points.vertex_min[i] -= mov_dist;
-            tmp_boxpoints.vertex_min[i] = LocalMap_Points.vertex_max[i] - mov_dist;
-            cub_needrm.push_back(tmp_boxpoints);
+            tmp_boxpoints.vertex_min[i] = local_map_points_.vertex_max[i] - mov_dist;
+            cub_needrm_.push_back(tmp_boxpoints);
         } else if (dist_to_map_edge[i][1] <= MOV_THRESHOLD * DET_RANGE){
             New_LocalMap_Points.vertex_max[i] += mov_dist;
             New_LocalMap_Points.vertex_min[i] += mov_dist;
-            tmp_boxpoints.vertex_max[i] = LocalMap_Points.vertex_min[i] + mov_dist;
-            cub_needrm.push_back(tmp_boxpoints);
+            tmp_boxpoints.vertex_max[i] = local_map_points_.vertex_min[i] + mov_dist;
+            cub_needrm_.push_back(tmp_boxpoints);
         }
     }
-    LocalMap_Points = New_LocalMap_Points;
+    local_map_points_ = New_LocalMap_Points;
     //std::cout << "deletion running";
-    if(cub_needrm.size() > 0) kdtree_delete_counter = ikdtree_ptr_->Delete_Point_Boxes(cub_needrm);
+    ROS_WARN_STREAM("distance exceeded");
+    if(cub_needrm_.size() > 0) kdtree_delete_counter = ikdtree_ptr_->Delete_Point_Boxes(cub_needrm_);
 }
 std::tuple<Sophus::SE3d, Sophus::SE3d> LIONode::getInitialGuess(const ros::Time &timestamp){
-    const auto init_pose = LookupTransform(base_frame_, prev_odom_frame_, timestamp).inverse();
+    Sophus::SE3d init_pose;
+    if (config_.initial_method==KALMAN){
+        init_pose = LookupTransform(config_.base_frame, config_.kalman_odom_frame, timestamp).inverse();
+    }
+    else{
+        init_pose = LookupTransform(config_.base_frame, config_.imu_odom_frame, timestamp).inverse();
+    }
     // geometry_msgs::TransformStamped transform_msg;
     // transform_msg.header.stamp = timestamp;
-    // transform_msg.header.frame_id = odom_frame_;
+    // transform_msg.header.frame_id = odom_frame;
     // transform_msg.child_frame_id = "initial_guess";
-    // //auto pose = LookupTransform(base_frame_, prev_odom_frame_, stamp).inverse();
+    // //auto pose = LookupTransform(base_frame, prev_odom_frame, stamp).inverse();
     // transform_msg.transform = sophusToTransform(init_pose);
     // tf2_broadcaster_.sendTransform(transform_msg);
 
-    if (!pose_initialized_){
-        prev_init_pose_ = init_pose;
-        prev_pose_ = init_pose;
-        pose_initialized_ = true;
-        first_pose_=init_pose;
-        //angle_=0.0;
+    Sophus::SE3d prediction;
+    {
+        std::lock_guard<std::mutex> lock(mtx_pose_);
+        if (!pose_initialized_){
+            prev_init_pose_ = init_pose;
+            prev_pose_ = init_pose;
+            pose_initialized_ = true;
+            first_pose_=init_pose;
+            //angle_=0.0;
+        }
+        prediction = prev_init_pose_.inverse() * init_pose;
     }
-    const auto prediction = prev_init_pose_.inverse() * init_pose;
     double ang_change=2*acos(prediction.unit_quaternion().w());
     //if (ang_change > 0.2) angle_ += 2*acos(prediction.unit_quaternion().w());
     Sophus::SE3d prev_pose;
-    if (no_match_counter_ < 1) {
-        prev_pose = !poses_.empty() ? poses_.back() : prev_init_pose_;
-        
+    {
+        std::lock_guard<std::mutex> lock(mtx_pose_);
+        //if (!no_match) {
+            prev_pose = !poses_.empty() ? poses_.back() : prev_init_pose_;
+        //}
+        //else{
+        //    prev_pose = prev_pose_;}
     }
-    else{
-        prev_pose = prev_pose_;}
-    const auto new_pose = prev_pose * prediction; 
-    prev_pose_ = new_pose;
-    prev_init_pose_ = init_pose;
+    auto new_pose = prev_pose * prediction;
+    //new_pose.setQuaternion(init_pose.unit_quaternion());
+    {
+        std::lock_guard<std::mutex> lock(mtx_pose_);
+        prev_pose_ = new_pose;
+        prev_init_pose_ = init_pose;
+    }
     return {new_pose, prediction};
 }
 double LIONode::GetAdaptiveThreshold() {
     if (!HasMoved()) {
-        return config_.initial_threshold;
+        return config_.initial_th;
     }
-    if (no_match_counter_ < 1) return adaptive_threshold_.ComputeThreshold();
-    else return adaptive_threshold_.ComputeThresholdNoMatch(no_match_counter_);
+    return adaptive_threshold_.ComputeThreshold();
+    if (no_match == false) return adaptive_threshold_.ComputeThreshold();
+    else return adaptive_threshold_.ComputeThresholdNoMatch();
 }
 bool LIONode::HasMoved() {
+    std::lock_guard<std::mutex> lock(mtx_pose_);
     if (poses_.empty()) return false;
     const double motion = (poses_.front().inverse() * poses_.back()).translation().norm();
     return motion > 5.0 * config_.min_motion_th;
