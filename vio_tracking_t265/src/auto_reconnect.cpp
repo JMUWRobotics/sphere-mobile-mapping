@@ -291,7 +291,7 @@ int rosPublishRS2Frame(const rs2::frame &frame)
     /* Convert everything into ROS geometry_msgs::PoseStamped 
     The official ROS wrapper does the same according to:
     https://github.com/IntelRealSense/realsense-ros/blob/ros1-legacy/realsense2_camera/src/base_realsense_node.cpp#L1556*/
-    output_msg.header.frame_id = "map";
+    output_msg.header.frame_id = "map_cam";
     ms_to_ros_stamp(timestamp, output_msg.header.stamp);
     //output_msg.header.stamp = ros::Time::now();
     output_msg.pose.position.x = -pose_data.translation.z;
@@ -300,7 +300,7 @@ int rosPublishRS2Frame(const rs2::frame &frame)
     output_msg.pose.orientation.x = -pose_data.rotation.z;
     output_msg.pose.orientation.y = -pose_data.rotation.x;
     output_msg.pose.orientation.z = pose_data.rotation.y;
-    output_msg.pose.orientation.w = pose_data.rotation.w;
+    output_msg.pose.orientation.w = pose_data.rotation.w; 
     cam_pose->publish(output_msg);
     
     // Save camera pose confidence (0 = Failed, 1 = Low, 2 = Medium, 3 = High confidence)
@@ -328,7 +328,7 @@ int rosPublishRS2Frame(const rs2::frame &frame)
     }
     
     // Convert everything into ROS sensor_msgs::Imu
-    imu_msg.header.frame_id = "map";
+    imu_msg.header.frame_id = camera_frame;
     ms_to_ros_stamp(timestamp, imu_msg.header.stamp);
     //imu_msg.header.stamp = ros::Time::now();
     

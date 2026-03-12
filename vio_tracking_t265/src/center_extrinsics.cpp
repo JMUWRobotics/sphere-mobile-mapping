@@ -69,8 +69,8 @@ int main(int argc, char **argv)
     
     // Get static tf between global and camera frame
     tf::TransformListener tf_listener;
-    tf_listener.waitForTransform(std::string("axes_cam"), std::string("axes_imu"), ros::Time(0), ros::Duration(5.0));             
-    tf_listener.lookupTransform(std::string("axes_cam"), std::string("axes_imu"), ros::Time(0), tf_axes_imu2cam);
+    tf_listener.waitForTransform(std::string("cam_axes"), std::string("imu_axes"), ros::Time(0), ros::Duration(5.0));             
+    tf_listener.lookupTransform(std::string("cam_axes"), std::string("imu_axes"), ros::Time(0), tf_axes_imu2cam);
     
     // We give the extr calib in GLOBAL frame, need to transfer to camera_frame first 
     tf::Matrix3x3 R(tf_axes_imu2cam.getRotation());
