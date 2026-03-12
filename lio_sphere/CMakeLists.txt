@@ -48,27 +48,17 @@ src/lio_node.cpp
 src/distortion.cpp
 src/helpers.cpp
 src/external/ikd-Tree/ikd_Tree.cpp
-src/external/kiss_icp/VoxelHashMap.cpp
 src/external/kiss_icp/Threshold.cpp
-src/registration.cpp
-src/transformation_comparison.cpp
 src/registration_gicp.cpp
 src/GraphSLAM/graph_slam.cpp
 src/GraphSLAM/graph.cpp
 src/GraphSLAM/scan.cpp
-)
-add_executable(lio_comp
-src/time_comp.cpp
 )
 
 target_link_libraries(lio_node
    ${catkin_LIBRARIES}
    Eigen3::Eigen
    TBB::tbb
- )
-target_link_libraries(lio_comp
-  ${catkin_LIBRARIES}
-  Eigen3::Eigen
 )
 
 #############

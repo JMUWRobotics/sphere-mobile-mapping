@@ -44,7 +44,7 @@
         Use this to debug motion force compensation. -->
     <arg name="jasper_debug" value="false" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
-    <arg name="jasper_lowpass_freq" value="5" />
+    <arg name="jasper_lowpass_freq" value="20" />
     <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
     <!-- This is used for motion force compensation. 
     These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
@@ -75,7 +75,7 @@
     <!-- Arguments for the vizualiser node: pose to lidar -->
     <arg name="topic_listen" value="/posePub_merged" />
     <arg name="global_frame" value="map" />
-    <arg name="center_frame" value="odom" />
+    <arg name="center_frame" value="center" />
     <arg name="lidar_frame" value="pandar_frame" />
 
     <!-- Arguments for the LiDAR -->
@@ -120,45 +120,45 @@
     <!-- <arg name="imu_in" value="/posePub_merged"/> -->
     <!-- <arg name="use_sim_time" value="true"/> -->
 
-      <arg name="deskewing" value="true"/>                    <!-- true: on, false: off -->
-      <arg name="min_range" value="0.5"/>                     <!-- lower limit for accepted point distances in m -->
-      <arg name="max_range" value="100.0"/>                    <!-- upper limit for accepted point distances in m -->
-      <arg name="vox_l_map" value="0.2"/>                    <!-- voxel size for point cloud added to map in m -->
-      <arg name="vox_l_gicp" value="0.5"/>                   <!-- voxel size for point cloud utilized in GICP in m -->
-      
-      <arg name="initial_method" value="IMU"/>             <!-- choose initial pose source: KALMAN or IMU -->
-      
-      <arg name="robust_kernel" value="true"/>                <!-- true: active, false: inactive -->
-      <arg name="target_NN_k" value="3"/>                     <!-- number of points found per source point to construct the target set -->
-      <arg name="gicp_max_it" value="15"/>                    <!-- maximum allowed number of iterations for the GICP loop -->
-      <arg name="gicp_th_fitness" value="1e-6"/>              <!-- convergence criterion for the fitness value -->
-      <arg name="gicp_th_rmse" value="1e-6"/>                 <!-- convergence criterion for the RMSE value -->
-      <arg name="gicp_max_corr_dist" value="0.15"/>            <!-- maximum correspondence distance for GICP (m) when adaptive thresholding inactive -->
-      <arg name="gicp_kernel_value" value="0.3"/>            <!-- kernel value c -->
-      <!-- deactivated -->
-      <arg name="adaptive_th" value="true"/>                  <!-- true: active, false: inactive -->
-      <arg name="initial_th" value="2.0"/>                    <!-- sigma_0: initial threshold used before any corrections -->
-      <arg name="min_motion_th" value="0.1"/>                 <!-- delta_min: minimum motion to consider a correction in adaptive threshold -->
-     
-      <arg name="map_init_method" value="OFF"/>              <!-- choose map init method (OFF, COMBINE, SLAM) -->
-      <arg name="map_init_angle" value="180.0"/>              <!-- angle in degrees the sphere must rotate to trigger map initialization -->
-      <arg name="map_init_vox_l" value="0.5"/>                <!-- voxel size for point cloud utilized in initialization -->
-      <arg name="SLAM_max_it" value="10"/>                    <!-- maximum iterations allowed for GraphSLAM -->
-      <arg name="SLAM_epsilon" value="0.01"/>                 <!-- convergence threshold for GraphSLAM -->
-      <arg name="SLAM_max_dist_2" value="0.5"/>               <!-- maximum allowed point distance in GraphSLAM -->
-      <arg name="SLAM_min_corr" value="70"/>                 <!-- minimum correspondences for scans to be considered overlapping in GraphSLAM -->
-      <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
-      <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
-      <arg name="ikd_downsample_l" value="0.5"/>              <!-- l_box: cuboid box length for automated point reduction -->
-      <arg name="ikd_downsample_n" value="1"/>                <!-- n_box^max: maximum point number per downsample box -->
-      <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
-      <arg name="sliding_map_L" value="300"/>               <!-- L: length of the cuboid for the sliding map window -->
-      <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
-      
-      <arg name="publish_clouds" value="true"/>               <!-- true: active, false: inactive -->
-      <arg name="publish_traj" value="false"/>                 <!-- true: active, false: inactive -->
-      <arg name="publish_poses" value="true"/>                <!-- true: active, false: inactive -->
-      <arg name="print_runtime" value="false"/>                <!-- true: active, false: inactive -->              <!-- true: active, false: inactive -->
+    <arg name="deskewing" value="false"/>                    <!-- true: on, false: off (Set to FALSE if dedicated node is used) -->
+    <arg name="min_range" value="0.5"/>                     <!-- lower limit for accepted point distances in m -->
+    <arg name="max_range" value="100.0"/>                    <!-- upper limit for accepted point distances in m -->
+    <arg name="vox_l_map" value="0.1"/>                    <!-- voxel size for point cloud added to map in m -->
+    <arg name="vox_l_gicp" value="0.1"/>                   <!-- voxel size for point cloud utilized in GICP in m -->
+    
+    <arg name="initial_method" value="KALMAN"/>             <!-- choose initial pose source: KALMAN or IMU -->
+    
+    <arg name="robust_kernel" value="false"/>                <!-- true: active, false: inactive -->
+    <arg name="target_NN_k" value="3"/>                     <!-- number of points found per source point to construct the target set -->
+    <arg name="gicp_max_it" value="50"/>                    <!-- maximum allowed number of iterations for the GICP loop -->
+    <arg name="gicp_th_fitness" value="1e-6"/>              <!-- convergence criterion for the fitness value -->
+    <arg name="gicp_th_rmse" value="1e-3"/>                 <!-- convergence criterion for the RMSE value -->
+    <arg name="gicp_max_corr_dist" value="0.15"/>            <!-- maximum correspondence distance for GICP (m) when adaptive thresholding inactive -->
+    <arg name="gicp_kernel_value" value="0.3"/>            <!-- kernel value c -->
+    <!-- deactivated -->
+    <arg name="adaptive_th" value="true"/>                  <!-- true: active, false: inactive -->
+    <arg name="initial_th" value="2.0"/>                    <!-- sigma_0: initial threshold used before any corrections -->
+    <arg name="min_motion_th" value="0.1"/>                 <!-- delta_min: minimum motion to consider a correction in adaptive threshold -->
+    
+    <arg name="map_init_method" value="OFF"/>              <!-- choose map init method (OFF, COMBINE, SLAM) -->
+    <arg name="map_init_angle" value="180.0"/>              <!-- angle in degrees the sphere must rotate to trigger map initialization -->
+    <arg name="map_init_vox_l" value="0.5"/>                <!-- voxel size for point cloud utilized in initialization -->
+    <arg name="SLAM_max_it" value="10"/>                    <!-- maximum iterations allowed for GraphSLAM -->
+    <arg name="SLAM_epsilon" value="0.01"/>                 <!-- convergence threshold for GraphSLAM -->
+    <arg name="SLAM_max_dist_2" value="0.5"/>               <!-- maximum allowed point distance in GraphSLAM -->
+    <arg name="SLAM_min_corr" value="70"/>                 <!-- minimum correspondences for scans to be considered overlapping in GraphSLAM -->
+    <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
+    <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
+    <arg name="ikd_downsample_l" value="0.1"/>              <!-- l_box: cuboid box length for automated point reduction -->
+    <arg name="ikd_downsample_n" value="1"/>                <!-- n_box^max: maximum point number per downsample box -->
+    <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
+    <arg name="sliding_map_L" value="300"/>               <!-- L: length of the cuboid for the sliding map window -->
+    <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
+    
+    <arg name="publish_clouds" value="false"/>               <!-- true: active, false: inactive -->
+    <arg name="publish_traj" value="false"/>                 <!-- true: active, false: inactive -->
+    <arg name="publish_poses" value="true"/>                <!-- true: active, false: inactive -->
+    <arg name="print_runtime" value="false"/>                <!-- true: active, false: inactive -->              <!-- true: active, false: inactive -->
 
 <!-- END ARGUMENT LIST -->
 <!-- CONVERT EVERYTHING TO ROSPARAM -->
@@ -219,11 +219,20 @@
     <param name="offset_z" type="double" value="$(arg offset_z)" />
     <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
 
+<!-- ROSPARAM DEFINITIONS FINISHED -->
 <!-- LAUNCH ALL THE NODES -->
+    
+    <!-- Laser Self-Motion Distortion Correction (DEDICATED NODE DUE TO PAUL HEINISCH) -->
+    <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
+      <remap from="points_in" to="$(arg points_in)"/>
+      <remap from="imu_in" to="$(arg imu_in)" />
+      <remap from="points_out" to="$(arg points_out)" />
+      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
+    </node>
 
     <node pkg="lio_sphere" type="lio_node" name="lio_node" output="screen" if="true">
 
-        <remap from="/points_in" to="$(arg points_in)"/>
+        <remap from="/points_in" to="$(arg points_out)"/>
         <remap from="/imu_in" to="$(arg imu_in)"/>
         
         <!-- <param name="use_sim_time" value="$(arg use_sim_time)"/> -->
@@ -242,8 +251,8 @@
         <param name="robust_kernel" value="$(arg robust_kernel)"/>              <!-- true: active, false: inactive -->
         <param name="target_NN_k" value="$(arg target_NN_k)"/>                  <!-- number of points found for each point in source to construct the target set -->
         <param name="gicp_max_it" value="$(arg gicp_max_it)"/>                  <!-- maximum allowed number of iterations for the GICP loop -->
-        <param name="gicp_th_fitness" value="$(arg gicp_th_fitness)"/>          <!-- convergence criterium for the fitness value -->
-        <param name="gicp_th_rmse" value="$(arg gicp_th_rmse)"/>                <!-- convergence criterium for the RMSE value -->
+        <param name="gicp_th_fitness" type="double" value="$(arg gicp_th_fitness)"/>          <!-- convergence criterium for the fitness value -->
+        <param name="gicp_th_rmse" type="double" value="$(arg gicp_th_rmse)"/>                <!-- convergence criterium for the RMSE value -->
         <param name="gicp_max_corr_dist" value="$(arg gicp_max_corr_dist)"/>    <!-- maximum correspondence distance for GICP scan matching in m (only used when adaptive thresholding inactive) -->
         <param name="gicp_kernel_value" value="$(arg gicp_kernel_value)"/>      <!-- kernel value c -->
         
@@ -309,19 +318,19 @@
 
     <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
     <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
-    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 axes_cam axes_imu 200" />
+    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" />
     
     <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
     <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
-    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 map_cam map_imu 200" />
+    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />
     
     <!-- Defines the transform between CAM and Center -->
-    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 odom camera_frame 200" />
+    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
     <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
 
-    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> --> 
-    <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" />
+    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> 
+    <!-- <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
 

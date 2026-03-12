@@ -21,19 +21,15 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/common/transforms.h>
 #include <sophus/se3.hpp>
-//#include <sophus/so3.hpp>
-//#include <Eigen/Core>
+
 #include <boost/circular_buffer.hpp>
 #include <condition_variable>
 #include <mutex>
-#include "VoxelHashMap.hpp"
 #include "Threshold.hpp"
 #include <ikd_Tree.h>
 
 #include <nanoflann.hpp>
 #include <KDTreeVectorOfVectorsAdaptor.h>
-
-
 
 #include <state_estimator_msgs/Estimator.h>
 #include <evaluation_msgs/Runtime.h>
@@ -41,20 +37,20 @@
 #include <evaluation_msgs/Treesize.h>
 
 //global configuration
-    enum InitialMethod{
-        KALMAN=0, IMU=1
-    };
-    enum MapInitMethod{
-        OFF=0, COMBINE=1, SLAM=2
-    };
-    struct LIOConfig {
+enum InitialMethod{
+    KALMAN=0, IMU=1
+};
+enum MapInitMethod{
+    OFF=0, COMBINE=1, SLAM=2
+};
+struct LIOConfig { 
     /*--------------
         coordinate frames
             ------------*/
-    std::string base_frame{"odom"};
-    std::string odom_frame{"map3"};
-    std::string kalman_odom_frame{"map2"};
-    std::string imu_odom_frame{"map"};
+    std::string base_frame{"center"};
+    std::string odom_frame{"map_lio"};
+    std::string kalman_odom_frame{"map_lkf"};
+    std::string imu_odom_frame{"map_imu"};
     std::string imu_frame{"imu_frame"};
     std::string lidar_frame{"pandar_frame"};
     
@@ -89,11 +85,6 @@
     bool adaptive_th; //true: active, false: inactive
     double initial_th; //sigma_0 (the initial threshold) which is assumed as long as no other corrections were computed
     double min_motion_th; //delta_min (the minimum motion) that have to be measured so that a computed correction is considered in the adaptive threshold determination
-    // map params
-    double voxel_size;
-    double overlap_map_voxel_size;
-    int max_points_per_voxel;
-    int overlap_map_max_points_per_voxel;
     /*--------------
     Global Map Management
             ------------*/
@@ -130,8 +121,7 @@ namespace custom_type
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW // ensure proper alignment
     } EIGEN_ALIGN16;
 }
-POINT_CLOUD_REGISTER_POINT_STRUCT(custom_type::PointXYZITR,
-                                  (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, timestamp, timestamp)(uint16_t, ring, ring))
+POINT_CLOUD_REGISTER_POINT_STRUCT(custom_type::PointXYZITR, (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(double, timestamp, timestamp)(uint16_t, ring, ring))
 
 using PointType = pcl::PointXYZ;//custom_type::PointXYZITR;//
 using PointVector = KD_TREE<PointType>::PointVector;
@@ -140,38 +130,19 @@ using Matrix6d = Eigen::Matrix<double, 6, 6>;
 using Matrix3_6d = Eigen::Matrix<double, 3, 6>;
 using Vector6d = Eigen::Matrix<double, 6, 1>;
 }
+/** @brief Returns the square of a value.
+ * @param x The value to square.
+ * @return x * x.
+ */
 inline double square(double x) { return x * x; }
-struct ResultTuple {
-    ResultTuple() {
-        JTJ.setZero();
-        JTr.setZero();
-    }
-
-    ResultTuple operator+(const ResultTuple &other) {
-        this->JTJ += other.JTJ;
-        this->JTr += other.JTr;
-        return *this;
-    }
-
-    Eigen::Matrix6d JTJ;
-    Eigen::Vector6d JTr;
-};
-void compare_transformation(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr &frame_pcl,
-    std::vector<Eigen::Vector3d> &frame_eigen,
-    const Sophus::SE3d &transform);
-
-void EigenTransformation(
-    std::vector<Eigen::Vector3d> &frame,
-    const Sophus::SE3d &transform);
-
-void PCLTransformation(
-    pcl::PointCloud<pcl::PointXYZ>::Ptr &frame,
-    const Sophus::SE3d &transform);
 typedef KDTreeVectorOfVectorsAdaptor<std::vector<Eigen::Vector3d>, double> kd_tree_t;
 class LIONode{
     public:
-    //constructor
+    /** @brief Constructs the LIO node, loads all parameters from the parameter server,
+     *         sets up subscribers/publishers, and initializes internal data structures.
+     * @param nh Public ROS node handle for topic advertisement and subscription.
+     * @param pnh Private ROS node handle for parameter retrieval.
+     */
     LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh);
     private:
     //runtime analysis
@@ -193,12 +164,10 @@ class LIONode{
     ros::Subscriber imu_sub_;
     ros::Subscriber pose_sub_;
     //publisher
-    ros::Publisher odom_pub_;
     ros::Publisher traj_all_pub_;
     ros::Publisher traj_all2_pub_;
     ros::Publisher traj_reg_pub_;
     ros::Publisher pose_all_pub_;
-    ros::Publisher pose_all2_pub_;
     ros::Publisher pose_reg_pub_;
     ros::Publisher init_pose_pub_;
 
@@ -224,53 +193,80 @@ class LIONode{
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
     //callback functions
+
+    /** @brief Main LiDAR callback. Preprocesses the point cloud, computes an initial guess,
+     *         performs GICP registration, updates the map, and publishes results.
+     * @param msg Incoming ROS PointCloud2 message.
+     */
     void processPoints(const sensor_msgs::PointCloud2ConstPtr &msg);
+
+    /** @brief IMU callback. Transforms angular velocity into the LiDAR frame, extracts pose,
+     *         and pushes the measurement into the circular IMU buffer.
+     * @param msg Incoming estimator message containing IMU data and pose.
+     */
     void processIMU(const state_estimator_msgs::EstimatorConstPtr &msg);
+
+    /** @brief Pose callback (currently unused placeholder).
+     * @param msg Incoming PoseStamped message.
+     */
     void processPose(const geometry_msgs::PoseStampedConstPtr &msg);
     //publisher/tf broadcaster calls
-    void publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc, const ros::Time &stamp, Sophus::SE3d &pose);
-    void publishOdometry(const ros::Time &stamp);
-    void publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::SE3d &registered_pose, bool reg_suc, const ros::Time &stamp);
-    //attributes
-    bool publish_clouds_;
 
+    /** @brief Publishes the registered and debug point clouds as ROS messages.
+     * @param reg_suc Whether the registration was successful.
+     * @param pc The point cloud to publish.
+     * @param stamp Timestamp for the published messages.
+     * @param pose The current estimated pose used to transform the cloud into the map frame.
+     */
+    void publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc, const ros::Time &stamp, Sophus::SE3d &pose);
+
+    /** @brief Publishes the current odometry as a TF transform.
+     * @param stamp Timestamp for the broadcasted transform.
+     */
+    void publishOdometry(const ros::Time &stamp);
+
+    /** @brief Publishes trajectory and pose path messages for visualisation in RViz.
+     * @param initial_guess The initial guess pose before registration.
+     * @param registered_pose The pose after GICP registration.
+     * @param reg_suc Whether the registration was successful.
+     * @param stamp Timestamp for the published messages.
+     */
+    void publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::SE3d &registered_pose, bool reg_suc, const ros::Time &stamp);
     // _____________________
     
-    // process LiDAR points
-    // functions:
+    /** @brief Removes motion distortion from a LiDAR sweep using interpolated IMU angular velocities.
+     *         Each point is rotated back to the sweep start frame based on its individual timestamp.
+     * @param pc_in Input point cloud with per-point timestamps and ring indices.
+     * @param pc_out Output undistorted point cloud (PointXYZ).
+     * @param initial_guess [out] Set to the IMU pose at the sweep start.
+     * @return True on success, false if the IMU buffer does not cover the sweep.
+     */
     bool undistort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr &pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_out, Sophus::SE3d& initial_guess);
-    bool registerPoints(const pcl::PointCloud<PointType>::Ptr &pc_in, const Sophus::SE3d &initial_guess, Sophus::SE3d &registered_pose, double max_correspondence_distance, int max_num_iterations, double kernel);
     // attributes:
     Sophus::SE3d initial_guess;
     bool pose_initialized_ = false;
     Sophus::SE3d prev_init_pose_;
     Sophus::SE3d prev_pose_;
-    Sophus::SE3d first_pose_;
-    tf2::Vector3 lidar_offset=tf2::Vector3(-0.010, -0.001, 0.135);
     tf2::Quaternion imu2lidar_rot=tf2::Quaternion(0,0,1,0);
-    //check if and how registration shall be performed
-    bool check_if_registration();
+    /** @brief Accumulates scans during the map initialisation phase and triggers map building
+     *         (either raw combination or GraphSLAM) once the configured rotation angle is reached.
+     * @param pc_in Voxelized point cloud to add to the initialisation buffer.
+     * @param pose The current registered pose in the map frame.
+     * @param initial_guess The relative pose difference used to track accumulated rotation.
+     * @param stamp Timestamp of the current scan.
+     */
     void build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in, const Sophus::SE3d &pose, const Sophus::SE3d &initial_guess, const ros::Time &stamp);
     double angle_roll_=0.0;
     double angle_pitch_=0.0;
-    double angle_yaw_=0.0;
     std::deque<double> d_roll_;
     std::deque<double> d_pitch_;
-    std::deque<double> d_yaw_;
     double d_roll_sum_=0.0;
-    double d_yaw_sum_=0.0;
     double d_pitch_sum_=0.0;
     bool map_init_started_ = false;
     std::vector<pcl::PointCloud<PointType>> map_pc_buffer_;
     std::vector<std::vector<Eigen::Vector3d>> map_pc_eigen_buffer_;
     std::vector<Sophus::SE3d> map_pose_buffer_;
     bool map_initialized_ = false;
-    int counter_ = 0;
-    int init_counter_ = 0;
-    int num_iterations_between_ = 1;
-    int no_match_counter_ = 0;
-    double rel_cov_th_=0.9;
-    double max_distance_ = 3.0;
     std::mutex mtx_kdtree_;
     std::mutex mtx_pose_;
     std::vector<BoxPointType> cub_needrm_;
@@ -279,75 +275,156 @@ class LIONode{
     bool localmap_initialized_ = false;
     //maps and poses
     KD_TREE<PointType>::Ptr ikdtree_ptr_;
-    VoxelHashMap overlap_map_=VoxelHashMap(config_.overlap_map_voxel_size, config_.max_range, config_.overlap_map_max_points_per_voxel);
     std::vector<Sophus::SE3d> poses_;
     //adaptive threshold
     AdaptiveThreshold adaptive_threshold_ = AdaptiveThreshold(config_.initial_th, config_.min_motion_th, config_.max_range);
     
-    
     //GICP
     double epsilon_ = 1e-3;
     // ---- GICP-specific helpers declared here and implemented in registration_gicp.cpp ----
-    // Apply SE3 to points/covariances in-place
+
+    /** @brief Applies an SE3 transformation to each 3D point in-place using TBB parallelism.
+     * @param T The SE3 transformation to apply.
+     * @param points [in/out] Vector of 3D points to transform.
+     */
     void transformPoints(const Sophus::SE3d &T, std::vector<Eigen::Vector3d> &points);
+
+    /** @brief Rotates each 3x3 covariance matrix by the rotation part of T in-place using TBB.
+     * @param T The SE3 transformation whose rotation is applied as R * C * R^T.
+     * @param covariances [in/out] Vector of covariance matrices to transform.
+     */
     void transformCovariances(const Sophus::SE3d &T, std::vector<Eigen::Matrix3d> &covariances);
-    // Rotation that aligns e1 to x (used for per-point covariance orientation)
+
+    /** @brief Computes a rotation matrix that maps the unit vector e1=(1,0,0) onto x.
+     *         Used to orient per-point covariance ellipsoids along the estimated normal.
+     * @param x Target unit direction vector.
+     * @return 3x3 rotation matrix aligning e1 to x.
+     */
     Eigen::Matrix3d GetRotationFromE1ToX(const Eigen::Vector3d &x);
-    // Main GICP registration routine (variant used in registration_gicp.cpp)
+
+    /** @brief Performs Generalized ICP registration of a source point cloud against the global map.
+     *         Constructs source/target sets from the ikd-tree, estimates normals and covariances,
+     *         and iteratively minimises the GICP cost function.
+     * @param pc_in Input source point cloud (already voxelized).
+     * @param initial_guess Initial SE3 pose estimate for the source cloud.
+     * @param registered_pose [out] The refined SE3 pose after registration.
+     * @param kernel Robust kernel parameter for outlier weighting.
+     * @param max_correspondence_distance Maximum allowed distance between corresponding points.
+     * @param max_num_iterations Maximum number of ICP iterations.
+     * @param matching_error [out] The final inlier RMSE after convergence.
+     * @return True if registration succeeded, false otherwise.
+     */
     bool registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in,
                             const Sophus::SE3d &initial_guess,
                             Sophus::SE3d &registered_pose,
                             double kernel, double max_correspondence_distance,
                             int max_num_iterations,
-                            double sigma,
                             double &matching_error);
-    // Build linear system for GICP
+
+    /** @brief Builds the 6x6 normal equation system (JTJ, JTr) for a single GICP iteration.
+     *         Computes weighted Jacobians and residuals from point-to-plane distances under
+     *         the combined source/target covariance model.
+     * @param source Source point positions (in current ICP frame).
+     * @param target Target point positions.
+     * @param c_source Source covariance matrices.
+     * @param c_target Target covariance matrices.
+     * @param corres Correspondence pairs as (source_index, target_index).
+     * @param kernel Robust kernel parameter.
+     * @return Tuple of (JTJ, JTr, sum_of_squared_residuals).
+     */
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> BuildLinearSystemGICP(
         const std::vector<Eigen::Vector3d> &source,
         const std::vector<Eigen::Vector3d> &target,
         const std::vector<Eigen::Matrix3d> &c_source,
         const std::vector<Eigen::Matrix3d> &c_target,
-        const std::vector<Eigen::Vector2i> &corres,
+        const std::vector<Eigen::Vector2i> &corres, 
         double kernel);
-    // Parallel accumulation of JTJ, JTr
+
+    /** @brief Accumulates JTJ and JTr in parallel using TBB by evaluating a per-element
+     *         Jacobian/residual functor over all correspondences.
+     * @param f Functor called as f(index, J_rows, residuals, weights) for each correspondence.
+     * @param iteration_num Total number of correspondences to process.
+     * @return Tuple of (JTJ, JTr, sum_of_squared_residuals).
+     */
     std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> ComputeJTJandJTr(
         std::function<
             void(int,
                  std::vector<Eigen::Vector6d, Eigen::aligned_allocator<Eigen::Vector6d>> &,
                  std::vector<double> &,
                  std::vector<double> &)> f,
-        int iteration_num,
-        bool verbose = true);
-    std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> ComputeJTJandJTr2(
-        std::function<
-                void(int,
-                     std::vector<Eigen::Vector6d> &,
-                     std::vector<double> &,
-                     std::vector<double> &)> f,
-        int iteration_num,
-        bool verbose =true);
-    // Per-point covariance (KD-tree constructed internally)
+        int iteration_num);
+
+    /** @brief Estimates per-point 3x3 covariance matrices from k-nearest neighbours.
+     *         Internally builds a kd-tree over the input points.
+     * @param points Input 3D point set.
+     * @return Vector of 3x3 covariance matrices, one per input point.
+     */
     std::vector<Eigen::Matrix3d> computePerPointCovariances(const std::vector<Eigen::Vector3d> &points);
+
+    /** @brief Estimates per-point 3x3 covariance matrices using a pre-built kd-tree.
+     * @param points Input 3D point set.
+     * @param kdtree Pre-built kd-tree over the same point set.
+     * @return Vector of 3x3 covariance matrices, one per input point.
+     */
     std::vector<Eigen::Matrix3d> computePerPointCovarianceskdTree(const std::vector<Eigen::Vector3d> &points, const kd_tree_t &kdtree);
 
-    // Low-level covariance from neighbor indices
+    /** @brief Computes the sample covariance matrix from a subset of points given by indices.
+     *         Uses a cumulant-based formulation for numerical efficiency.
+     * @param points Full point set.
+     * @param indices Pointer to an array of indices into points.
+     * @param count Number of indices.
+     * @return 3x3 covariance matrix (identity if count < 3).
+     */
     Eigen::Matrix3d computeCovariance(const std::vector<Eigen::Vector3d> &points,
                                       const size_t *indices,
                                       size_t count);
-    // Normal estimation (KD-tree internal)
+
+    /** @brief Estimates surface normals for each point by computing the eigenvector of smallest
+     *         eigenvalue of the per-point covariance. Builds a kd-tree internally.
+     * @param points Input 3D point set.
+     * @return Vector of unit normal vectors, one per input point.
+     */
     std::vector<Eigen::Vector3d> computeNormals(const std::vector<Eigen::Vector3d> &points);
+
+    /** @brief Estimates surface normals using a pre-built kd-tree, orienting them toward the sensor origin.
+     * @param points Input 3D point set.
+     * @param kdtree Pre-built kd-tree over the same point set.
+     * @return Vector of unit normal vectors, one per input point.
+     */
     std::vector<Eigen::Vector3d> computeNormalskdTree(const std::vector<Eigen::Vector3d> &points, const kd_tree_t &kdtree);
+
+    /** @brief Constructs source and target point sets for GICP by querying the ikd-tree
+     *         for nearest neighbours of each input point.
+     * @param pc_in Input point cloud (already transformed by the initial guess).
+     * @return Pair of (source_points, target_points) as Eigen vectors.
+     */
     std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> construct_source_and_target_pc(const pcl::PointCloud<PointType>::Ptr &pc_in);
-    std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> construct_source_and_target_pc_box(const pcl::PointCloud<PointType>::Ptr &pc_in);
+
+    /** @brief Finds nearest-neighbour correspondences between source points and the target kd-tree,
+     *         filtering by maximum distance, and accumulates the squared error.
+     * @param source [in] Source point positions.
+     * @param correspondences [out] Resulting correspondence pairs (source_idx, target_idx).
+     * @param target_kdtree Pre-built kd-tree over the target points.
+     * @param max_correspondence_distance Maximum allowed correspondence distance.
+     * @param error2 [in/out] Accumulated sum of squared correspondence distances.
+     */
     void find_correspondences_and_calculate_error(std::vector<Eigen::Vector3d> &source, std::vector<Eigen::Vector2i> &correspondences, const kd_tree_t &target_kdtree, double &max_correspondence_distance, double &error2);
+
+    /** @brief Computes the GICP-weighted RMSE over all correspondences using the combined
+     *         source and target covariance matrices.
+     * @param source Source point positions.
+     * @param target Target point positions.
+     * @param covariances_source Source covariance matrices.
+     * @param covariances_target Target covariance matrices.
+     * @param corres Correspondence index pairs.
+     * @return Root mean squared error (0.0 if no correspondences).
+     */
     double ComputeRMSE(
         const std::vector<Eigen::Vector3d> &source,
         const std::vector<Eigen::Vector3d> &target,
         const std::vector<Eigen::Matrix3d> &covariances_source,
         const std::vector<Eigen::Matrix3d> &covariances_target,
         const std::vector<Eigen::Vector2i> &corres) const;
-    //nanoGICP
-    bool registerPointsNanoGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, const Sophus::SE3d &initial_guess, Sophus::SE3d &registered_pose, double max_correspondence_distance, int max_num_iterations, double sigma);
     
 
     //process IMU measurements
@@ -365,32 +442,71 @@ class LIONode{
     nav_msgs::Path all_path_msg_; //all poses (initial if not registered)
     nav_msgs::Path all_path2_msg_; //all poses (up to now if not registered)
     nav_msgs::Path reg_path_msg_; //only successful registration
-    //DEBUGGING
-    double imu_x_ = 0;
-    double imu_y_ = 0;
-    double imu_z_ = 0;
-    int imu_num_ = 0;
-    void preprocess(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr& pc_out, double start_time);
     //helpers
+
+    /** @brief Looks up a TF2 transform between two frames and converts it to Sophus::SE3d.
+     * @param target_frame Target TF frame name.
+     * @param source_frame Source TF frame name.
+     * @param time Timestamp for the transform lookup (default: latest available).
+     * @return The SE3 transform from source to target (identity on failure).
+     */
     Sophus::SE3d LookupTransform(const std::string &target_frame, const std::string &source_frame, const ros::Time &time = ros::Time(0)) const;
+
+    /** @brief Downsamples a point cloud using a VoxelGrid filter with uniform cell size.
+     * @param pc_in Input point cloud.
+     * @param pc_out [out] Output voxelized point cloud.
+     * @param voxel_size Side length of each voxel cube in metres.
+     */
     void voxelize(const pcl::PointCloud<PointType>::Ptr& pc_in, pcl::PointCloud<PointType>::Ptr& pc_out, float voxel_size);
-    void voxelize_XYZITR(const pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out, float voxel_size);
+
+    /** @brief Filters points by Euclidean distance from the origin (custom point type overload).
+     * @param pc_in Input point cloud.
+     * @param pc_out [out] Output cloud containing only points within the distance range.
+     * @param max_range Maximum allowed point distance in metres.
+     * @param min_range Minimum allowed point distance in metres.
+     */
     void dist_filter(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_out, double max_range, double min_range);
-    std::tuple<Eigen::Matrix6d, Eigen::Vector6d> BuildLinearSystem(const std::vector<Eigen::Vector3d> &source, const std::vector<Eigen::Vector3d> &target, double kernel);
-    
+
+    /** @brief Filters points by Euclidean distance from the origin (PointXYZ overload).
+     * @param pc_in Input point cloud.
+     * @param pc_out [out] Output cloud containing only points within the distance range.
+     * @param max_range Maximum allowed point distance in metres.
+     * @param min_range Minimum allowed point distance in metres.
+     */
+    void dist_filter(pcl::PointCloud<pcl::PointXYZ>::Ptr& pc_in, pcl::PointCloud<pcl::PointXYZ>::Ptr& pc_out, double max_range, double min_range);
+
+    /** @brief Implements the sliding-map strategy by deleting points from the ikd-tree
+     *         that fall outside a moving cuboid window centred on the current pose.
+     * @param kdtree_delete_counter [out] Number of points deleted from the tree.
+     * @param current_pose Current estimated pose used to determine the window centre.
+     */
     void move_map(int &kdtree_delete_counter, const Sophus::SE3d &current_pose);
+
+    /** @brief Computes the initial guess for GICP by looking up the external odometry (Kalman/IMU)
+     *         and composing it with the previous registered pose.
+     * @param timestamp Timestamp at which to query the odometry transform.
+     * @return Tuple of (predicted_pose_in_map, relative_pose_difference).
+     */
     std::tuple<Sophus::SE3d, Sophus::SE3d>  getInitialGuess(const ros::Time &timestamp);
-    double GetAdaptiveThreshold();
-    bool HasMoved();
-    bool no_match = false;
     
     //conversions
+
+    /** @brief Converts a ROS TransformStamped message to a Sophus SE3d object.
+     * @param transform The ROS transform message.
+     * @return Equivalent Sophus::SE3d.
+     */
     inline Sophus::SE3d transformToSophus(const geometry_msgs::TransformStamped &transform) const{
     const auto &t = transform.transform;
     return Sophus::SE3d(
         Sophus::SE3d::QuaternionType(t.rotation.w, t.rotation.x, t.rotation.y, t.rotation.z),
         Sophus::SE3d::Point(t.translation.x, t.translation.y, t.translation.z));
     }
+    /** @brief Converts Euler angles (roll, pitch, yaw) to a unit quaternion.
+     * @param roll Rotation around the X axis in radians.
+     * @param pitch Rotation around the Y axis in radians.
+     * @param yaw Rotation around the Z axis in radians.
+     * @return The corresponding unit quaternion.
+     */
     inline Sophus::SE3d::QuaternionType eulerToQuat(double roll, double pitch, double yaw){
         //only valid for small angles
         double cr = cos(roll * 0.5);
@@ -406,6 +522,10 @@ class LIONode{
         double q_z = cr * cp * sy - sr * sp * cy;
         return Sophus::SE3d::QuaternionType(q_w, q_x, q_y, q_z);       
     }
+    /** @brief Converts a Sophus SE3d object to a ROS geometry_msgs::Transform.
+     * @param T The Sophus SE3d pose.
+     * @return Equivalent ROS Transform message.
+     */
     inline geometry_msgs::Transform sophusToTransform(const Sophus::SE3d &T) {
         geometry_msgs::Transform t;
         t.translation.x = T.translation().x();
@@ -420,6 +540,10 @@ class LIONode{
 
         return t;
     }
+    /** @brief Converts a Sophus SE3d object to a ROS geometry_msgs::Pose.
+     * @param T The Sophus SE3d pose.
+     * @return Equivalent ROS Pose message.
+     */
     inline geometry_msgs::Pose sophusToPose(const Sophus::SE3d &T) {
         geometry_msgs::Pose t;
         t.position.x = T.translation().x();

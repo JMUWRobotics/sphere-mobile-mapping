@@ -8,24 +8,29 @@
 
 namespace
 {
-inline Eigen::Matrix3d computeInverseSqrtSPD(const Eigen::Matrix3d &M)
-{
-    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
-    Eigen::Matrix3d M_reg = M;
-
-    for (int attempt = 0; attempt < 6; ++attempt)
+    /** @brief Computes the inverse square root of a 3x3 symmetric positive-definite matrix
+     *         via Cholesky decomposition, with progressive regularisation fallback.
+     * @param M Input symmetric positive-definite 3x3 matrix.
+     * @return M^{-1/2} (identity matrix if decomposition fails after all retries).
+     */
+    inline Eigen::Matrix3d computeInverseSqrtSPD(const Eigen::Matrix3d &M)
     {
-        Eigen::LLT<Eigen::Matrix3d> llt(M_reg);
-        if (llt.info() == Eigen::Success)
-        {
-            return llt.matrixL().solve(I);
-        }
-        const double eps = std::pow(10.0, -9 + attempt);
-        M_reg = M + eps * I;
-    }
+        Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+        Eigen::Matrix3d M_reg = M;
 
-    return I;
-}
+        for (int attempt = 0; attempt < 6; ++attempt)
+        {
+            Eigen::LLT<Eigen::Matrix3d> llt(M_reg);
+            if (llt.info() == Eigen::Success)
+            {
+                return llt.matrixL().solve(I);
+            }
+            const double eps = std::pow(10.0, -9 + attempt);
+            M_reg = M + eps * I;
+        }
+
+        return I;
+    }
 }
 
 void LIONode::transformPoints(const Sophus::SE3d &T, std::vector<Eigen::Vector3d> &points)
@@ -41,6 +46,7 @@ void LIONode::transformPoints(const Sophus::SE3d &T, std::vector<Eigen::Vector3d
             }
         });
 }
+
 void LIONode::transformCovariances(const Sophus::SE3d &T, std::vector<Eigen::Matrix3d> &covariances)
 {
     // Apply SE3 transform to each matrix in parallel using TBB.
@@ -73,77 +79,7 @@ inline Eigen::Matrix3d LIONode::GetRotationFromE1ToX(const Eigen::Vector3d &x)
     const double factor = 1 / (1 + c);
     return Eigen::Matrix3d::Identity() + sv + (sv * sv) * factor;
 }
-std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> LIONode::construct_source_and_target_pc_box(const pcl::PointCloud<PointType>::Ptr &pc_in)
-{
-    auto pc_in_vox = boost::make_shared<pcl::PointCloud<PointType>>();
-    // voxelize(pc_in, pc_in_vox, 4);
-    *pc_in_vox = *pc_in;
-    const size_t N = pc_in_vox->points.size();
-    const int kNN = 3;
-    std::vector<Eigen::Vector3d> src_buf(N);
-    std::vector<Eigen::Vector3d> tgt_buf(50 * N);
-    std::vector<bool> valid(N);
-    std::vector<int> nn_count(N, 0);
-    std::vector<std::vector<Eigen::Vector3d>> all_target(N);
-    double cube_len = 2.0;
-    // calculate covariances for target points
-    // get target points as box range from the ikd tree and voxelize them
-    // build target kd tree
-    // use Box Search for target point cloud selection
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, N),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          // thread-local temporaries to avoid repeated allocations and contention
-                          thread_local PointVector found_neighbour(1000);
-                          thread_local std::vector<float> distance;
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              found_neighbour.clear();
-                              distance.clear();
-                              BoxPointType SearchBox;
-                              SearchBox.vertex_min[0] = pc_in_vox->points[i].x - cube_len / 2.0;
-                              SearchBox.vertex_max[0] = pc_in_vox->points[i].x + cube_len / 2.0;
-                              SearchBox.vertex_min[1] = pc_in_vox->points[i].y - cube_len / 2.0;
-                              SearchBox.vertex_max[1] = pc_in_vox->points[i].y + cube_len / 2.0;
-                              SearchBox.vertex_min[2] = pc_in_vox->points[i].z - cube_len / 2.0;
-                              SearchBox.vertex_max[2] = pc_in_vox->points[i].z + cube_len / 2.0;
-                              // for (int j = 0; j < 3; i++){
-                              //     SearchBox.vertex_min[j] = pc_in->points[i] - cube_len / 2.0;
-                              //     SearchBox.vertex_max[j] = pc_in->points[i] + cube_len / 2.0;
-                              // }
-                              ikdtree_ptr_->Box_Search(SearchBox, found_neighbour);
-                              // voxelization here
-                              // ROS_INFO_STREAM("found points: " << nearest_neighbour.size());
-                              if (!found_neighbour.empty())
-                              {
-                                  // ROS_INFO_STREAM("Box number of stored points: " << found_neighbour.size());
-                                  const int num = std::min<int>(50, static_cast<int>(found_neighbour.size()));
-                                  all_target[i].resize(num);
-                                  for (int k = 0; k < num; ++k)
-                                  {
-                                      const auto &nn = found_neighbour[k];
-                                      all_target[i].push_back(Eigen::Vector3d(nn.x, nn.y, nn.z));
-                                  }
-                                  valid[i] = true;
-                              }
-                          }
-                      });
-    std::vector<Eigen::Vector3d> target;
-    target.reserve(50 * N);
-    for (size_t i = 0; i < N; ++i)
-    {
-        if (valid[i])
-        {
-            target.insert(target.end(), all_target[i].begin(), all_target[i].end());
-        }
-    }
-    std::vector<Eigen::Vector3d> source(pc_in->size());
-    for (size_t i = 0; i < pc_in->size(); ++i)
-    {
-        source[i] = Eigen::Vector3d(pc_in->points[i].x, pc_in->points[i].y, pc_in->points[i].z);
-    }
-    return std::make_pair(source, target);
-}
+
 std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> LIONode::construct_source_and_target_pc(const pcl::PointCloud<PointType>::Ptr &pc_in)
 {
     const size_t N = pc_in->points.size();
@@ -157,31 +93,31 @@ std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> LIONode::c
     // get target points as box range from the ikd tree and voxelize them
     // build target kd tree
     tbb::parallel_for(tbb::blocked_range<size_t>(0, N),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          // thread-local temporaries to avoid repeated allocations and contention
-                          thread_local PointVector nearest_neighbour(kNN);
-                          thread_local std::vector<float> distance;
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              nearest_neighbour.clear();
-                              distance.clear();
-                              ikdtree_ptr_->Nearest_Search(pc_in->points[i], kNN, nearest_neighbour, distance, 5);
-                              // ROS_INFO_STREAM("found points: " << nearest_neighbour.size());
-                              if (!nearest_neighbour.empty())
-                              {
-                                  const int num = std::min<int>(kNN, static_cast<int>(nearest_neighbour.size()));
-                                  target_all[i].reserve(num);
-                                  for (int k = 0; k < num; ++k)
-                                  {
-                                      const auto &nn = nearest_neighbour[k];
-                                      target_all[i].push_back(Eigen::Vector3d(nn.x, nn.y, nn.z));
-                                  }
-                                  valid[i] = true;
-                              }
-                              source[i] = Eigen::Vector3d(pc_in->points[i].x, pc_in->points[i].y, pc_in->points[i].z);
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            // thread-local temporaries to avoid repeated allocations and contention
+            thread_local PointVector nearest_neighbour(kNN);
+            thread_local std::vector<float> distance;
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                nearest_neighbour.clear();
+                distance.clear();
+                ikdtree_ptr_->Nearest_Search(pc_in->points[i], kNN, nearest_neighbour, distance, 5);
+                if (!nearest_neighbour.empty())
+                {
+                    const int num = std::min<int>(kNN, static_cast<int>(nearest_neighbour.size()));
+                    target_all[i].reserve(num);
+                    for (int k = 0; k < num; ++k)
+                    {
+                        const auto &nn = nearest_neighbour[k];
+                        target_all[i].push_back(Eigen::Vector3d(nn.x, nn.y, nn.z));
+                    }
+                    valid[i] = true;
+                }
+                source[i] = Eigen::Vector3d(pc_in->points[i].x, pc_in->points[i].y, pc_in->points[i].z);
+            }
+        }
+    );
     for (size_t i = 0; i < N; ++i)
     {
         if (valid[i])
@@ -191,28 +127,34 @@ std::pair<std::vector<Eigen::Vector3d>, std::vector<Eigen::Vector3d>> LIONode::c
     }
     return std::make_pair(source, target);
 }
-void LIONode::find_correspondences_and_calculate_error(std::vector<Eigen::Vector3d> &source, std::vector<Eigen::Vector2i> &correspondences, const kd_tree_t &target_kdtree, double &max_correspondence_distance, double &error2)
+
+void LIONode::find_correspondences_and_calculate_error(std::vector<Eigen::Vector3d> &source, 
+                                                       std::vector<Eigen::Vector2i> &correspondences, 
+                                                       const kd_tree_t &target_kdtree, 
+                                                       double &max_correspondence_distance, 
+                                                       double &error2)
 {
     std::vector<int> match_index(source.size(), -1);
     std::vector<double> match_dist2(source.size(), 0.0);
 
     const double max_dist_sq = max_correspondence_distance * max_correspondence_distance;
     tbb::parallel_for(tbb::blocked_range<size_t>(0, source.size()),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          std::vector<size_t> nn_index(1);
-                          std::vector<double> nn_dist2(1);
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              const double query[3] = {source[i].x(), source[i].y(), source[i].z()};
-                              size_t found = target_kdtree.index->knnSearch(query, 1, nn_index.data(), nn_dist2.data());
-                              if (found > 0 && nn_dist2[0] <= max_dist_sq)
-                              {
-                                  match_index[i] = static_cast<int>(nn_index[0]);
-                                  match_dist2[i] = nn_dist2[0];
-                              }
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            std::vector<size_t> nn_index(1);
+            std::vector<double> nn_dist2(1);
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                const double query[3] = {source[i].x(), source[i].y(), source[i].z()};
+                size_t found = target_kdtree.index->knnSearch(query, 1, nn_index.data(), nn_dist2.data());
+                if (found > 0 && nn_dist2[0] <= max_dist_sq)
+                {
+                    match_index[i] = static_cast<int>(nn_index[0]);
+                    match_dist2[i] = nn_dist2[0];
+                }
+            }
+        }
+    );
     // Build correspondences vector and accumulate error
     correspondences.clear();
     for (size_t i = 0; i < source.size(); ++i)
@@ -224,6 +166,7 @@ void LIONode::find_correspondences_and_calculate_error(std::vector<Eigen::Vector
         }
     }
 }
+
 double LIONode::ComputeRMSE(
     const std::vector<Eigen::Vector3d> &source,
     const std::vector<Eigen::Vector3d> &target,
@@ -249,107 +192,53 @@ double LIONode::ComputeRMSE(
     }
     return std::sqrt(err / (double)corres.size());
 }
-bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, const Sophus::SE3d &initial_guess, Sophus::SE3d &registered_pose, double kernel, double max_correspondence_distance, int max_num_iterations, double sigma, double &matching_error)
+
+bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, 
+                                 const Sophus::SE3d &initial_guess, 
+                                 Sophus::SE3d &registered_pose, 
+                                 double kernel, 
+                                 double max_correspondence_distance, 
+                                 int max_num_iterations, 
+                                 double &matching_error)
 {
-    ROS_INFO_STREAM("registerPointsGICP called");
-    // ROS_WARN_STREAM("max_num_iterations: " << max_num_iterations);
-    // max_correspondence_distance = sigma;
-    // ROS_WARN_STREAM("max_correspondence_distance: "<< max_correspondence_distance);
-    // if(!config_.adaptive_th){max_correspondence_distance = config_.gicp_max_corr_dist;}
-    double estimation_threshold = 0.0001;
+    auto gicp_t0 = std::chrono::high_resolution_clock::now();
     {
         std::lock_guard<std::mutex> lock(mtx_kdtree_);
         if (ikdtree_ptr_->Root_Node == nullptr)
-        {
+        { 
             registered_pose = initial_guess;
             return true;
         }
     }
-    // max_correspondence_distance = 5;
 
     auto pc_tf = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     pc_tf->points.reserve(pc_in->points.size());
     pcl::transformPointCloud(*pc_in, *pc_tf, initial_guess.translation(), initial_guess.unit_quaternion());
-    // sensor_msgs::PointCloud2 source_msg;
-    // pcl::toROSMsg(*pc_tf, source_msg);
-    // source_msg.header.stamp = ros::Time::now();
-    // source_msg.header.frame_id = odom_frame; // already transformed by initial_guess
-    // source_pc_pub_.publish(source_msg);
-    ROS_INFO_STREAM("Construct source and target pc");
     std::vector<Eigen::Vector3d> source;
     std::vector<Eigen::Vector3d> target;
     {
         std::lock_guard<std::mutex> lock(mtx_kdtree_);
         std::tie(source, target) = construct_source_and_target_pc(pc_tf);
     }
-    ROS_INFO_STREAM("Source and target pc successfully created!");
 
-    // if (source.empty() || target.empty())
-    // {
-    //     ROS_WARN_STREAM("GICP skipped: empty source/target set (source=" << source.size() << ", target=" << target.size() << ")");
-    //     registered_pose = initial_guess;
-    //     matching_error = std::numeric_limits<double>::infinity();
-    //     return false;
-    // }
+    if (source.empty() || target.empty())
+    {
+        ROS_WARN_STREAM("GICP skipped: empty source/target set (source=" << source.size() << ", target=" << target.size() << ")");
+        registered_pose = initial_guess;
+        matching_error = std::numeric_limits<double>::infinity();
+        return false;
+    }
 
-    // // debug the target point cloud
-    // if (!source.empty()) {
-    //     auto source_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    //     source_cloud->points.reserve(source.size());
-    //     for (const auto &v : source) {
-    //         source_cloud->points.emplace_back(pcl::PointXYZ(v.x(), v.y(), v.z()));
-    //     }
-    //     source_cloud->is_dense = true;
-    //     sensor_msgs::PointCloud2 source_msg;
-    //     pcl::toROSMsg(*source_cloud, source_msg);
-    //     source_msg.header.stamp = ros::Time::now();
-    //     source_msg.header.frame_id = config_.odom_frame; // already transformed by initial_guess
-    //     source_pc_pub_.publish(source_msg);
-    // }
-    // if (!target.empty()) {
-    //     auto target_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    //     target_cloud->points.reserve(target.size());
-    //     for (const auto &v : target) {
-    //         target_cloud->points.emplace_back(pcl::PointXYZ(v.x(), v.y(), v.z()));
-    //     }
-    //     target_cloud->is_dense = true;
-    //     sensor_msgs::PointCloud2 target_msg;
-    //     pcl::toROSMsg(*target_cloud, target_msg);
-    //     target_msg.header.stamp = ros::Time::now();
-    //     target_msg.header.frame_id = config_.odom_frame; // map frame
-    //     target_pc_pub_.publish(target_msg);
-    // }
-
-    // tbb::parallel_for(tbb::blocked_range<size_t>(0, pc_in->points.size()),
-    // [&](const tbb::blocked_range<size_t> &range){
-    //     for (size_t i = range.begin(); i < range.end(); ++i) {
-    //         const auto &p = pc_in->points[i];
-    //         source[i] = initial_guess * Eigen::Vector3d(p.x, p.y, p.z);
-    //     }
-    // });
-    // for simplicity: at first only use the nearest neighbours of the source points in the map as target vector
-    // target kd tree
-    // EigenPointCloudAdaptor target_adaptor{target};  // adaptor holds a reference; keep 'target' alive
-    // KDTree_t target_kdtree_(
-    //     3,                                  // dimensionality
-    //     target_adaptor,
-    //     nanoflann::KDTreeSingleIndexAdaptorParams(10));
-    // target_kdtree.buildIndex();
-
-    ROS_INFO_STREAM("Build kdtree of target");
     kd_tree_t target_kdtree(3, target, 10);
 
-    ROS_INFO_STREAM("Compute normals of source");
     auto normals_source = computeNormals(source);
     std::vector<Eigen::Matrix3d> covariances_source;
     covariances_source.resize(normals_source.size());
-    ROS_INFO_STREAM("Compute Normals kd Tree target");
     auto normals_target = computeNormalskdTree(target, target_kdtree);
     std::vector<Eigen::Matrix3d> covariances_target;
     covariances_target.resize(normals_target.size());
     const Eigen::Matrix3d C = Eigen::Vector3d(epsilon_, 1, 1).asDiagonal();
 
-    ROS_INFO("Parallel get Rotation From E1 to X (Source)");
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, normals_source.size()),
         [&](const tbb::blocked_range<size_t> &range)
@@ -359,9 +248,9 @@ bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, c
                 const auto Rx = GetRotationFromE1ToX(normals_source[i]);
                 covariances_source[i] = Rx * C * Rx.transpose();
             }
-        });
+        }
+    );
 
-    ROS_INFO("Parallel get Rotation From E1 to X (Target)");
     tbb::parallel_for(
         tbb::blocked_range<size_t>(0, normals_target.size()),
         [&](const tbb::blocked_range<size_t> &range)
@@ -371,58 +260,47 @@ bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, c
                 const auto Rx = GetRotationFromE1ToX(normals_target[i]);
                 covariances_target[i] = Rx * C * Rx.transpose();
             }
-        });
+        }
+    );
 
     // ICP-loop
     Sophus::SE3d T_icp = Sophus::SE3d();
     int num_it = 0;
-    long long sum_nn = 0;
-    int size = 0;
-    float eval_max_dist = 0.0;
-    // ---- TBB correspondence search (similar to Open3D GetRegistrationResultAndCorrespondences) ----
+    
+    // Search correspondences
     std::vector<Eigen::Vector2i> correspondences; // (source_index, target_index)
     correspondences.reserve(source.size());
     double error2 = 0.0; // sum of squared distances
-    ROS_INFO_STREAM("Check and find correspondences and calculate error");
-    if (max_correspondence_distance > 0.0 && !source.empty() && !target.empty())
-    {
+    if (max_correspondence_distance > 0.0 && !source.empty() && !target.empty()) {
         find_correspondences_and_calculate_error(source, correspondences, target_kdtree, max_correspondence_distance, error2);
-    }
-    else
-    {
-        ROS_INFO_STREAM(source.size() << ", " << target.size() << ", " << max_correspondence_distance);
+    } else {
+        ROS_WARN_STREAM(source.size() << ", " << target.size() << ", " << max_correspondence_distance);
         ROS_WARN_STREAM("Registration not possible!");
-        // registered_pose = initial_guess;
         return false;
     }
     double fitness = 0.0;
-    double inlier_rmse = 0.0;
-    if (!correspondences.empty())
-    {
+    double inlier_rmse = 0.0, prev_rmse = 0.0, prev_prev_rmse = 0.0;
+    if (!correspondences.empty()) {
         fitness = static_cast<double>(correspondences.size()) / static_cast<double>(source.size());
         inlier_rmse = std::sqrt(error2 / static_cast<double>(correspondences.size()));
-    }
-    else
-    {
+    } else {
         fitness = 0.0;
         inlier_rmse = 0.0;
     }
-    ROS_INFO_STREAM("Initial Situation: Correspondences: " << correspondences.size() << ", fitness=" << fitness << ", rmse=" << inlier_rmse);
+
+    /* ICP MAIN LOOP */
     for (int j = 0; j < max_num_iterations; ++j)
     {
+        prev_prev_rmse = prev_rmse;
+        prev_rmse = inlier_rmse;
 
         Sophus::SE3d estimation;
         bool valid = true;
         double dx_norm;
-        if (correspondences.empty() || covariances_source.empty() || covariances_target.empty())
-        {
-            ROS_INFO_STREAM("Empty set!");
+        if (correspondences.empty() || covariances_source.empty() || covariances_target.empty()) {
             estimation = Sophus::SE3d();
             valid = false;
-        }
-        else
-        {
-            ROS_INFO_STREAM("Non-empty set. Building Linear System");
+        } else {
             // Build linear system (GICP style) including robust weights
             const auto &[JTJ, JTr, residual_sum] = BuildLinearSystemGICP(source, target, covariances_source, covariances_target, correspondences, kernel);
             const Eigen::Vector6d dx = JTJ.ldlt().solve(-JTr);
@@ -431,62 +309,48 @@ bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in, c
             output.block<3, 3>(0, 0) =
                 (Eigen::AngleAxisd(dx(2), Eigen::Vector3d::UnitZ()) *
                  Eigen::AngleAxisd(dx(1), Eigen::Vector3d::UnitY()) *
-                 Eigen::AngleAxisd(dx(0), Eigen::Vector3d::UnitX()))
-                    .matrix();
+                 Eigen::AngleAxisd(dx(0), Eigen::Vector3d::UnitX())).matrix();
             output.block<3, 1>(0, 3) = dx.block<3, 1>(3, 0);
-            estimation = Sophus::SE3d::fitToSE3(output); // Sophus::SE3d::exp(dx);//
-            dx_norm = dx.norm();
+            estimation = Sophus::SE3d::fitToSE3(output);
         }
-        // std::cout << src.size();
-        //  Equation (12)
-        ROS_INFO_STREAM("Transform pts");
         transformPoints(estimation, source);
-        ROS_INFO_STREAM("Transform covariances");
         transformCovariances(estimation, covariances_source);
-        // transform covariances accordingly Open3d implementation
-        error2 = 0;
-        ROS_INFO_STREAM("Find correspondences and calc error (inner loop)");
+        error2 = 0.0;
         find_correspondences_and_calculate_error(source, correspondences, target_kdtree, max_correspondence_distance, error2);
         double prev_fitness = fitness;
-        double prev_rmse = inlier_rmse;
-        if (!correspondences.empty())
-        {
+        if (!correspondences.empty()) {
             fitness = static_cast<double>(correspondences.size()) / static_cast<double>(source.size());
             inlier_rmse = std::sqrt(error2 / static_cast<double>(correspondences.size()));
-        }
-        else
-        {
+        } else {
             fitness = 0.0;
             inlier_rmse = 0.0;
         }
-        // ROS_INFO_STREAM("Correspondences: " << correspondences.size() << ", fitness=" << fitness << ", rmse=" << inlier_rmse);
+        if (config_.print_runtime) {
+            ROS_INFO_STREAM("RMSE: " << inlier_rmse 
+                << " (cond1: " << std::fabs(inlier_rmse - prev_rmse) 
+                << "), (cond2: " << std::fabs(inlier_rmse - prev_prev_rmse) 
+                << ") should be < " << config_.gicp_th_rmse);
+        }
         T_icp = estimation * T_icp;
-        if (std::abs(prev_fitness - fitness) <
-                config_.gicp_th_fitness &&
-            std::abs(prev_rmse - inlier_rmse) <
-                config_.gicp_th_rmse)
+        num_it = j + 1;
+        // 3DTK style termination condition
+        if ((std::fabs(inlier_rmse - prev_rmse) < config_.gicp_th_rmse &&
+             std::fabs(inlier_rmse - prev_prev_rmse) < config_.gicp_th_rmse) || 
+             j > max_num_iterations)
         {
+            // TODO: Consider fitness in termination condition again!! 
             break;
         }
-        // Termination criteria
-        // if (valid && dx_norm < estimation_threshold) break;
-        if (j == max_num_iterations - 1)
-        { // ROS_WARN(".");//registration failed");
-            // T_icp=initial_guess;
-            registered_pose = T_icp * initial_guess;
-            matching_error = inlier_rmse;
-            return false;
-        }
-        num_it = j;
     }
-    // Spit the final transformation
-    // ROS_INFO_STREAM("number of iterations: " << num_it);
-    // ROS_INFO_STREAM("Runtime NN-Search ikd Tree: " << static_cast<double>(sum_nn) << " us, Scan size: " << size << "Map size: " << ikdtree_ptr_->size() << ", validnum: " << ikdtree_ptr_->validnum());
-    // ROS_INFO_STREAM("distance: " << max_correspondence_distance);
-    // ROS_INFO_STREAM("Runtime Registration ikd Tree: " << static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()) << " us");
+
+    double gicp_elapsed = std::chrono::duration<double, std::milli>
+        (std::chrono::high_resolution_clock::now() - gicp_t0).count();
+
     registered_pose = T_icp * initial_guess;
     matching_error = inlier_rmse;
-    // ROS_INFO_STREAM("iterations: " << num_it);
+    if (config_.print_runtime) {
+        ROS_INFO_STREAM("Performed " << num_it << " iterations in " << gicp_elapsed << " ms");
+    }
     return true;
 }
 
@@ -498,10 +362,7 @@ std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> LIONode::BuildLinearSystemG
     const std::vector<Eigen::Vector2i> &corres,
     double kernel)
 {
-    if (corres.empty() || c_source.empty() || c_target.empty())
-    {
-        // return Eigen::Matrix4d::Identity();
-    }
+    // Another function defintion
     auto compute_jacobian_and_residual =
         [&](int i,
             std::vector<Eigen::Vector6d, Eigen::aligned_allocator<Eigen::Vector6d>> &J_r,
@@ -558,8 +419,7 @@ std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> LIONode::ComputeJTJandJTr(
              std::vector<double> &,
              std::vector<double> &)>
         f,
-    int iteration_num,
-    bool verbose /*=true*/)
+    int iteration_num)
 {
     if (iteration_num <= 0)
     {
@@ -605,137 +465,63 @@ std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> LIONode::ComputeJTJandJTr(
     return std::make_tuple(std::move(result.JTJ), std::move(result.JTr), result.r2_sum);
 }
 
-// std::tuple<Eigen::Matrix6d, Eigen::Vector6d, double> LIONode::ComputeJTJandJTr2(
-//         std::function<
-//                 void(int,
-//                      std::vector<Eigen::Vector6d> &,
-//                      std::vector<double> &,
-//                      std::vector<double> &)> f,
-//         int iteration_num,
-//         bool verbose /*=true*/) {
-//     if (iteration_num <= 0) {
-//         return std::make_tuple(Eigen::Matrix6d::Zero(), Eigen::Vector6d::Zero(), 0.0);
-//     }
-
-//     struct Accumulator {
-//         Eigen::Matrix6d JTJ;
-//         Eigen::Vector6d JTr;
-//         double r2_sum;
-//         Accumulator() : JTJ(Eigen::Matrix6d::Zero()), JTr(Eigen::Vector6d::Zero()), r2_sum(0.0) {}
-//     };
-
-//     Accumulator result = tbb::parallel_reduce(
-//         tbb::blocked_range<int>(0, iteration_num),
-//         Accumulator{},
-//         [&](const tbb::blocked_range<int> &range, Accumulator acc) -> Accumulator {
-//             double r;                // residuals per call
-//             double w;                // weights per residual row
-//             std::vector<Eigen::Vector6d> J_r; // Jacobian rows
-//             for (int i = range.begin(); i < range.end(); ++i) {
-//                 f(i, J_r, r, w);
-//                 acc.JTJ.noalias() += J_r * w * J_r.transpose();
-//                 acc.JTr.noalias() += J_r * w * r;
-//                 acc.r2_sum += r * r;
-//             }
-//             return acc;
-//         },
-//         [](Accumulator a, const Accumulator &b) -> Accumulator {
-//             a.JTJ += b.JTJ;
-//             a.JTr += b.JTr;
-//             a.r2_sum += b.r2_sum;
-//             return a;
-//         }
-//     );
-//     return std::make_tuple(std::move(result.JTJ), std::move(result.JTr), result.r2_sum);
-// }
-
-// const auto &[JTJ, JTr, r2] = tbb::parallel_reduce(
-//     // Range
-//     tbb::blocked_range<size_t>{0, source.size()},
-//     // Identity
-//     ResultTuple(),
-//     // 1st Lambda: Parallel computation
-//     [&](const tbb::blocked_range<size_t> &r, ResultTuple J) -> ResultTuple {
-//         auto Weight = [&](double residual2) {
-//             return square(kernel) / square(kernel + residual2);
-//         };
-//         auto &[JTJ_private, JTr_private] = J;
-//         double r2_sum_private = 0.0;
-//         compute_jacobian_and_residual(J_r, residual, weighted);
-//         for (auto i = r.begin(); i < r.end(); ++i) {
-//             const double w = Weight(residual.squaredNorm());
-//             JTJ_private.noalias() += J_r[i] * weighted[i] * J_r[i].transpose;
-//             JTr_private.noalias() += J_r[i] * weighted[i] * residual[i];
-//             r2_sum_private += r[i] * r[i];
-//         }
-//         return J;
-//     },
-//     // 2nd Lambda: Parallel reduction of the private Jacboians
-//     [&](ResultTuple a, const ResultTuple &b) -> ResultTuple { return a + b; });
-
-// Standalone KD-tree (nanoflann) based per-point covariance computation.
-// Builds a KD-tree over 'points' and for each point computes the covariance
-// of its k nearest neighbours (including itself). Returns a vector of 3x3 matrices
-// with size equal to points.size().
-
 std::vector<Eigen::Matrix3d> LIONode::computePerPointCovariances(const std::vector<Eigen::Vector3d> &points)
 {
     size_t k_neighbors = 20;
     std::vector<Eigen::Matrix3d> covariances;
-    // if (k_neighbors < 2) k_neighbors = 2; // minimal neighbourhood for covariance
     covariances.resize(points.size());
 
     kd_tree_t kdtree(3, points, 10);
 
     tbb::parallel_for(tbb::blocked_range<size_t>(0, points.size()),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          // thread-local buffers per range to avoid contention
-                          std::vector<size_t> indices(k_neighbors);
-                          std::vector<double> dists(k_neighbors);
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              const double query_pt[3] = {points[i].x(), points[i].y(), points[i].z()};
-                              size_t found = kdtree.index->knnSearch(query_pt, k_neighbors, indices.data(), dists.data());
-                              if (found >= 3)
-                              {
-                                  covariances[i] = computeCovariance(points, indices.data(), found);
-                              }
-                              else
-                              {
-                                  covariances[i] = Eigen::Matrix3d::Identity();
-                              }
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            // thread-local buffers per range to avoid contention
+            std::vector<size_t> indices(k_neighbors);
+            std::vector<double> dists(k_neighbors);
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                const double query_pt[3] = {points[i].x(), points[i].y(), points[i].z()};
+                size_t found = kdtree.index->knnSearch(query_pt, k_neighbors, indices.data(), dists.data());
+                if (found >= 3) {
+                    covariances[i] = computeCovariance(points, indices.data(), found);
+                } else {
+                    covariances[i] = Eigen::Matrix3d::Identity();
+                }
+            }
+        }
+    );
     return covariances;
 }
-std::vector<Eigen::Matrix3d> LIONode::computePerPointCovarianceskdTree(const std::vector<Eigen::Vector3d> &points, const kd_tree_t &kdtree)
+
+std::vector<Eigen::Matrix3d> LIONode::computePerPointCovarianceskdTree(const std::vector<Eigen::Vector3d> &points,
+                                                                       const kd_tree_t &kdtree)
 {
     size_t k_neighbors = 20;
     std::vector<Eigen::Matrix3d> covariances;
-    // if (k_neighbors < 2) k_neighbors = 2; // minimal neighbourhood for covariance
     covariances.resize(points.size());
 
     tbb::parallel_for(tbb::blocked_range<size_t>(0, points.size()),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          // thread-local buffers per range to avoid contention
-                          std::vector<size_t> indices(k_neighbors);
-                          std::vector<double> dists(k_neighbors);
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              const double query_pt[3] = {points[i].x(), points[i].y(), points[i].z()};
-                              size_t found = kdtree.index->knnSearch(query_pt, k_neighbors, indices.data(), dists.data());
-                              if (found >= 3)
-                              {
-                                  covariances[i] = computeCovariance(points, indices.data(), found);
-                              }
-                              else
-                              {
-                                  covariances[i] = Eigen::Matrix3d::Identity();
-                              }
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            // thread-local buffers per range to avoid contention
+            std::vector<size_t> indices(k_neighbors);
+            std::vector<double> dists(k_neighbors);
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                const double query_pt[3] = {points[i].x(), points[i].y(), points[i].z()};
+                size_t found = kdtree.index->knnSearch(query_pt, k_neighbors, indices.data(), dists.data());
+                if (found >= 3)
+                {
+                    covariances[i] = computeCovariance(points, indices.data(), found);
+                }
+                else
+                {
+                    covariances[i] = Eigen::Matrix3d::Identity();
+                }
+            }
+        }
+    );
     return covariances;
 }
 
@@ -775,7 +561,12 @@ inline Eigen::Matrix3d LIONode::computeCovariance(const std::vector<Eigen::Vecto
     return C;
 }
 
-// ---- Robust symmetric 3x3 eigen decomposition helpers (adapted from Open3D) ----
+/** @brief Computes the eigenvector corresponding to eigenvalue eval0 of a symmetric 3x3 matrix
+ *         by selecting the cross product of the two rows of (A - eval0*I) with largest norm.
+ * @param A Symmetric 3x3 matrix.
+ * @param eval0 The eigenvalue whose eigenvector is sought.
+ * @return Unit-length eigenvector associated with eval0.
+ */
 static inline Eigen::Vector3d ComputeEigenvector0(const Eigen::Matrix3d &A, double eval0)
 {
     Eigen::Vector3d row0(A(0, 0) - eval0, A(0, 1), A(0, 2));
@@ -805,6 +596,14 @@ static inline Eigen::Vector3d ComputeEigenvector0(const Eigen::Matrix3d &A, doub
     return r1xr2 / std::sqrt(d2);
 }
 
+/** @brief Computes the eigenvector for eigenvalue eval1 of a symmetric 3x3 matrix,
+ *         given a known eigenvector evec0 for a different eigenvalue. Uses the 2D
+ *         reduced problem in the plane orthogonal to evec0.
+ * @param A Symmetric 3x3 matrix.
+ * @param evec0 A previously computed eigenvector of A.
+ * @param eval1 The eigenvalue whose eigenvector is sought.
+ * @return Unit-length eigenvector associated with eval1.
+ */
 static inline Eigen::Vector3d ComputeEigenvector1(const Eigen::Matrix3d &A,
                                                   const Eigen::Vector3d &evec0,
                                                   double eval1)
@@ -827,9 +626,7 @@ static inline Eigen::Vector3d ComputeEigenvector1(const Eigen::Matrix3d &A,
     Eigen::Vector3d AV(A(0, 0) * V(0) + A(0, 1) * V(1) + A(0, 2) * V(2),
                        A(0, 1) * V(0) + A(1, 1) * V(1) + A(1, 2) * V(2),
                        A(0, 2) * V(0) + A(1, 2) * V(1) + A(2, 2) * V(2));
-    // double m00 = U.dot(AU) - eval1;
-    // double m01 = U.dot(AV);
-    // double m11 = V.dot(AV) - eval1;
+
     double m00 = U(0) * AU(0) + U(1) * AU(1) + U(2) * AU(2) - eval1;
     double m01 = U(0) * AV(0) + U(1) * AV(1) + U(2) * AV(2);
     double m11 = V(0) * AV(0) + V(1) * AV(1) + V(2) * AV(2) - eval1;
@@ -885,6 +682,11 @@ static inline Eigen::Vector3d ComputeEigenvector1(const Eigen::Matrix3d &A,
     }
 }
 
+/** @brief Performs a fast closed-form eigen decomposition of a symmetric 3x3 matrix
+ *         and returns the eigenvector with the smallest eigenvalue (surface normal direction).
+ * @param covariance Symmetric 3x3 covariance matrix.
+ * @return Unit eigenvector corresponding to the smallest eigenvalue.
+ */
 static inline Eigen::Vector3d FastEigen3x3(const Eigen::Matrix3d &covariance)
 {
     Eigen::Matrix3d A = covariance;
@@ -961,38 +763,42 @@ std::vector<Eigen::Vector3d> LIONode::computeNormals(const std::vector<Eigen::Ve
     auto covs = computePerPointCovariances(points);
     std::vector<Eigen::Vector3d> normals(points.size());
     tbb::parallel_for(tbb::blocked_range<size_t>(0, points.size()),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              Eigen::Vector3d n = FastEigen3x3(covs[i]);
-                              double len = n.norm();
-                              if (len < 1e-9)
-                                  n = Eigen::Vector3d::UnitZ();
-                              // Orient normal toward sensor origin (flip if pointing away from origin based on point direction)
-                              // if (n.dot(points[i]) > 0) n = -n;
-                              normals[i] = n;
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                Eigen::Vector3d n = FastEigen3x3(covs[i]);
+                double len = n.norm();
+                if (len < 1e-9)
+                    n = Eigen::Vector3d::UnitZ();
+                // Orient normal toward sensor origin (flip if pointing away from origin based on point direction)
+                // if (n.dot(points[i]) > 0) n = -n;
+                normals[i] = n;
+            }
+        }
+    );
     return normals;
 }
+
 std::vector<Eigen::Vector3d> LIONode::computeNormalskdTree(const std::vector<Eigen::Vector3d> &points, const kd_tree_t &kdtree)
 {
     auto covs = computePerPointCovarianceskdTree(points, kdtree);
     std::vector<Eigen::Vector3d> normals(points.size());
     tbb::parallel_for(tbb::blocked_range<size_t>(0, points.size()),
-                      [&](const tbb::blocked_range<size_t> &range)
-                      {
-                          for (size_t i = range.begin(); i < range.end(); ++i)
-                          {
-                              Eigen::Vector3d n = FastEigen3x3(covs[i]);
-                              double len = n.norm();
-                              if (len < 1e-9)
-                                  n = Eigen::Vector3d::UnitZ();
-                              // Orient normal toward sensor origin (flip if pointing away from origin based on point direction)
-                              // if (n.dot(points[i]) > 0) n = -n;
-                              normals[i] = n;
-                          }
-                      });
+        [&](const tbb::blocked_range<size_t> &range)
+        {
+            for (size_t i = range.begin(); i < range.end(); ++i)
+            {
+                Eigen::Vector3d n = FastEigen3x3(covs[i]);
+                double len = n.norm();
+                if (len < 1e-9) {
+                    n = Eigen::Vector3d::UnitZ();
+                }
+                // Orient normal toward sensor origin (flip if pointing away from origin based on point direction)
+                if (n.dot(points[i]) > 0) n = -n;
+                normals[i] = n;
+            }
+        }
+    );
     return normals;
 }
