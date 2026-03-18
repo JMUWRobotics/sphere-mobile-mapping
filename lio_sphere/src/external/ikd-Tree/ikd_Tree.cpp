@@ -7,10 +7,11 @@ email: yixicai@connect.hku.hk
 */
 
 template <typename PointType>
-KD_TREE<PointType>::KD_TREE(float delete_param, float balance_param, float box_length) {
+KD_TREE<PointType>::KD_TREE(float delete_param, float balance_param, float box_length, int box_capacity) {
     delete_criterion_param = delete_param;
     balance_criterion_param = balance_param;
     downsample_size = box_length;
+    downsample_max_point_num = box_capacity;
     Rebuild_Logger.clear();           
     termination_flag = false;
     start_thread();
@@ -442,12 +443,12 @@ int KD_TREE<PointType>::Add_Points(PointVector & PointToAdd, bool downsample_on)
             //     }
             // }
             if (Rebuild_Ptr == nullptr || *Rebuild_Ptr != Root_Node){  
-                if (Downsample_Storage.size() <= 5){
+                if (Downsample_Storage.size() <= downsample_max_point_num){
                     Add_by_point(&Root_Node, downsample_result, true, Root_Node->division_axis);
                     tmp_counter ++;                      
                 }
             } else {
-                if (Downsample_Storage.size() <= 5){
+                if (Downsample_Storage.size() <= downsample_max_point_num){
                     Operation_Logger_Type  operation;
                     operation.point = downsample_result;
                     operation.op = ADD_POINT;

@@ -1,7 +1,9 @@
 // convert the incoming std::vector<Eigen::Vector3d> into graph data structure
 #include "graph_slam.hpp"
 
-void performGraphSLAM(std::vector<std::vector<Eigen::Vector3d>> &scans, std::vector<Sophus::SE3d> &poses){
+#include <cmath>
+
+void performGraphSLAM(std::vector<std::vector<Eigen::Vector3d>> &scans, std::vector<Sophus::SE3d> &poses, int clpairs, int nrIt, double epsilon, double max_dist_match2){
   ROS_INFO_STREAM("input: " << scans.size());
   Scan::allScans.reserve(scans.size());
   for(size_t i = 0; i < scans.size(); ++i){
@@ -9,10 +11,10 @@ void performGraphSLAM(std::vector<std::vector<Eigen::Vector3d>> &scans, std::vec
     Scan::allScans.push_back(scan);
   }
   ROS_INFO_STREAM("input: " << Scan::allScans.size());
-  int clpairs = 10;
-  int nrIt = 10;
-  double epsilon = 0.01;
-  double max_dist_match2 = 1;
+  // int clpairs = 100;
+  // int nrIt = 10;
+  // double epsilon = 0.01;
+  // double max_dist_match2 = 0.4;
   Graph *graph = computeGraph6Dautomatic(Scan::allScans, clpairs, max_dist_match2); //TODO: How to initialize clpairs?
   ROS_INFO_STREAM("Graph built successfully!");
   doGraphSlam6D(*graph, Scan::allScans, nrIt, epsilon, max_dist_match2); //TODO: How to initializr nrIt?
@@ -75,13 +77,17 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
   Eigen::Matrix4d id = Eigen::Matrix4d::Identity();
   double ret = DBL_MAX;
 
+  if (allScans.size() < 2) {
+    return 0.0;
+  }
+
   for(int iteration = 0; iteration < nrIt && ret > epsilon; iteration++) {
 
     if (nrIt > 1) cout << "Iteration " << iteration << endl;
 
 
     // * Calculate X and CX from all Dij and Cij
-    int n = (gr.getNrScans() - 1);
+    int n = static_cast<int>(allScans.size()) - 1;
 
     // Construct the linear equation system..
     Eigen::MatrixXd G=Eigen::MatrixXd::Zero(7*n, 7*n);
@@ -91,7 +97,16 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
     //cout << "filled G: " << G << ", B: " << B << endl;
     // ...and solve it
     Eigen::VectorXd X(7*n);
-    X = G.llt().solve(B);
+    Eigen::LLT<Eigen::MatrixXd> llt(G);
+    if (llt.info() != Eigen::Success) {
+      ROS_ERROR_STREAM("Graph SLAM: LLT decomposition failed at iteration " << iteration);
+      break;
+    }
+    X = llt.solve(B);
+    if (llt.info() != Eigen::Success || !X.allFinite()) {
+      ROS_ERROR_STREAM("Graph SLAM: linear solve produced invalid values at iteration " << iteration);
+      break;
+    }
     //cout << "solved: " << X << endl;
     //ColumnVector X =  solveSparseCholesky(G, B);
 
@@ -100,12 +115,11 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
     double sum_position_diff = 0.0;
 
     // Start with second Scan
-    int loop_end = gr.getNrScans();
-    cout << "size: " << loop_end << endl;
+
 // #ifdef _OPENMP
 // #pragma omp parallel for reduction(+:sum_position_diff)
 // #endif
-    for(int i = 1; i < loop_end; i++){
+    for(int i = 1; i <= n; i++){
 
       // Now update the Poses
       Eigen::MatrixXd Ha = Eigen::MatrixXd::Identity(7,7);
@@ -173,20 +187,23 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
       Ha(1,6) = -2 * (px + sy - rz);
       Ha(2,6) = -2 * (qx + ry + sz);
 
-      // Invert it
-      Ha = Ha.inverse();
-
       // Get pose estimate
       Eigen::VectorXd Xtmp = X.segment((i-1)*7, 7);
 
       // Correct pose estimate
-      Eigen::VectorXd result = Ha * Xtmp;
+      Eigen::VectorXd result = Ha.fullPivLu().solve(Xtmp);
+      if (!result.allFinite()) {
+        continue;
+      }
 
       Eigen::Vector3d rPos;
       Eigen::Quaterniond rPosQuat;
 
       // calculate the updated Pose
       rPos = allScans[i]->get_rPos() - result.segment(0, 3);
+      if (!rPos.allFinite()) {
+        continue;
+      }
 
       double qtmp[4];
       qtmp[0] = result(3);
@@ -194,12 +211,18 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
       qtmp[2] = result(5);
       qtmp[3] = result(6);
 
-      rPosQuat.w() = allScans[i]->get_rPosQuat().w() - qtmp[0];
-      rPosQuat.x() = allScans[i]->get_rPosQuat().x() - qtmp[1];
-      rPosQuat.y() = allScans[i]->get_rPosQuat().y() - qtmp[2];
-      rPosQuat.z() = allScans[i]->get_rPosQuat().z() - qtmp[3];
+      Eigen::Vector4d q_vec(
+        allScans[i]->get_rPosQuat().w() - qtmp[0],
+        allScans[i]->get_rPosQuat().x() - qtmp[1],
+        allScans[i]->get_rPosQuat().y() - qtmp[2],
+        allScans[i]->get_rPosQuat().z() - qtmp[3]);
 
-     rPosQuat.normalize();
+      if (!q_vec.allFinite() || q_vec.norm() < 1e-12) {
+        continue;
+      }
+
+      q_vec.normalize();
+      rPosQuat = Eigen::Quaterniond(q_vec(0), q_vec(1), q_vec(2), q_vec(3));
 
       // Update the Pose
       Sophus::SE3d pose(rPosQuat, rPos);
@@ -209,7 +232,7 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
       x = result.segment(0,3);
       sum_position_diff += x.norm();
     }
-    ret = (sum_position_diff / (double)gr.getNrScans());
+    ret = (sum_position_diff / static_cast<double>(allScans.size()));
   }
 
   return ret;
@@ -229,17 +252,32 @@ double doGraphSlam6D(Graph gr, std::vector <Scan *> &allScans, int nrIt, double 
 void FillGB3D(Graph *gr,
               Eigen::MatrixXd* G,
               Eigen::VectorXd* B,
-              std::vector<Scan *> allScans,
+              const std::vector<Scan *> &allScans,
               double max_dist_match2 )
 {
 // #ifdef _OPENMP
 // #pragma omp parallel for schedule(dynamic)
 // #endif
+  const int n_scans = static_cast<int>(allScans.size());
+  const int state_blocks = static_cast<int>(B->rows() / 7);
+
   for(int i = 0; i < gr->getNrLinks(); i++){
-    int a = gr->getLink(i,0) - 1;
-    int b = gr->getLink(i,1) - 1;
-    Scan *FirstScan  = allScans[gr->getLink(i,0)];
-    Scan *SecondScan = allScans[gr->getLink(i,1)];
+    const int first_idx = gr->getLink(i,0);
+    const int second_idx = gr->getLink(i,1);
+
+    if (first_idx < 0 || first_idx >= n_scans || second_idx < 0 || second_idx >= n_scans) {
+      continue;
+    }
+
+    int a = first_idx - 1;
+    int b = second_idx - 1;
+
+    if (a >= state_blocks || b >= state_blocks) {
+      continue;
+    }
+
+    Scan *FirstScan  = allScans[first_idx];
+    Scan *SecondScan = allScans[second_idx];
 
     Eigen::MatrixXd Cab;
     Eigen::VectorXd CDab;
@@ -254,8 +292,8 @@ void FillGB3D(Graph *gr,
       G->block<7,7>(b*7, b*7) += Cab;
     }
     if(a >= 0 && b >= 0) {
-      G->block<7,7>(a*7, b*7) = -Cab;
-      G->block<7,7>(b*7, a*7) = -Cab;
+      G->block<7,7>(a*7, b*7) += -Cab;
+      G->block<7,7>(b*7, a*7) += -Cab;
     }
   }
 }
@@ -373,7 +411,20 @@ void covarianceQuat(Scan *first, Scan *second, double max_dist_match2,
     MM(5,6) = MM(6,5) = -yz;
 
     // Calculate the pose difference estimation
-    D = MM.inverse() * MZ;
+    Eigen::LDLT<Eigen::MatrixXd> ldlt(MM);
+    if (ldlt.info() != Eigen::Success) {
+      C = Eigen::MatrixXd::Zero(7,7);
+      CD = Eigen::VectorXd::Zero(7);
+      cerr << "Error calculating covariance matrix: LDLT failed" << endl;
+      return;
+    }
+    D = ldlt.solve(MZ);
+    if (ldlt.info() != Eigen::Success || !D.allFinite()) {
+      C = Eigen::MatrixXd::Zero(7,7);
+      CD = Eigen::VectorXd::Zero(7);
+      cerr << "Error calculating covariance matrix: invalid D" << endl;
+      return;
+    }
 
     // Again going through all point pairs to faster calculate s.
     // This cannot be done earlier as we need D, and therefore
@@ -392,6 +443,12 @@ void covarianceQuat(Scan *first, Scan *second, double max_dist_match2,
     }
 
     ss =  ss / (2*m - 3);
+    if (!std::isfinite(ss) || ss <= 1e-12) {
+      C = Eigen::MatrixXd::Zero(7,7);
+      CD = Eigen::VectorXd::Zero(7);
+      cerr << "Error calculating covariance matrix: invalid variance" << endl;
+      return;
+    }
     ss = 1.0 / ss;
 
     CD = MZ * ss;

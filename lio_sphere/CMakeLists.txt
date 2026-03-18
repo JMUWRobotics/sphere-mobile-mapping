@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(lio_sphere)
 set(CMAKE_BUILD_TYPE "Release")
-
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FindOpenMP)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
@@ -15,6 +16,7 @@ nav_msgs
 pcl_ros
 tf2_ros
 state_estimator_msgs
+evaluation_msgs
 )
 
 find_package(Eigen3 REQUIRED)
@@ -46,27 +48,17 @@ src/lio_node.cpp
 src/distortion.cpp
 src/helpers.cpp
 src/external/ikd-Tree/ikd_Tree.cpp
-src/external/kiss_icp/VoxelHashMap.cpp
 src/external/kiss_icp/Threshold.cpp
-src/registration.cpp
-src/transformation_comparison.cpp
 src/registration_gicp.cpp
 src/GraphSLAM/graph_slam.cpp
 src/GraphSLAM/graph.cpp
 src/GraphSLAM/scan.cpp
-)
-add_executable(lio_comp
-src/time_comp.cpp
 )
 
 target_link_libraries(lio_node
    ${catkin_LIBRARIES}
    Eigen3::Eigen
    TBB::tbb
- )
-target_link_libraries(lio_comp
-  ${catkin_LIBRARIES}
-  Eigen3::Eigen
 )
 
 #############

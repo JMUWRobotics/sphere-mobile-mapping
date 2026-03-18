@@ -37,7 +37,7 @@ struct AdaptiveThreshold {
 
     /// Returns the KISS-ICP adaptive threshold used in registration
     double ComputeThreshold();
-    double ComputeThresholdNoMatch(int &n);
+    double ComputeThresholdNoMatch();
 
     // configurable parameters
     double initial_threshold_;
