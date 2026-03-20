@@ -197,7 +197,7 @@ private:
     void processAtCurrentPose();
 
     /** \brief Extract local point cloud around current pose
-     * \param[in] pose Current pose in map frame
+     * \param[in] pose Current pose in map_lkf(?) frame
      * \param[out] local_cloud Extracted local point cloud
      * \return true if successful, false if insufficient points
      */

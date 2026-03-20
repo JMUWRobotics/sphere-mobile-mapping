@@ -156,11 +156,11 @@ private:
     ros::Publisher pub_subcloud; // Publisher of subcloud
     ros::Publisher pub_inliers;
     // ros::Publisher pub_test2;                 // TODO take out!
-    ros::Publisher pub_n;                        // Publisher of normal vector in map2 frame
+    ros::Publisher pub_n;                        // Publisher of normal vector in map_lkf frame
     ros::Publisher pub_vis_n;                    // Publisher of normal vector marker for rviz
-    ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map2 frame
-    ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map2 frame
-    ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map2 frame
+    ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map_lkf frame
+    ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map_lkf frame
+    ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map_lkf frame
     ros::Publisher pub_scored_n_pandar;          // Publisher of scored normal vector in pandar frame
     ros::Publisher pub_smoothed_scored_n_pandar; // Publisher of smoothed scored normal vector in pandar frame
 
@@ -197,7 +197,7 @@ private:
     /* EMA smoothing parameters */
     bool enable_normal_smoothing = true;           // Enable smoothing of normal vector
     double normal_smoothing_alpha = 0.1;           // Smoothing factor alpha for normal vector smoothing [0,...,1] higher: more responsive, lower: smoother
-    geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map2 frame)
+    geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map_lkf frame)
     bool have_smoothed_normal = false;             // flag if smoothed vector is initialized
 
     /* Gaussian Kernel Smoothing Parameters */
@@ -293,9 +293,9 @@ private:
      */
     int64_t determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &cur_scan, PlaneSegm type, geometry_msgs::Vector3Stamped &n_msg);
 
-    /** \brief Converts the normal vector n from pandar_frame to the map2 frame, while ensuring that n always points into ground.
-     * \param[out] n_msg n_msg The normal vector message transformed into the map2 frame
-     * \param[in]  last_iteration True (Default): Last try for plane segmentation and overwrites n to [0,0,-1] in map2 frame if wall found;
+    /** \brief Converts the normal vector n from pandar_frame to the map_lkf frame, while ensuring that n always points into ground.
+     * \param[out] n_msg n_msg The normal vector message transformed into the map_lkf frame
+     * \param[in]  last_iteration True (Default): Last try for plane segmentation and overwrites n to [0,0,-1] in map_lkf frame if wall found;
      * False: Does not overwrite n vector;
      * \return True if conversion successfull (most likely representing ground); false otherwise.
      */
@@ -394,7 +394,7 @@ public:
         // Initalize n_marker
         initMarker();
 
-        // Wait for first transform (pandar_frame to map2)
+        // Wait for first transform (pandar_frame to map_lkf)
         tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
         ROS_WARN("Waiting for TF Listener!");
         bool tf_listener_fail = true;
@@ -403,7 +403,7 @@ public:
             try
             {
                 tf_listener_fail = false;
-                geometry_msgs::TransformStamped t = tf_buffer.lookupTransform("map2", "pandar_frame", ros::Time(0));
+                geometry_msgs::TransformStamped t = tf_buffer.lookupTransform("map_lkf", "pandar_frame", ros::Time(0));
             }
             catch (tf2::TransformException &ex)
             {
@@ -428,7 +428,7 @@ public:
             csv.open(path);
             // Write header (times)
             csv << "Downsample[ns],BuildFilTree[ns],SearchFil[ns],DeleteFil[ns],BuildTreeSub[ns],SearchSub[ns],DeleteSub[ns],PreProcTotal[ns],Plane[ns],Total[ns],";
-            // Wirte header (result = n in map2)
+            // Wirte header (result = n in map_lkf)
             csv << "nx,ny,nz,planeCount\n";
         }
 

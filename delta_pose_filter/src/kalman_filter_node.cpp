@@ -621,7 +621,7 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
      */
 
     // Construct msg
-    filtered_pose_msg.header.frame_id = "map2"; // was map before
+    filtered_pose_msg.header.frame_id = "map_lkf"; // was map before
     filtered_pose_msg.header.stamp = stamp_current;
     filtered_pose_msg.header.seq = sequence++;
 
@@ -703,7 +703,7 @@ void camMsgCallback(const state_estimator_msgs::Estimator::ConstPtr &m)
         rotated_pose.mult(tf_map_imu2cam, rotated_pose);
 
         debug_pose_msg.header = m->header;
-        debug_pose_msg.header.frame_id = "map";
+        debug_pose_msg.header.frame_id = "map_imu";
         tf::poseTFToMsg(rotated_pose, debug_pose_msg.pose);
         debug_pose_pub.publish(debug_pose_msg);
     }
@@ -812,10 +812,10 @@ int main(int argc, char **argv)
 
     // Get static tf between imu and camera frame
     tf::TransformListener tf_listener;
-    tf_listener.waitForTransform("axes_cam", "axes_imu", ros::Time(0), ros::Duration(5.0));
-    tf_listener.waitForTransform("map_imu", "map_cam", ros::Time(0), ros::Duration(5.0));
-    tf_listener.lookupTransform("map_imu", "map_cam", ros::Time(0), tf_map_imu2cam);
-    tf_listener.lookupTransform("axes_cam", "axes_imu", ros::Time(0), tf_axes_imu2cam);
+    tf_listener.waitForTransform("cam_axes", "imu_axes", ros::Time(0), ros::Duration(5.0));
+    tf_listener.waitForTransform("imu_world", "cam_world", ros::Time(0), ros::Duration(5.0));
+    tf_listener.lookupTransform("imu_world", "cam_world", ros::Time(0), tf_map_imu2cam);
+    tf_listener.lookupTransform("cam_axes", "imu_axes", ros::Time(0), tf_axes_imu2cam);
 
     // Publishers and subscribers
     ros::Subscriber cam_pose_sub, imu_pose_sub, imu_vel_sub, cam_imu_vel_sub, normal_vector_sub;

@@ -25,7 +25,7 @@
        doc="Minimum acceptable score from history window"/>
 
   <arg name="pose_topic" default="/lkf_pose" 
-       doc="Topic for robot pose (geometry_msgs/PoseStamped in map3 frame)"/>
+       doc="Topic for robot pose (geometry_msgs/PoseStamped in map_lkf frame)"/>
 
   <!-- Smoothing parameters -->
   <arg name="enable_normal_smoothing" default="true" 

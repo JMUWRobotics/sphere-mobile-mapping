@@ -33,7 +33,7 @@
         Use this to debug motion force compensation. -->
     <arg name="jasper_debug" value="true" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
-    <arg name="jasper_lowpass_freq" value="2" />
+    <arg name="jasper_lowpass_freq" value="20" />
     <!-- enter extrinsic X, Y, Z values wrt the balls center point -->  
     <!-- This is used for motion force compensation. 
         These values can be calibrated using https://github.com/fallow24/ros_imu_calib -->
@@ -65,7 +65,7 @@
     <!-- Arguments for the vizualiser node: pose to lidar -->
     <arg name="topic_listen" value="/posePub_merged" />
     <arg name="global_frame" value="map" />
-    <arg name="center_frame" value="odom" />
+    <arg name="center_frame" value="center" />
     <arg name="lidar_frame" value="pandar_frame" />
 
     <!-- Arguments for the LiDAR -->
@@ -168,14 +168,14 @@
 
     <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
     <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
-    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 axes_cam axes_imu 200" />
-    
+    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" />
+
     <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
     <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
-    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 map_cam map_imu 200" />
-    
+    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />
+        
     <!-- Defines the transform between CAM and Center -->
-    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 odom camera_frame 200" />
+    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
     <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
     

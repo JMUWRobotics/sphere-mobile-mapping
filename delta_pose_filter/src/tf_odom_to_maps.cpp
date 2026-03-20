@@ -12,55 +12,54 @@
 #include <mutex>
 
 // Rosparam parameters
-const char* topic_default = "/posePub_merged";
-const char* global_frame_default = "map";
-const char* center_frame_default = "odom";
+const char *topic_default = "/posePub_merged";
+const char *global_frame_default = "map_imu";
+const char *center_frame_default = "center";
 std::string global_frame, center_frame;
 
 void sendPoseStampedAsInverseTransform(const geometry_msgs::PoseStamped &m, std::string frame, std::string child_frame)
 {
-    // Static Transform Map -> IMU
+    // Transform Broadcaster Map -> IMU (not a static_transform_publisher!!!)
     static tf::TransformBroadcaster br;
-	tf::Transform transform; 
+    tf::Transform transform;
 
     transform.setOrigin(
         tf::Vector3(
             m.pose.position.x,
             m.pose.position.y,
-            m.pose.position.z
-        ) 
-    );
+            m.pose.position.z));
     tf::Quaternion quat;
     tf::quaternionMsgToTF(m.pose.orientation, quat);
-    transform.setRotation(quat);        
+    transform.setRotation(quat);
     br.sendTransform(tf::StampedTransform(transform.inverse(), m.header.stamp, frame, child_frame));
 }
 
 void poseMsgCallback(const state_estimator_msgs::Estimator::ConstPtr &m)
 {
-    sendPoseStampedAsInverseTransform(m->pose, center_frame, global_frame);
+    sendPoseStampedAsInverseTransform(m->pose, center_frame, global_frame + "_imu");
 }
 
 void flawedMsgCallback(const state_estimator_msgs::Estimator::ConstPtr &m)
 {
-    sendPoseStampedAsInverseTransform(m->pose, "odom", "map1");
+    sendPoseStampedAsInverseTransform(m->pose, center_frame, global_frame + "_raw");
 }
 
 void lkfMsgCallback(const geometry_msgs::PoseStamped::ConstPtr &m)
 {
-    sendPoseStampedAsInverseTransform(*m, "odom", "map2");
+    sendPoseStampedAsInverseTransform(*m, center_frame, global_frame + "_lkf");
 }
 
+// TODO: Maybe add another world frame "map_cam" if needed
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     ros::init(argc, argv, "odom_to_maps_publisher");
     ros::NodeHandle nh;
 
-    int spinrate = 50; // Hz
-    // Topic params 
+    const int spinrate = 50; // Hz
+    // Topic params
     std::string topic_listen;
-    nh.param<std::string>("topic_listen", topic_listen, std::string(topic_default)); 
+    nh.param<std::string>("topic_listen", topic_listen, std::string(topic_default));
     nh.param<std::string>("global_frame", global_frame, std::string(global_frame_default));
     nh.param<std::string>("center_frame", center_frame, std::string(center_frame_default));
     // Publishers and subscribers
@@ -69,12 +68,11 @@ int main(int argc, char** argv)
     ros::Subscriber lkf_pose_sub = nh.subscribe<geometry_msgs::PoseStamped>("/lkf/pose", 1, lkfMsgCallback);
     // Main processing loop, wait for callbacks to happen
     ros::Rate rate(spinrate);
-    while(ros::ok()) {
+    while (ros::ok())
+    {
         ros::spinOnce();
-	    rate.sleep();
+        rate.sleep();
     }
 
     return 0;
 }
-
-

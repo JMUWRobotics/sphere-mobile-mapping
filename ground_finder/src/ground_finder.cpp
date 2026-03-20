@@ -636,7 +636,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     try
     {
         // Listen to tf tree for transformation
-        t = tf_buffer.lookupTransform("map2", "pandar_frame", ros::Time(0)); // orientierung von mapMoritz nehmen, nicht map2 (KF)
+        t = tf_buffer.lookupTransform("map_lkf", "pandar_frame", ros::Time(0)); // orientierung von mapMoritz nehmen, nicht map_lkf (KF)
     }
     catch (tf2::TransformException &ex)
     {
@@ -653,26 +653,26 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
     // Make sure it always points into ground // NOTE: Assumption = abs(slope of ground plane) < 45°
     std::vector<double> down = {0.0, 0.0, -1.0};
-    std::vector<double> n_map2 = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-    double dot_prod = dot_product(down, n_map2);
+    std::vector<double> n_map_lkf = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+    double dot_prod = dot_product(down, n_map_lkf);
 
     // Check if n represents wall
     if (fabs(dot_prod) < wall_thresh)
     {
-        // Update normal vector to [0,0,-1] in map2 frame for next iteration geometrical subcloud
+        // Update normal vector to [0,0,-1] in map_lkf frame for next iteration geometrical subcloud
         if (last_iteration && subcloud == GEOMETRICAL)
         {
             try
             {
                 // Listen to tf tree for transformation
-                t = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
+                t = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
             }
             catch (tf2::TransformException &ex)
             {
                 ROS_ERROR("Failed to listen to tf tree!\n\n");
                 return false;
             }
-            // Create "down" Vector n in map2 frame
+            // Create "down" Vector n in map_lkf frame
             geometry_msgs::Vector3Stamped n_map;
             n_map.vector.x = 0.0;
             n_map.vector.y = 0.0;
@@ -702,8 +702,8 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     // If successfully found plane then caluculate and print inclination
     if (!quiet)
     {
-        n_map2 = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-        dot_prod = dot_product(down, n_map2);
+        n_map_lkf = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+        dot_prod = dot_product(down, n_map_lkf);
         double inclination = acos(dot_prod) * 180 / M_PI;
         ROS_INFO("Inclination of the plane: %.5f", inclination);
     }
@@ -784,9 +784,9 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // ---------------------- Plane segmentation ----------------------
 
     geometry_msgs::Vector3Stamped n_msg;
-    n_msg.header.frame_id = "map2";
+    n_msg.header.frame_id = "map_lkf";
     n_msg.header.stamp = msg->header.stamp;
-    // Determine normal vector of ground in map2 frame incl. ensuring it represents ground and points into ground
+    // Determine normal vector of ground in map_lkf frame incl. ensuring it represents ground and points into ground
     auto duration_plane = determine_n_ground_plane(cur_scan, plane_alg, n_msg);
     // Write to file
     if (write2file)
@@ -946,16 +946,16 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     scored_msg_pandar.inlier_score = scored_msg.inlier_score;
     scored_msg_pandar.combined_score = scored_msg.combined_score;
 
-    geometry_msgs::TransformStamped t_map2_to_pandar;
+    geometry_msgs::TransformStamped t_map_lkf_to_pandar;
     try
     {
-        t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
-        geometry_msgs::Vector3Stamped normal_map2;
-        normal_map2.header = scored_msg.header;
-        normal_map2.vector = scored_msg.normal;
+        t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
+        geometry_msgs::Vector3Stamped normal_map_lkf;
+        normal_map_lkf.header = scored_msg.header;
+        normal_map_lkf.vector = scored_msg.normal;
 
         geometry_msgs::Vector3Stamped normal_pandar;
-        tf2::doTransform(normal_map2, normal_pandar, t_map2_to_pandar);
+        tf2::doTransform(normal_map_lkf, normal_pandar, t_map_lkf_to_pandar);
         scored_msg_pandar.normal = normal_pandar.vector; // now holds scored normal in pandar frame
     }
     catch (tf2::TransformException &ex)
@@ -976,12 +976,12 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     }
     else if (using_fallback)
     {
-        ROS_INFO("Published scored normal [map2]: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
+        ROS_INFO("Published scored normal [map_lkf]: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
                  scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
     else
     {
-        ROS_INFO("Published scored normal [map2]: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
+        ROS_INFO("Published scored normal [map_lkf]: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
                  scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
     }
 
@@ -1035,16 +1035,16 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         smoothed_scored_msg_pandar.inlier_score = smoothed_scored_msg.inlier_score;
         smoothed_scored_msg_pandar.combined_score = smoothed_scored_msg.combined_score;
 
-        geometry_msgs::TransformStamped t_map2_to_pandar;
+        geometry_msgs::TransformStamped t_map_lkf_to_pandar;
         try
         {
-            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0));
-            geometry_msgs::Vector3Stamped normal_map2;
-            normal_map2.header = smoothed_scored_msg.header;
-            normal_map2.vector = smoothed_scored_msg.normal;
+            t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
+            geometry_msgs::Vector3Stamped normal_map_lkf;
+            normal_map_lkf.header = smoothed_scored_msg.header;
+            normal_map_lkf.vector = smoothed_scored_msg.normal;
 
             geometry_msgs::Vector3Stamped normal_pandar;
-            tf2::doTransform(normal_map2, normal_pandar, t_map2_to_pandar);
+            tf2::doTransform(normal_map_lkf, normal_pandar, t_map_lkf_to_pandar);
             smoothed_scored_msg_pandar.normal = normal_pandar.vector; // now holds smoothed & scored normal in pandar frame
         }
         catch (tf2::TransformException &ex)
@@ -1223,21 +1223,21 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
         // Robot Pose in local (pandar) frame used for score
         // ----
 
-        //  Get transformation from map2 to pandar_frame
-        geometry_msgs::TransformStamped t_map2_to_pandar;
+        //  Get transformation from map_lkf to pandar_frame
+        geometry_msgs::TransformStamped t_map_lkf_to_pandar;
         try
         {
-            t_map2_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map2", ros::Time(0)); // (target_frame, src_frame,...)
+            t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0)); // (target_frame, src_frame,...)
         }
         catch (tf2::TransformException &ex)
         {
-            ROS_ERROR("Failed to get transform from map2 to pandar_frame: %s", ex.what());
+            ROS_ERROR("Failed to get transform from map_lkf to pandar_frame: %s", ex.what());
             return std::make_pair(1.0, 0.0);
         }
 
-        // Debug: Extract original angles in map2 frame
+        // Debug: Extract original angles in map_lkf frame
         tf2::Quaternion q_temp;
-        tf2::fromMsg(t_map2_to_pandar.transform.rotation, q_temp);
+        tf2::fromMsg(t_map_lkf_to_pandar.transform.rotation, q_temp);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
         tf2::Matrix3x3(q_temp).getRPY(roll, pitch, yaw);
 

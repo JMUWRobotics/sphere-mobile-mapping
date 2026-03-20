@@ -152,7 +152,7 @@ void GlobalGroundFinder::initMarker()
     normal_marker_.color.r = 0.0;
     normal_marker_.color.g = 1.0;
     normal_marker_.color.b = 0.0;
-    normal_marker_.header.frame_id = "map3";
+    normal_marker_.header.frame_id = "pandar_frame";
 }
 
 void GlobalGroundFinder::mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -197,7 +197,7 @@ void GlobalGroundFinder::poseCallback(const geometry_msgs::PoseStampedConstPtr &
     // Update current pose with protection
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
-        current_pose_ = *msg; // pose from odom_frame to map2/3? frame (kugelmittelpunkt) -- zu pandar nötig -> map3 to pandar; anfangs odom->pandar static transform und dann multiply with msg here
+        current_pose_ = *msg; // pose arrives in pandar_frame //TODO: check
         pose_received_ = true;
     }
 
@@ -238,7 +238,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     sensor_msgs::PointCloud2 local_msg;
     pcl::toROSMsg(*local_cloud, local_msg);
     local_msg.header.stamp = pose_copy.header.stamp;
-    local_msg.header.frame_id = "map3";
+    local_msg.header.frame_id = "pandar_frame";
     pub_local_cloud.publish(local_msg);
 
     // calc ground plane
@@ -276,7 +276,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     }
 
     ground_finder_msgs::ScoredNormalStamped scored_msg;
-    scored_msg.header = pose_copy.header; // use pose timestamp for scored normal TOOD: check which frame. map3 or map2
+    scored_msg.header = pose_copy.header; // use pose timestamp for scored normal TOOD: check which frame. pandar_frame or map_lkf
     scored_msg.normal.x = normal[0];
     scored_msg.normal.y = normal[1];
     scored_msg.normal.z = normal[2];
@@ -862,7 +862,7 @@ bool GlobalGroundFinder::find_fallback_normal(double current_score,
 void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal, const ros::Time &stamp)
 {
     normal_marker_.header.stamp = stamp;
-    normal_marker_.header.frame_id = "map3"; // TODO: check frame
+    normal_marker_.header.frame_id = "pandar_frame"; // TODO: check frame
 
     // Get current pose position under lock for marker visualization
     geometry_msgs::Point start;
