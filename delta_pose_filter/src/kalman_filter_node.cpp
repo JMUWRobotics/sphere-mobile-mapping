@@ -93,7 +93,7 @@ double large_omega2; // (rad/s)^2
 double small_omega2; // (rad/s)^2 
 // maximum and minimum scaling factor for covariance matrices
 const float MIN_SCALING_FACTOR = 0.1;
-const float MAX_SCALING_FACTOR = 1000.0;
+const float MAX_SCALING_FACTOR = 1000.0; 
 const double small_number = 0.00001;
 
 /** ---------------------------------------
@@ -455,6 +455,7 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
     tf::poseStampedMsgToTF(m->pose, current_pose);
     tf::Transform current_tf_imu(current_pose.getRotation());
     tf::Vector3 current_vel_imu_rotated = current_tf_imu * tf_angular_vel_imu;
+    
     decideRollingMode(current_vel_imu_rotated, m);
 
     // Construct internal transformations which we need to convert between local and global
@@ -542,12 +543,12 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
         quat2RPY(imu_diff_geom_msgs.orientation, dr, dp, dy);
         Eigen::VectorXf measurementImu(9);
         measurementImu << imu_diff_rotated.getOrigin().getX(), 
-            imu_diff_rotated.getOrigin().getY(), 
-            imu_diff_rotated.getOrigin().getZ(),
-            dr, dp, dy,
-            tf_angular_velocity_imu_rotated.getX(), 
-            tf_angular_velocity_imu_rotated.getY(), 
-            tf_angular_velocity_imu_rotated.getZ();
+        imu_diff_rotated.getOrigin().getY(), 
+        imu_diff_rotated.getOrigin().getZ(),
+        dr, dp, dy,
+        tf_angular_velocity_imu_rotated.getX(), 
+        tf_angular_velocity_imu_rotated.getY(), 
+        tf_angular_velocity_imu_rotated.getZ();
         updateState(measurementImu, R_imu_scaled);
         
         // update using CAM measurements
@@ -561,6 +562,7 @@ void applyLkfAndPublish(const state_estimator_msgs::Estimator::ConstPtr &m)
             tf_angular_velocity_cam_rotated.getY(),
             tf_angular_velocity_cam_rotated.getZ();
         updateState(measurementCam, R_cam_scaled);
+        
     }
 
     /*

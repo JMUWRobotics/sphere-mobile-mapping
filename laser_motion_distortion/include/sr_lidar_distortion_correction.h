@@ -3,6 +3,7 @@
 
 // Systen libs
 #include <cmath>
+#include <deque>
 #include <vector>
 #include <stdlib.h>
 #include <sstream>
@@ -16,6 +17,9 @@
 #include <tf/transform_listener.h>
 
 #include <state_estimator_msgs/Estimator.h>
+
+// Eigen
+#include <Eigen/Geometry>
 
 // PCL 
 #define PCL_NO_PRECOMPILE
@@ -54,11 +58,12 @@ class SRLidarDistortionCorrection {
   int radius_filter = -1; // cm
   int spin_rate_ = 1000;
 
-  // for imu
-  int imu_count = 0;
-  double imu_x = 0.0;
-  double imu_y = 0.0;
-  double imu_z = 0.0;
+  // Buffered IMU samples (transformed to lidar frame)
+  struct ImuSample {
+    double timestamp;
+    double wx, wy, wz;
+  };
+  std::deque<ImuSample> imu_buffer_;
 
   pcl::PointCloud<PointType>::Ptr pcd_in_;
 
@@ -82,8 +87,6 @@ class SRLidarDistortionCorrection {
   bool readConfig();
 
   void process(const ros::TimerEvent &);
-
-  tf::Vector3 return_twist();
 
   // Callbacks
   void pcdCallback(const sensor_msgs::PointCloud2ConstPtr& pc);

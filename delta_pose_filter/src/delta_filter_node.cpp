@@ -1,3 +1,11 @@
+/**
+ * @author Fabian Arzberger
+ * THIS FILE IMPLEMENTS THE DELTA FILTER
+ * 
+ * DEPRECATED SINCE THE KALMAN FILTER IS USED 
+ * 
+ */
+
 #include <ros/ros.h>
 #include <ros/callback_queue.h>
 

@@ -82,6 +82,7 @@ bool LIONode::undistort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, p
         omega_operator.block<3,3>(1,1) = - Sophus::SO3d::hat(omega_eigen);
         orientation = (Eigen::Matrix4d::Identity() + 0.5 * omega_operator * dt_i)*orientation;
         quat_orientation = Eigen::Quaterniond(orientation[0], orientation[1], orientation[2], orientation[3]);
+        // TODO: NORMALIZE QUAT_ORIENTATION! !! !!!! 
 
         relative_orientation = eulerToQuat(rot.x(), rot.y(), rot.z()).inverse()*relative_orientation;
         relative_orientation.normalize();
@@ -124,6 +125,7 @@ bool LIONode::undistort(pcl::PointCloud<custom_type::PointXYZITR>::Ptr& pc_in, p
             omega_operator.block<3,3>(1,1) = - Sophus::SO3d::hat(omega_eigen);
             orientation = (Eigen::Matrix4d::Identity() + 0.5 * omega_operator * dt_i)*orientation;
             quat_orientation = Eigen::Quaterniond(orientation[0], orientation[1], orientation[2], orientation[3]);
+            // TODO: NORMALIZE QUAT_ORIENTATION! !! !!!! 
 
             relative_orientation = eulerToQuat(rot.x(), rot.y(), rot.z()).inverse()*relative_orientation;
             relative_orientation.normalize();
