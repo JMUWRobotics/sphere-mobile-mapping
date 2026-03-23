@@ -46,10 +46,24 @@
   <arg name="file" default="default"
        doc="CSV log filename. Use 'default' to disable logging."/>
 
-  <!-- Node -->
-  <node name="global_ground_finder_node" 
-        pkg="global_ground_finder" 
-        type="global_ground_finder_node" 
+     <arg name="manager" default="LIO_GF_nodelet_manager"
+       doc="Name of the nodelet manager process"/>
+
+  <arg name="start_manager" default="false"
+       doc="Start a local manager in this launch file; set true if nodelet should run as standalone"/>
+
+  <node pkg="nodelet"
+        type="nodelet"
+        name="$(arg manager)"
+        args="manager"
+        output="screen"
+        if="$(arg start_manager)"/>
+
+  <!-- Nodelet -->
+  <node name="global_ground_finder_node"
+        pkg="nodelet"
+        type="nodelet"
+        args="load global_ground_finder/GlobalGroundFinderNodelet $(arg manager)"
         output="screen">
     
     <!-- Basic parameters -->

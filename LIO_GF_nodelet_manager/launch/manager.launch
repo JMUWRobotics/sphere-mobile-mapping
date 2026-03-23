@@ -1,0 +1,11 @@
+  <!-- only starts nodelet manager, e.g. for loading in other nodelets manually later-->
+
+<launch>
+  <arg name="manager" default="LIO_GF_nodelet_manager"/>
+
+  <node pkg="nodelet"
+        type="nodelet"
+        name="$(arg manager)"
+        args="manager"
+        output="screen"/>
+</launch>

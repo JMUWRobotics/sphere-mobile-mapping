@@ -1,0 +1,8 @@
+<library path="lib/liblio_sphere_nodelet">
+  <class
+    name="lio_sphere/LioNodelet"
+    type="lio_sphere::LioNodelet"
+    base_class_type="nodelet::Nodelet">
+    <description>LIO sphere processing nodelet plugin.</description>
+  </class>
+</library>

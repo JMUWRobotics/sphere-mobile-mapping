@@ -7,6 +7,8 @@ add_compile_options(-std=c++14)
 ## Find catkin and dependencies
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  nodelet
+  pluginlib
   sensor_msgs
   geometry_msgs
   visualization_msgs
@@ -29,6 +31,8 @@ catkin_package(
   LIBRARIES ${PROJECT_NAME}
   CATKIN_DEPENDS
     roscpp
+    nodelet
+    pluginlib
     sensor_msgs
     geometry_msgs
     visualization_msgs
@@ -52,11 +56,15 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
 )
 
-## Declare a C++ library
+## Declare C++ library for usage across nodelets
 add_library(${PROJECT_NAME}
   src/global_ground_finder.cpp
   src/hough.cpp
   src/math_helpers.cpp
+)
+
+add_library(${PROJECT_NAME}_nodelet
+  src/global_ground_finder_nodelet.cpp
 )
 
 add_dependencies(${PROJECT_NAME}
@@ -69,16 +77,22 @@ target_link_libraries(${PROJECT_NAME}
   ${PCL_LIBRARIES}
 )
 
-add_executable(main
+target_link_libraries(${PROJECT_NAME}_nodelet
+  ${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  ${PCL_LIBRARIES}
+)
+
+add_executable(global_ground_finder_node
   src/main.cpp
 )
 
-add_dependencies(main
+add_dependencies(global_ground_finder_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
 )
 
-target_link_libraries(main
+target_link_libraries(global_ground_finder_node
   ${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
@@ -89,15 +103,19 @@ target_link_libraries(main
 #############
 
 ## Mark executables for installation
-install(TARGETS main
+install(TARGETS global_ground_finder_node
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
 ## Mark libraries for installation
-install(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_nodelet
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
+
+install(FILES nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )
 
 ## Mark cpp header files for installation

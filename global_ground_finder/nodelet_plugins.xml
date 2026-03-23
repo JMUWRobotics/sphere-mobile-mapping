@@ -1,0 +1,10 @@
+<!-- needed for runtime class lookup-->
+
+<library path="lib/libglobal_ground_finder_nodelet">
+  <class
+    name="global_ground_finder/GlobalGroundFinderNodelet"
+    type="global_ground_finder::GlobalGroundFinderNodelet"
+    base_class_type="nodelet::Nodelet">
+    <description>Global ground finder nodelet plugin.</description>
+  </class>
+</library>

@@ -600,15 +600,3 @@ void LIONode::publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::
         init_pose_pub_.publish(pose_msg);
     }
 }
-
-int main(int argc, char **argv)
-{
-    ros::init(argc, argv, "lio_node");
-    ros::NodeHandle nh;       // public namespace
-    ros::NodeHandle pnh("~"); // private namespace
-    LIONode node(nh, pnh);
-    ros::AsyncSpinner spinner(2);
-    spinner.start(); 
-    ros::waitForShutdown();
-    return 0;
-}

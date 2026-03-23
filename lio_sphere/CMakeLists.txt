@@ -10,6 +10,8 @@ include(FindOpenMP)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 find_package(catkin REQUIRED COMPONENTS
 roscpp
+nodelet
+pluginlib
 sensor_msgs
 geometry_msgs
 nav_msgs
@@ -24,8 +26,8 @@ find_package(TBB REQUIRED)
 
 catkin_package(
 #  INCLUDE_DIRS include
-#  LIBRARIES lio_sphere
-#  CATKIN_DEPENDS other_catkin_pkg
+#  LIBRARIES lio_sphere_core lio_sphere_nodelet
+#  CATKIN_DEPENDS roscpp nodelet pluginlib sensor_msgs geometry_msgs nav_msgs pcl_ros tf2_ros state_estimator_msgs evaluation_msgs
 #  DEPENDS system_lib
 )
 
@@ -43,7 +45,7 @@ include_directories(
  src/GraphSLAM
 )
 
-add_executable(lio_node
+add_library(lio_sphere_core
 src/lio_node.cpp
 src/distortion.cpp
 src/helpers.cpp
@@ -55,17 +57,39 @@ src/GraphSLAM/graph.cpp
 src/GraphSLAM/scan.cpp
 )
 
-target_link_libraries(lio_node
+target_link_libraries(lio_sphere_core
    ${catkin_LIBRARIES}
    Eigen3::Eigen
    TBB::tbb
 )
 
-#############
-## Install ##
-#############
+add_executable(lio_node
+src/lio_node_main.cpp
+)
 
+target_link_libraries(lio_node
+  lio_sphere_core
+)
 
-#############
-## Testing ##
-#############
+add_library(lio_sphere_nodelet
+  src/lio_nodelet.cpp
+)
+
+target_link_libraries(lio_sphere_nodelet
+  lio_sphere_core
+  ${catkin_LIBRARIES}
+)
+
+install(TARGETS lio_node lio_sphere_core lio_sphere_nodelet
+  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(FILES nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(DIRECTORY launch rviz
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)

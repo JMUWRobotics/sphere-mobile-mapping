@@ -1,0 +1,98 @@
+<launch>
+    <arg name="manager" default="LIO_GF_nodelet_manager"
+      doc="Shared nodelet manager name"/>
+
+  <!-- LIO nodelet arguments -->
+    <arg name="visualize" default="true"
+      doc="Enable LIO visualization outputs"/>
+    <arg name="odom_frame" default="odom"
+      doc="LIO odometry frame"/>
+    <arg name="base_frame" default="base_link"
+      doc="LIO robot base frame"/>
+    <arg name="topic" default=""
+      doc="Optional LIO topic argument (kept for compatibility)"/>
+    <arg name="deskew" default="false"
+      doc="Enable LiDAR deskewing in LIO"/>
+    <arg name="max_range" default="100.0"
+      doc="LIO max accepted point range in meters"/>
+    <arg name="min_range" default="5.0"
+      doc="LIO min accepted point range in meters"/>
+    <arg name="voxel_size" default="0.5"
+      doc="LIO voxel size for preprocessing"/>
+    <arg name="pose_extractor" default="false"
+      doc="Enable optional pose extraction path in LIO"/>
+    <arg name="rviz" default="true"
+      doc="Start RViz from lio.launch if enabled there"/>
+
+  <!-- Global ground finder nodelet arguments -->
+    <arg name="quiet" default="false"
+      doc="Suppress repetitive global_ground_finder logs"/>
+    <arg name="plane_algorithm" default="ransac"
+      doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
+    <arg name="extraction_radius" default="3.0"
+      doc="Local map extraction radius in meters"/>
+    <arg name="extraction_height" default="0.5"
+      doc="Vertical extraction limit in meters"/>
+    <arg name="enable_scoring" default="true"
+      doc="Enable scored normal output and fallback logic"/>
+    <arg name="score_threshold" default="0.2"
+      doc="Minimum acceptable score for current normal"/>
+    <arg name="min_score_window" default="0.3"
+      doc="Minimum fallback score from history window"/>
+    <arg name="pose_topic" default="/lkf_pose"
+      doc="Pose topic remapped to /current_pose"/>
+    <arg name="enable_normal_smoothing" default="true"
+      doc="Enable smoothing for estimated normals"/>
+    <arg name="use_gaussian_smoothing" default="false"
+      doc="Use Gaussian smoothing instead of EMA"/>
+    <arg name="normal_smoothing_alpha" default="0.1"
+      doc="EMA alpha parameter"/>
+    <arg name="smoothing_cutoff_freq" default="2.0"
+      doc="Gaussian cutoff frequency in Hz"/>
+    <arg name="update_rate" default="20.0"
+      doc="Expected update rate in Hz"/>
+    <arg name="file" default="default"
+      doc="CSV filename base, default disables logging"/>
+
+  <node pkg="nodelet"
+        type="nodelet"
+        name="$(arg manager)"
+        args="manager"
+        output="screen"/>
+
+  <!-- launch lio nodelet -->
+  <include file="$(find lio_sphere)/launch/lio.launch">
+    <arg name="visualize" value="$(arg visualize)"/>
+    <arg name="odom_frame" value="$(arg odom_frame)"/>
+    <arg name="base_frame" value="$(arg base_frame)"/>
+    <arg name="topic" value="$(arg topic)"/>
+    <arg name="deskew" value="$(arg deskew)"/>
+    <arg name="max_range" value="$(arg max_range)"/>
+    <arg name="min_range" value="$(arg min_range)"/>
+    <arg name="voxel_size" value="$(arg voxel_size)"/>
+    <arg name="pose_extractor" value="$(arg pose_extractor)"/>
+    <arg name="rviz" value="$(arg rviz)"/>
+    <arg name="manager" value="$(arg manager)"/>
+    <arg name="start_manager" value="false"/>
+  </include>
+
+  <!-- launch global ground finder nodelet -->
+  <include file="$(find global_ground_finder)/launch/global_ground_finder.launch">
+    <arg name="quiet" value="$(arg quiet)"/>
+    <arg name="plane_algorithm" value="$(arg plane_algorithm)"/>
+    <arg name="extraction_radius" value="$(arg extraction_radius)"/>
+    <arg name="extraction_height" value="$(arg extraction_height)"/>
+    <arg name="enable_scoring" value="$(arg enable_scoring)"/>
+    <arg name="score_threshold" value="$(arg score_threshold)"/>
+    <arg name="min_score_window" value="$(arg min_score_window)"/>
+    <arg name="pose_topic" value="$(arg pose_topic)"/>
+    <arg name="enable_normal_smoothing" value="$(arg enable_normal_smoothing)"/>
+    <arg name="use_gaussian_smoothing" value="$(arg use_gaussian_smoothing)"/>
+    <arg name="normal_smoothing_alpha" value="$(arg normal_smoothing_alpha)"/>
+    <arg name="smoothing_cutoff_freq" value="$(arg smoothing_cutoff_freq)"/>
+    <arg name="update_rate" value="$(arg update_rate)"/>
+    <arg name="file" value="$(arg file)"/>
+    <arg name="manager" value="$(arg manager)"/>
+    <arg name="start_manager" value="false"/>
+  </include>
+</launch>

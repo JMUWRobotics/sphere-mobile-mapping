@@ -12,8 +12,23 @@
 
     <arg name="pose_extractor" default="false"/>
     <arg name="rviz" default="true"/>
+        <arg name="manager" default="LIO_GF_nodelet_manager"/>
+        <arg name="start_manager" default="false"/>
+
+        <node pkg="nodelet"
+            type="nodelet"
+            name="$(arg manager)"
+            args="manager"
+            output="screen"
+            if="$(arg start_manager)"/>
+
     <param name="use_sim_time" value="true"/>
-    <node pkg="lio_sphere" type="lio_node" name="lio_node" output="screen" if="true">
+        <node pkg="nodelet"
+            type="nodelet"
+            name="lio_node"
+            args="load lio_sphere/LioNodelet $(arg manager)"
+            output="screen"
+            if="true">
         <!-- Remap Topics -->
         <remap from="/points_in" to="/hesai/pandar"/>
         <remap from="/imu_in" to="/posePub_merged"/>
