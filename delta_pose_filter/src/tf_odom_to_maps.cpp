@@ -13,7 +13,7 @@
 
 // Rosparam parameters
 const char *topic_default = "/posePub_merged";
-const char *global_frame_default = "map_imu";
+const char *global_frame_default = "map";
 const char *center_frame_default = "center";
 std::string global_frame, center_frame;
 
