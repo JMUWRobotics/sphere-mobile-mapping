@@ -348,7 +348,7 @@ bool LIONode::registerPointsGICP(const pcl::PointCloud<PointType>::Ptr &pc_in,
 
     registered_pose = T_icp * initial_guess;
     matching_error = inlier_rmse;
-    if (config_.print_runtime) {
+    if (config_.print_runtime || gicp_elapsed >= 50.0) { 
         ROS_INFO_STREAM("Performed " << num_it << " iterations in " << gicp_elapsed << " ms");
     }
     return true;
