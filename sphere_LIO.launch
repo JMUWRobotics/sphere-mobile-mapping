@@ -27,7 +27,7 @@
     <arg name="jasper_imu_rate" value="200" />
     <arg name="jasper_forceflat" value="true" />
     <!-- Kalman filter attitude estimation parameters -->
-    <arg name="sigma_a" value="0.00001" />
+    <arg name="sigma_a" value="0.3" />
     <arg name="sigma_g" value="0.1" />
     <arg name="P_init" value="10.0" />
     <!-- Unscented Kalman filter attitude estimation paramters -->
@@ -74,7 +74,7 @@
 
     <!-- Arguments for the vizualiser node: pose to lidar -->
     <arg name="topic_listen" value="/posePub_merged" />
-    <arg name="global_frame" value="map" />
+    <arg name="global_frame" value="map" />  <!-- Prefix for fixed frames -->
     <arg name="center_frame" value="center" />
     <arg name="lidar_frame" value="pandar_frame" />
 
@@ -121,39 +121,43 @@
     <!-- <arg name="use_sim_time" value="true"/> -->
 
     <arg name="deskewing" value="false"/>                    <!-- true: on, false: off (Set to FALSE if dedicated node is used) -->
-    <arg name="min_range" value="0.5"/>                     <!-- lower limit for accepted point distances in m -->
-    <arg name="max_range" value="100.0"/>                    <!-- upper limit for accepted point distances in m -->
-    <arg name="vox_l_map" value="0.1"/>                    <!-- voxel size for point cloud added to map in m -->
-    <arg name="vox_l_gicp" value="0.1"/>                   <!-- voxel size for point cloud utilized in GICP in m -->
+    <arg name="min_range" value="1.0"/>                      <!-- lower limit for accepted point distances in m -->
+    <arg name="max_range" value="120.0"/>                    <!-- upper limit for accepted point distances in m -->
     
-    <arg name="initial_method" value="KALMAN"/>             <!-- choose initial pose source: KALMAN or IMU -->
+    <!-- Voxel sizes -->
+    <arg name="vox_l_map" value="0.25"/>                    <!-- voxel size for point cloud added to map in m -->
+    <arg name="vox_l_gicp" value="0.1"/>                    <!-- voxel size for point cloud utilized in GICP in m -->
+    <arg name="ikd_downsample_l" value="0.1"/>             <!-- l_box: cuboid box length for automated point reduction -->
+    <arg name="ikd_downsample_n" value="1"/>                <!-- n_box^max: maximum point number per downsample box -->
     
-    <arg name="robust_kernel" value="false"/>                <!-- true: active, false: inactive -->
+    <arg name="initial_method" value="IMU"/>             <!-- choose initial pose source: KALMAN or IMU -->
+    
+    <arg name="robust_kernel" value="true"/>                <!-- true: active, false: inactive -->
     <arg name="target_NN_k" value="3"/>                     <!-- number of points found per source point to construct the target set -->
     <arg name="gicp_max_it" value="50"/>                    <!-- maximum allowed number of iterations for the GICP loop -->
     <arg name="gicp_th_fitness" value="1e-6"/>              <!-- convergence criterion for the fitness value -->
     <arg name="gicp_th_rmse" value="1e-3"/>                 <!-- convergence criterion for the RMSE value -->
-    <arg name="gicp_max_corr_dist" value="0.15"/>            <!-- maximum correspondence distance for GICP (m) when adaptive thresholding inactive -->
+    <arg name="gicp_max_corr_dist" value="0.5"/>            <!-- maximum correspondence distance for GICP (m) when adaptive thresholding inactive -->
     <arg name="gicp_kernel_value" value="0.3"/>            <!-- kernel value c -->
     <!-- deactivated -->
-    <arg name="adaptive_th" value="true"/>                  <!-- true: active, false: inactive -->
+    <arg name="adaptive_th" value="false"/>                  <!-- true: active, false: inactive -->
     <arg name="initial_th" value="2.0"/>                    <!-- sigma_0: initial threshold used before any corrections -->
     <arg name="min_motion_th" value="0.1"/>                 <!-- delta_min: minimum motion to consider a correction in adaptive threshold -->
     
+    
+    <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
+    <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
+    <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
+    <arg name="sliding_map_L" value="300"/>                 <!-- L: length of the cuboid for the sliding map window -->
+    <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
+    
     <arg name="map_init_method" value="OFF"/>              <!-- choose map init method (OFF, COMBINE, SLAM) -->
     <arg name="map_init_angle" value="180.0"/>              <!-- angle in degrees the sphere must rotate to trigger map initialization -->
-    <arg name="map_init_vox_l" value="0.5"/>                <!-- voxel size for point cloud utilized in initialization -->
+    <arg name="map_init_vox_l" value="0.1"/>                <!-- voxel size for point cloud utilized in initialization -->
     <arg name="SLAM_max_it" value="10"/>                    <!-- maximum iterations allowed for GraphSLAM -->
     <arg name="SLAM_epsilon" value="0.01"/>                 <!-- convergence threshold for GraphSLAM -->
     <arg name="SLAM_max_dist_2" value="0.5"/>               <!-- maximum allowed point distance in GraphSLAM -->
     <arg name="SLAM_min_corr" value="70"/>                 <!-- minimum correspondences for scans to be considered overlapping in GraphSLAM -->
-    <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
-    <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
-    <arg name="ikd_downsample_l" value="0.1"/>              <!-- l_box: cuboid box length for automated point reduction -->
-    <arg name="ikd_downsample_n" value="1"/>                <!-- n_box^max: maximum point number per downsample box -->
-    <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
-    <arg name="sliding_map_L" value="300"/>               <!-- L: length of the cuboid for the sliding map window -->
-    <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
     
     <arg name="publish_clouds" value="false"/>               <!-- true: active, false: inactive -->
     <arg name="publish_traj" value="false"/>                 <!-- true: active, false: inactive -->
@@ -235,8 +239,6 @@
         <remap from="/points_in" to="$(arg points_out)"/>
         <remap from="/imu_in" to="$(arg imu_in)"/>
         
-        <!-- <param name="use_sim_time" value="$(arg use_sim_time)"/> -->
-
         <!-- Preprocessing -->
         <param name="deskewing" value="$(arg deskewing)"/>                      <!-- true: on, false: off -->
         <param name="min_range" value="$(arg min_range)"/>                      <!-- lower limit for accepted point distances in m -->
@@ -286,9 +288,8 @@
         <param name="publish_poses" value="$(arg publish_poses)"/><!-- true: active, false: inactive -->
         <param name="print_runtime" value="$(arg print_runtime)"/><!-- true: active, false: inactive -->
 
-    </node>
+    </node > 
     
-  
     <!-- start LIDAR HESAI nodelet manager -->
     <!-- <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" /> -->
     <node pkg="nodelet" type="nodelet" name="$(arg manager)" ns="$(arg namespace)" args="manager" output="screen" />
@@ -311,7 +312,6 @@
         <param name="target_frame"  type="string" value="$(arg target_frame)"/>
     </node>
     
-
     <!-- SETUP TF TREE: Order of transforms: x y z rz ry rx -->
     <!-- intrinsic rotation order: rx first, new ry second, new rz third -->
     <!-- extrinsic rotation order: rx first, old ry second, old rz third -->
@@ -335,10 +335,10 @@
     <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
 
 
-    <node pkg="vio_tracking_t265" type="auto_reconnect" name="realsense_pose_node" output="screen" />
-    <node pkg="vio_tracking_t265" type="center_extrinsics" name="realsense_extrinsics" output="screen" />
+    <!-- <node pkg="vio_tracking_t265" type="auto_reconnect" name="realsense_pose_node" output="screen" /> -->
+    <!-- <node pkg="vio_tracking_t265" type="center_extrinsics" name="realsense_extrinsics" output="screen" /> -->
 
-    <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/>
+    <!-- <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/> -->
     <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
 
 
