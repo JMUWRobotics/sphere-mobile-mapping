@@ -8,6 +8,10 @@
     <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
     <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
     <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <!-- Which serial to actually use for merging data in the filter -->
+    <arg name="use_serial0" value="true" />
+    <arg name="use_serial1" value="true" />
+    <arg name="use_serial2" value="true" />
     <!-- Intrinsic calibration (axes misalignment, scale, and bias) 
         you can calibrate this with https://github.com/fallow24/ros_imu_calib-->
     <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
@@ -41,7 +45,10 @@
         tangential and centripetal forces subtracted from the accelerometer.
         If this is set to false, the /imu/X/raw topics will contain uncalibrated msgs,
         wheras /imu/X/calib will contain calibrated (but uncompensated) msgs. 
-        Use this to debug motion force compensation. -->
+        Use this to debug/plot motion force compensation.
+        The debug parameter does not influence the merged topic:
+        The "posePub_merged_raw" topic will ALWAYS contain uncompensated msgs,
+        the "posePub_merged" topic will ALWAYS contain compensated msgs -->
     <arg name="jasper_debug" value="false" />
     <!-- Filters the derivative of rotation speed. Lowpass cutoff in HZ. -->
     <arg name="jasper_lowpass_freq" value="20" />
@@ -134,6 +141,9 @@
     <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
     <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
     <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="use_serial0" type="bool" value="$(arg use_serial0)" />
+    <param name="use_serial1" type="bool" value="$(arg use_serial1)" />
+    <param name="use_serial2" type="bool" value="$(arg use_serial2)" />
     <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
     <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
     <param name="jasper_acc_calib2" type="string" value="$(arg jasper_acc_calib2)" />

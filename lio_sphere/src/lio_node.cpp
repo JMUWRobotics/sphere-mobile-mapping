@@ -82,16 +82,16 @@ LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh
     pose_sub_ = nh_.subscribe("/lkf/pose", 10, &LIONode::processPose, this, ros::TransportHints().tcpNoDelay());
     // publishers
     pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_out", 5);
-    pc_reg_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/only_reg_points_out", 5);
-    pc_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_debug_out", 1);
+    // pc_reg_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/only_reg_points_out", 5);
+    //pc_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_debug_out", 1);
     map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/map_out", 1);
-    traj_all_pub_ = nh_.advertise<nav_msgs::Path>("/full_traj_out", 1);
-    traj_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_traj_out", 1);
-    traj_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_traj_out", 1);
-    pose_all_pub_ = nh_.advertise<nav_msgs::Path>("/all_pose_out", 5);
+    // traj_all_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/full_traj_out", 1);
+    //traj_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_traj_out", 1);
+    //traj_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_traj_out", 1);
+    pose_all_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/all_pose_out", 5);
     // pose_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_pose_out", 1);
-    pose_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_pose_out", 5);
-    init_pose_pub_ = nh_.advertise<nav_msgs::Path>("/initial_guess", 5);
+    pose_reg_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/only_reg_pose_out", 5);
+    // init_pose_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/initial_guess", 5);
     // GICP debug clouds
     source_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/gicp_source", 1);
     target_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/gicp_target", 1);
@@ -573,31 +573,38 @@ void LIONode::publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::
             pose_msg.pose = sophusToPose(registered_pose);
         else
             pose_msg.pose = sophusToPose(initial_guess);
-        all_path_msg_.poses.push_back(pose_msg);
+
+        all_path_msg_.pose = pose_msg;
+        all_path_msg_.header = pose_msg.header;
+        //all_path_msg_.poses.push_back(pose_msg);
         traj_all_pub_.publish(all_path_msg_);
 
         pose_msg.pose = sophusToPose(registered_pose);
-        all_path2_msg_.poses.push_back(pose_msg);
-        traj_all2_pub_.publish(all_path2_msg_);
+        // all_path2_msg_.poses.push_back(pose_msg);
+        // traj_all2_pub_.publish(all_path2_msg_);
 
         if (reg_suc)
         {
             pose_msg.pose = sophusToPose(registered_pose);
-            reg_path_msg_.poses.push_back(pose_msg);
+            reg_path_msg_.pose = pose_msg;
+            reg_path_msg_.header = pose_msg.header;
         }
         traj_reg_pub_.publish(reg_path_msg_);
     }
     if (config_.publish_poses)
     {
+        state_estimator_msgs::Estimator est_msg;
+        est_msg.header.stamp = stamp;
+        est_msg.header.frame_id = config_.odom_frame;
         if (reg_suc)
         {
             pose_msg.pose = sophusToPose(registered_pose);
-            pose_reg_pub_.publish(pose_msg);
+            est_msg.pose = pose_msg;
+            pose_reg_pub_.publish(est_msg);
         }
         pose_msg.pose = sophusToPose(registered_pose);
-        pose_all_pub_.publish(pose_msg);
-        pose_msg.pose = sophusToPose(initial_guess);
-        init_pose_pub_.publish(pose_msg);
+        est_msg.pose = pose_msg;
+        pose_all_pub_.publish(est_msg);
     }
 }
 

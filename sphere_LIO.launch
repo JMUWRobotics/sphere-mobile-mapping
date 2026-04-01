@@ -8,6 +8,10 @@
     <arg name="jasper_serial0" value="415233" /> <!-- IMU LEFT  (from camera viewing direction) -->
     <arg name="jasper_serial1" value="297652" /> <!-- IMU CENTER -->
     <arg name="jasper_serial2" value="596268" /> <!-- IMU RIGHT (from camera viewing direction) -->
+    <!-- Which serial to actually use for merging data in the filter -->
+    <arg name="use_serial0" value="true" />
+    <arg name="use_serial1" value="true" />
+    <arg name="use_serial2" value="true" />
     <!-- Intrinsic calibration (axes misalignment, scale, and bias) 
         you can calibrate this with https://github.com/fallow24/ros_imu_calib-->
     <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
@@ -184,6 +188,9 @@
     <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
     <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
     <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="use_serial0" type="bool" value="$(arg use_serial0)" />
+    <param name="use_serial1" type="bool" value="$(arg use_serial1)" />
+    <param name="use_serial2" type="bool" value="$(arg use_serial2)" />
     <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
     <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
     <param name="jasper_acc_calib2" type="string" value="$(arg jasper_acc_calib2)" />

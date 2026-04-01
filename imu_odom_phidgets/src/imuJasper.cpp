@@ -224,6 +224,11 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
     Phidget_getDeviceSerialNumber((PhidgetHandle) ch, &serialNr);
     if (serialNr == SERIAL_0) {
         spatialNr = 0;
+        if (!initialized0) {
+            initialized0 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
         mtx_n0.lock();
         n0++;
         process_phidget_to_calibrated_ros_msg(
@@ -240,6 +245,11 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
         mtx_n0.unlock();
     } else if (serialNr == SERIAL_1) {
         spatialNr = 1;
+        if (!initialized1) {
+            initialized1 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
         mtx_n1.lock();
         n1++;
         process_phidget_to_calibrated_ros_msg(
@@ -256,6 +266,11 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
         mtx_n1.unlock();
     } else if (serialNr == SERIAL_2) {
         spatialNr = 2;
+        if (!initialized2) {
+            initialized2 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
         mtx_n2.lock();
         n2++;
         process_phidget_to_calibrated_ros_msg(
@@ -272,11 +287,6 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
         mtx_n2.unlock();
     } else {
         ROS_WARN("Attention! IMU with serial %d was not defined in config.launch!", serialNr);
-    }
-
-    if (firstRead == spatialNr) {
-        firstRead++;
-        ROS_INFO("Receiving from IMU %d works! Serial: %d", spatialNr, serialNr);
     }
 }
 
@@ -347,6 +357,21 @@ void setValsAndCompensateCentripetal(const int serialNr,
     *az += azval;
 }
 
+inline float mergeGyros(const float g0, const float g1, const float g2, const float g_prev = 0.0)
+{
+    float res = 0.0;
+    if (use_serial0) res += g0;
+    if (use_serial1) res += g1;
+    if (use_serial2) res += g2;
+    if (slow) {
+        res += g_prev;
+        res /= (n_imus + 1);
+    } else {
+        res /= n_imus;
+    }
+    return res;
+}
+
 /** 
  * This function combines (averages) the readings from all IMUs.
  * If no arguments are given, average across all sensors. Pass bool values e.g.
@@ -356,10 +381,9 @@ void setValsAndCompensateCentripetal(const int serialNr,
 void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
 {   
     int n = 0;
-    // mtx_n0.lock();
-    // mtx_n1.lock();
-    // mtx_n2.lock();
-    // n = n0 + n1 + n2;
+    mtx_n0.lock();
+    mtx_n1.lock();
+    mtx_n2.lock();
     if (use0) n += n0;
     if (use1) n += n1;
     if (use2) n += n2;
@@ -367,12 +391,6 @@ void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
     /* HANDLE ACCELEROMETER */
     // Mean of accelerometers
     if (n != 0) {
-        //ax = (ax0 + ax1 + ax2) / n;
-        //ay = (ay0 + ay1 + ay2) / n;
-        //az = (az0 + az1 + az2) / n;
-        //ax_alt = (a0_alt[0] + a1_alt[0] + a2_alt[0]) / n;
-        //ay_alt = (a0_alt[1] + a1_alt[1] + a2_alt[1]) / n;
-        //az_alt = (a0_alt[2] + a1_alt[2] + a2_alt[2]) / n;
         ax = 0;
         ay = 0;
         az = 0;
@@ -417,29 +435,29 @@ void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
         ax1 = 0; ay1 = 0; az1 = 0;
         ax2 = 0; ay2 = 0; az2 = 0;
     }
-    // mtx_n0.unlock();
-    // mtx_n1.unlock();
-    // mtx_n2.unlock();
+    mtx_n0.unlock();
+    mtx_n1.unlock();
+    mtx_n2.unlock();
 
     /* HANDLE GYROSCOPE */
     if (firstRead < 4) {
         ROS_INFO("Init Yaw Axis...");
-        gx = (gx1 + gx2 + gx0) * ONE_THIRD;
-        gy = (gy1 + gy2 + gy0) * ONE_THIRD;
-        gz = (gz1 + gz2 + gz0) * ONE_THIRD;
+        gx = mergeGyros(gx0, gx1, gx2);
+        gy = mergeGyros(gy0, gy1, gy2);
+        gz = mergeGyros(gz0, gz1, gz2);
         ovrwrtOrientWithAcc(ax, ay, az, 0);
         changeAlt();
         ovrwrtOrientWithAcc(ax, ay, az, 0);
         changeAlt();
         firstRead = 4;
     } else if (!slow) /* THIS IS THE USUAL CASE ! */ {
-        gx = (gx1 + gx2 + gx0) * ONE_THIRD;
-        gy = (gy1 + gy2 + gy0) * ONE_THIRD;
-        gz = (gz1 + gz2 + gz0) * ONE_THIRD;
-    } else {
-        gx = (gx1 + gx2 + gx0 + gx) * 0.25;
-        gy = (gy1 + gy2 + gy0 + gy) * 0.25;
-        gz = (gz1 + gz2 + gz0 + gz) * 0.25;
+        gx = mergeGyros(gx0, gx1, gx2);
+        gy = mergeGyros(gy0, gy1, gy2);
+        gz = mergeGyros(gz0, gz1, gz2);
+    } else { /* If slow, smoother signal but time lag ! Not recommended */
+        gx = mergeGyros(gx0, gx1, gx2, gx);
+        gy = mergeGyros(gy0, gy1, gy2, gy);
+        gz = mergeGyros(gz0, gz1, gz2, gz);
     }
 }
 
@@ -587,14 +605,14 @@ int argumentHandler(ros::NodeHandle &nh)
     if (r <= 0.0) {
         ROS_WARN("Sphere radius not set (r = %f)! This leads to issues with position calculation!", r);
     }
-#ifdef MAHONY
+    #ifdef MAHONY
     nh.param<double>("mahony_kp", Kp, 1.0);
     nh.param<double>("mahony_ki", Ki, 0.001);
-#elif defined(QEKF) || defined(UKF)
+    #elif defined(QEKF) || defined(UKF)
     nh.param<float>("sigma_g", sigma_gyr, 0.001);
     nh.param<float>("sigma_a", sigma_a, 0.001);
     nh.param<float>("P_init", P_init, 0.01);
-#else
+    #else
     nh.param<float>("jasper_gain", gain_, 0);
     nh.param<float>("jasper_alpha", alpha, 0.02);
     nh.param<float>("jasper_autogain", autogain, 0);
@@ -603,12 +621,12 @@ int argumentHandler(ros::NodeHandle &nh)
         ROS_INFO("autogain set to %f\n. Thefore gain_ is set to 0 and alpha initally to %f", autogain, autogain * 0.1);
     }
     gain_min = gain_;
-#endif
-#if defined(UKF)
+    #endif
+    #if defined(UKF)
     nh.param<float>("ukf_alpha", alpha, 0.001);
     nh.param<float>("ukf_beta", beta, 2.0);
     nh.param<float>("ukf_kappa", kappa, 0.0);
-#endif
+    #endif
     nh.param<bool>("jasper_slow", slow, false);
     nh.param<bool>("jasper_forceflat", setZ0, true);
     int temp;
@@ -627,7 +645,20 @@ int argumentHandler(ros::NodeHandle &nh)
     nh.param<int>("jasper_serial0", SERIAL_0, 0);
     nh.param<int>("jasper_serial1", SERIAL_1, 0);
     nh.param<int>("jasper_serial2", SERIAL_2, 0);
-    nh.param<float>("small_omega", small_omega2, 0.1);
+    nh.param<bool>("use_serial0", use_serial0, false);
+    nh.param<bool>("use_serial1", use_serial1, false);
+    nh.param<bool>("use_serial2", use_serial2, false);
+    if (use_serial0 && SERIAL_0 == 0) use_serial0 = false;
+    if (use_serial1 && SERIAL_1 == 0) use_serial1 = false;
+    if (use_serial2 && SERIAL_2 == 0) use_serial2 = false;
+    ROS_WARN_STREAM_COND(use_serial0, "Using IMU with serial " << SERIAL_0);
+    ROS_WARN_STREAM_COND(use_serial1, "Using IMU with serial " << SERIAL_1);
+    ROS_WARN_STREAM_COND(use_serial2, "Using IMU with serial " << SERIAL_2);
+    initialized0 = false;
+    initialized1 = false;
+    initialized2 = false;
+    n_imus = 0;
+    nh.param<float>("small_omega", small_omega2, 0.1); 
     small_omega2 *= small_omega2;
     
     /*
@@ -714,26 +745,26 @@ int CCONV init()
     PhidgetSpatialHandle spatial0, spatial1, spatial2;
     
     // Create your Phidget channels
-    PhidgetSpatial_create(&spatial0);
-    PhidgetSpatial_create(&spatial1);
-    PhidgetSpatial_create(&spatial2);
+    if (use_serial0) PhidgetSpatial_create(&spatial0);
+    if (use_serial1) PhidgetSpatial_create(&spatial1);
+    if (use_serial2) PhidgetSpatial_create(&spatial2);
     
     // Set addressing parameters to specify which channel to open (if any)
-    Phidget_setDeviceSerialNumber((PhidgetHandle) spatial0, SERIAL_0);
-    Phidget_setDeviceSerialNumber((PhidgetHandle) spatial1, SERIAL_1);
-    Phidget_setDeviceSerialNumber((PhidgetHandle) spatial2, SERIAL_2);
+    if (use_serial0) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial0, SERIAL_0);
+    if (use_serial1) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial1, SERIAL_1);
+    if (use_serial2) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial2, SERIAL_2);
     
     // set the handler which handels detaching evcents
-    Phidget_setOnDetachHandler((PhidgetHandle) spatial0, detachHandler, NULL);
-    Phidget_setOnDetachHandler((PhidgetHandle) spatial1, detachHandler, NULL);
-    Phidget_setOnDetachHandler((PhidgetHandle) spatial2, detachHandler, NULL);
+    if (use_serial0) Phidget_setOnDetachHandler((PhidgetHandle) spatial0, detachHandler, NULL);
+    if (use_serial1) Phidget_setOnDetachHandler((PhidgetHandle) spatial1, detachHandler, NULL);
+    if (use_serial2) Phidget_setOnDetachHandler((PhidgetHandle) spatial2, detachHandler, NULL);
     
     ROS_INFO("Now Attaching the IMUS! Giving it maximum 3 seconds!");
     // Open your Phidgets and wait for attachment
     ros::Time begin = ros::Time::now();
-    Phidget_openWaitForAttachment((PhidgetHandle) spatial0, 1000);
-    Phidget_openWaitForAttachment((PhidgetHandle) spatial1, 1000);
-    Phidget_openWaitForAttachment((PhidgetHandle) spatial2, 1000);
+    if (use_serial0) Phidget_openWaitForAttachment((PhidgetHandle) spatial0, 1000);
+    if (use_serial1) Phidget_openWaitForAttachment((PhidgetHandle) spatial1, 1000);
+    if (use_serial2) Phidget_openWaitForAttachment((PhidgetHandle) spatial2, 1000);
     if (ros::Time::now().toSec() - begin.toSec() >= 3) {
         ROS_WARN("Phidgets IMU attachment timeout! Data may be compromised.");
     } else {
@@ -742,26 +773,24 @@ int CCONV init()
     
     // Set the data rate (set by user or IMU_DEFAULT_DATA_RATE
     int imu_data_intervall = std::round(1000.0 / imu_data_rate);
-    PhidgetSpatial_setDataInterval(spatial0, imu_data_intervall);
-    PhidgetSpatial_setDataInterval(spatial1, imu_data_intervall);
-    PhidgetSpatial_setDataInterval(spatial2, imu_data_intervall);
-    
+    if (use_serial0) PhidgetSpatial_setDataInterval(spatial0, imu_data_intervall);
+    if (use_serial1) PhidgetSpatial_setDataInterval(spatial1, imu_data_intervall);
+    if (use_serial2) PhidgetSpatial_setDataInterval(spatial2, imu_data_intervall);
     
     ROS_WARN("!!! CALIBRATING GYROSCOPES, DO NOT MOVE IMUs !!!");
     ros::Duration(0.5).sleep();
-    PhidgetSpatial_zeroGyro(spatial0);
-    PhidgetSpatial_zeroGyro(spatial1);
-    PhidgetSpatial_zeroGyro(spatial2);
-    PhidgetSpatial_zeroAlgorithm(spatial0);
-    PhidgetSpatial_zeroAlgorithm(spatial1);
-    PhidgetSpatial_zeroAlgorithm(spatial2);
-    ROS_WARN("Gyroscope calibration succesfull!");
-    
+    if (use_serial0) PhidgetSpatial_zeroGyro(spatial0);
+    if (use_serial1) PhidgetSpatial_zeroGyro(spatial1);
+    if (use_serial2) PhidgetSpatial_zeroGyro(spatial2);
+    if (use_serial0) PhidgetSpatial_zeroAlgorithm(spatial0);
+    if (use_serial1) PhidgetSpatial_zeroAlgorithm(spatial1);
+    if (use_serial2) PhidgetSpatial_zeroAlgorithm(spatial2);
+    ROS_WARN("Gyroscope calibration succesfull!"); 
     
     // Assign any event handlers you need before calling open so that no events are missed.
-    PhidgetSpatial_setOnSpatialDataHandler(spatial0, onSpatial0_SpatialData, NULL);
-    PhidgetSpatial_setOnSpatialDataHandler(spatial1, onSpatial0_SpatialData, NULL);
-    PhidgetSpatial_setOnSpatialDataHandler(spatial2, onSpatial0_SpatialData, NULL);
+    if (use_serial0) PhidgetSpatial_setOnSpatialDataHandler(spatial0, onSpatial0_SpatialData, NULL);
+    if (use_serial1) PhidgetSpatial_setOnSpatialDataHandler(spatial1, onSpatial0_SpatialData, NULL);
+    if (use_serial2) PhidgetSpatial_setOnSpatialDataHandler(spatial2, onSpatial0_SpatialData, NULL);
     
     // initilizind data for filtering
     q0 = 1.0;
@@ -820,7 +849,7 @@ int main(int argc, char *argv[])
 #if defined(MAHONY)
     estimator_instance = new MahonyFilter(Kp, Ki);
 #elif defined(QEKF)
-    estimator_instance = new ExtendedKalmanFilter(0.001, 0.001, 0.01);
+    estimator_instance = new ExtendedKalmanFilter(sigma_gyr, sigma_a, P_init);
 #elif defined(UKF)
     estimator_instance = new UnscentedKalmanFilter();
 #else
@@ -832,12 +861,6 @@ int main(int argc, char *argv[])
 
     ros::Rate loop_rate(data_rate);
 
-    // wait for every imu to send data
-    while (firstRead < 3 && !g_request_shutdown) {
-        ROS_WARN("Waiting for all IMUs to deliever data...");
-        ros::Rate loop_rate_StartUp(1);
-        loop_rate_StartUp.sleep();
-    }
     // the gyro send right after starting just the value  0 for 1-3 seconds. We dont need that
     while (gx0 == 0 && gx1 == 0 && gx2 == 0 && !g_request_shutdown) {
         ROS_WARN("Phidgets gyroscopes still waiting...");
@@ -848,22 +871,26 @@ int main(int argc, char *argv[])
 
 
     ROS_INFO("Phidigets IMUs are now properly initialized!");
+    /*------------------------------------
+            Main Processing Loop
+    -------------------------------------*/
     while (ros::ok() && !g_request_shutdown) {
 
         // Each cycle gathers data and filters
-        combineRAWData();
-        // use only particular IMUs (args: use0, use1, use2)
-        // combineRAWData(true, false, false);
-        double combined_stamp_ms =
-            (imu0_msg.header.stamp.toSec() +
-             imu1_msg.header.stamp.toSec() +
-             imu2_msg.header.stamp.toSec()) / 3.0 * 1000.0;
+        combineRAWData(use_serial0, use_serial1, use_serial2);
+
+        double combined_stamp_ms = 0.0;
+        if (use_serial0) combined_stamp_ms += imu0_msg.header.stamp.toSec();
+        if (use_serial1) combined_stamp_ms += imu1_msg.header.stamp.toSec();
+        if (use_serial2) combined_stamp_ms += imu2_msg.header.stamp.toSec();
+        combined_stamp_ms /= n_imus;
+        combined_stamp_ms *= 1000.0;
 
         apply_attitude_filter(combined_stamp_ms);
 
         // Fill msg header
         ms_to_ros_stamp(combined_stamp_ms, output_msg.header.stamp); 
-        output_msg.header.frame_id = "map";
+        output_msg.header.frame_id = "map_imu";
         output_msg.header.seq = seq++;
         
         // Position determined by IMUs
@@ -880,9 +907,9 @@ int main(int argc, char *argv[])
         output_msg.imu.header = output_msg.header;
         output_msg.imu.orientation = output_msg.pose.pose.orientation;
         // Gyroscope data is actually orientation differential 
-        output_msg.imu.angular_velocity.x = gx;//_filtered;
-        output_msg.imu.angular_velocity.y = gy;//_filtered;
-        output_msg.imu.angular_velocity.z = gz;//_filtered;
+        output_msg.imu.angular_velocity.x = gx;
+        output_msg.imu.angular_velocity.y = gy;
+        output_msg.imu.angular_velocity.z = gz;
         // Acceleration data compensates centripetal forces
         output_msg.imu.linear_acceleration.x = ax;
         output_msg.imu.linear_acceleration.y = ay;
@@ -902,6 +929,7 @@ int main(int argc, char *argv[])
         apply_attitude_filter(combined_stamp_ms, true);
         
         // Put filtered data inside msg
+        output_msg.header.frame_id = "map_raw";
         output_msg.pose.pose.position.x = px;
         output_msg.pose.pose.position.y = py;
         output_msg.pose.pose.position.z = pz;

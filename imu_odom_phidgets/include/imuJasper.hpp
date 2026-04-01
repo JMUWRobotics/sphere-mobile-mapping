@@ -62,6 +62,9 @@
 
 // NON-CONST Serial numbers of the IMUs
 int SERIAL_0, SERIAL_1, SERIAL_2;
+bool use_serial0, use_serial1, use_serial2;
+bool initialized0, initialized1, initialized2;
+int n_imus;
 
 // Intrinsic of each IMU
 std::vector<double> acc0_misalignment, acc0_scale, acc0_bias;

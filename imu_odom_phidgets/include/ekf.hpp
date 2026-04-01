@@ -11,7 +11,7 @@
 // Extended Kalman Filter Class
 class ExtendedKalmanFilter : public AttitudeEstimator {
 public:
-    ExtendedKalmanFilter(double sigma_g = 0.001, double sigma_a = 0.001, double Pk_init = 0.01);
+    ExtendedKalmanFilter(double sigma_g = 0.01, double sigma_a = 0.003, double Pk_init = 1.0);
     
     ~ExtendedKalmanFilter();
     

@@ -78,9 +78,9 @@ quaternion ExtendedKalmanFilter::quaternion_from_accelerometer(const Vec3& acc) 
 void ExtendedKalmanFilter::skew(const Vec3& v, double* S) const {
     // 3x3 skew-symmetric matrix
     std::memset(S, 0, 9 * sizeof(double));
-    S[1] = -v.z; S[2] = v.y;
-    S[3] = v.z;  S[5] = -v.x;
-    S[6] = -v.y; S[7] = v.x;
+    S[1] = -v.z;  S[2] =  v.y;
+    S[3] =  v.z;  S[5] = -v.x;
+    S[6] = -v.y;  S[7] =  v.x;
 }
 
 void ExtendedKalmanFilter::omega_matrix(const Vec3& omega, double* Omega) const {
@@ -277,6 +277,8 @@ quaternion ExtendedKalmanFilter::filter(const Vec3& gyro, const Vec3& acc, float
     double a_norm = std::sqrt(a_meas.x*a_meas.x + a_meas.y*a_meas.y + a_meas.z*a_meas.z);
     bool valid_accel = (a_norm > 0.0);
     
+    ROS_WARN_COND(!valid_accel, "QEKF INVALID ACC");
+
     Vec3 z;
     if (valid_accel) {
         z.x = a_meas.x / a_norm;

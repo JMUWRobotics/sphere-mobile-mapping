@@ -439,9 +439,13 @@ class LIONode{
     std::mutex mtx_imu_;
     std::condition_variable cv_imu_stamp_;
     //store poses and paths
-    nav_msgs::Path all_path_msg_; //all poses (initial if not registered)
-    nav_msgs::Path all_path2_msg_; //all poses (up to now if not registered)
-    nav_msgs::Path reg_path_msg_; //only successful registration
+    
+    state_estimator_msgs::Estimator all_path_msg_;
+    state_estimator_msgs::Estimator reg_path_msg_;
+    
+    // nav_msgs::Path all_path_msg_; //all poses (initial if not registered)
+    // nav_msgs::Path all_path2_msg_; //all poses (up to now if not registered)
+    // nav_msgs::Path reg_path_msg_; //only successful registration
     //helpers
 
     /** @brief Looks up a TF2 transform between two frames and converts it to Sophus::SE3d.
