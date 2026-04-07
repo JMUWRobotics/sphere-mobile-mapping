@@ -60,7 +60,7 @@ Use the config file to define
 
 ### Using the debug topic to check P and Q 
 1. Set the parameter "debug_topics" found in the config file to "true"
-2. Use rviz to vizualize "/delta/debug". Set global frame to "map". 
+2. Use rviz to vizualize "/delta/debug". Set global frame to "map_imu". 
 3. Use rviz to also vizualize the SLOWER pose stream
 3. If those two poses dont have the same axis definitions, adjust Q
 4. If those two poses dont move in the same principal direction, adjust P 
