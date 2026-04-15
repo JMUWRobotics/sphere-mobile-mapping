@@ -14,6 +14,7 @@
 #include <memory>
 #include <chrono>
 #include <mutex>
+#include <cstdint>
 
 #include <boost/shared_ptr.hpp>
 
@@ -22,6 +23,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Vector3Stamped.h>
+#include <nav_msgs/Path.h>
 #include <visualization_msgs/Marker.h>
 #include <ground_finder_msgs/ScoredNormalStamped.h>
 
@@ -38,6 +40,7 @@
 
 #include "hough.h"
 #include "math_helpers.h"
+#include <lio_gf_nodelet_manager/shared_ikdtree_store.h>
 
 typedef pcl::PointXYZ PointType;
 
@@ -117,21 +120,29 @@ private:
     ros::NodeHandle nh;
     ros::NodeHandle pnh;
 
-    ros::Subscriber sub_map;  // Global map from /map_out
-    ros::Subscriber sub_pose; // Current pose
+    ros::Subscriber sub_map;     // Global map from /map_out
+    ros::Subscriber sub_trigger; // Trigger processing when a registered pose path is published by lio node
+    ros::Subscriber sub_pose;    // Optional fallback pose source
 
     ros::Publisher pub_local_cloud;            // Local extracted region for visualization
     ros::Publisher pub_inliers;                // Inlier points used for plane fit
+    ros::Publisher pub_rejected_inliers;       // Inlier points from rejected intermediate plane candidates
     ros::Publisher pub_normal;                 // Raw normal vector
     ros::Publisher pub_scored_normal;          // Scored normal with quality metrics
     ros::Publisher pub_smoothed_normal;        // Smoothed raw normal
     ros::Publisher pub_smoothed_scored_normal; // Smoothed scored normal
     ros::Publisher pub_normal_marker;          // Visualization marker
+    ros::Publisher pub_shared_map_debug;       // Debug map reconstructed from shared IKD-tree
 
     boost::shared_ptr<pcl::PointCloud<PointType>> global_map_;
     boost::shared_ptr<pcl::KdTreeFLANN<PointType>> kdtree_;
     bool map_received_;
     ros::Time map_timestamp_;
+    uint64_t last_snapshot_version_;
+    std::string trigger_topic_;
+    bool publish_shared_map_debug_;
+    bool debug_publish_;
+    std::string shared_map_debug_topic_;
 
     geometry_msgs::PoseStamped current_pose_; // latest pose
     bool pose_received_;
@@ -186,6 +197,11 @@ private:
      */
     void mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
 
+    /** \brief Callback for registered pose trigger
+     * \param[in] msg PoseStamped message on trigger topic.
+     */
+    void triggerCallback(const geometry_msgs::PoseStampedConstPtr &msg);
+
     /** \brief Callback for pose updates
      * \param[in] msg PoseStamped message with current robot pose
      */
@@ -195,6 +211,16 @@ private:
     /** \brief Process current pose: extract local region and compute normal
      */
     void processAtCurrentPose();
+
+    /** \brief Publish full map from shared IKD-tree for debugging
+     * \param[in] trigger_stamp Fallback timestamp when shared handle stamp is zero
+     */
+    void publishSharedMapDebug(const ros::Time &trigger_stamp);
+
+    /** \brief Publish inlier cloud for rejected intermediate candidates
+     * \param[in] rejected_cloud Candidate inliers that were rejected
+     */
+    void publishRejectedInliers(const pcl::PointCloud<PointType>::Ptr &rejected_cloud);
 
     /** \brief Extract local point cloud around current pose
      * \param[in] pose Current pose in map_lkf(?) frame
@@ -208,49 +234,59 @@ private:
      * \param[in] local_cloud Point cloud to fit
      * \param[out] normal Output normal vector [nx, ny, nz]
      * \param[out] inlier_count Number of inliers
+     * \param[out] inlier_cloud Point cloud containing inliers used for the final normal
      * \return true if successful plane found, false otherwise
      */
     bool fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &local_cloud,
                         std::vector<double> &normal,
-                        size_t &inlier_count);
+                        size_t &inlier_count,
+                        pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
     /** \brief Fit plane using PCA
      * \param[in] cloud Input point cloud
      * \param[out] normal Output normal vector
+     * \param[out] inlier_cloud Point cloud used to compute the normal
      * \return true if successful
      */
     bool fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &cloud,
-                     std::vector<double> &normal);
+                     std::vector<double> &normal,
+                     pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
     /** \brief Fit plane using RANSAC
      * \param[in] cloud Input point cloud
      * \param[out] normal Output normal vector
      * \param[out] inlier_count Number of inliers
+     * \param[out] inlier_cloud Inlier points used for the final normal
      * \return true if successful
      */
     bool fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &cloud,
                         std::vector<double> &normal,
-                        size_t &inlier_count);
+                        size_t &inlier_count,
+                        pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
     /** \brief Fit plane using RHT (Randomized Hough Transform)
      * \param[in] cloud Input point cloud
      * \param[out] normal Output normal vector
      * \param[out] inlier_count Number of inliers
+     * \param[out] inlier_cloud Inlier points used for the final normal
      * \return true if successful
      */
     bool fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &cloud,
                      std::vector<double> &normal,
-                     size_t &inlier_count);
+                     size_t &inlier_count,
+                     pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
     /** \brief Fit plane using RHT2 (RHT + PCA refinement)
      * \param[in] cloud Input point cloud
      * \param[out] normal Output normal vector
      * \param[out] inlier_count Number of inliers
+     * \param[out] inlier_cloud Inlier points used for the final normal
      * \return true if successful
      */
     bool fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &cloud,
                       std::vector<double> &normal,
-                      size_t &inlier_count);
+                      size_t &inlier_count,
+                      pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
     /** \brief Validate that normal represents ground (not wall)
      * \param[in,out] normal Normal vector to check/correct
@@ -312,15 +348,29 @@ private:
     /** \brief Write computed ground normal vector to CSV file
      * \param[in] stamp Timestamp
      * \param[in] normal Normal vector
-     * \param[in] vis_score Visibility score
-     * \param[in] inlier_score Inlier score
-     * \param[in] combined_score Combined score
+        * \param[in] query_pose Query pose used for extraction
+        * \param[in] pub_vis_score Published visibility score
+        * \param[in] pub_inlier_score Published inlier score
+        * \param[in] pub_combined_score Published combined score
+        * \param[in] curr_vis_score Current visibility score before fallback
+        * \param[in] curr_inlier_score Current inlier score before fallback
+        * \param[in] curr_combined_score Current combined score before fallback
+        * \param[in] inlier_count Number of inliers for accepted plane
+        * \param[in] subcloud_size Local cloud size used for fitting
+        * \param[in] using_fallback Whether a fallback normal was published
      */
     void log_results(const ros::Time &stamp,
                      const std::vector<double> &normal,
-                     double vis_score,
-                     double inlier_score,
-                     double combined_score);
+                     const geometry_msgs::Pose &query_pose,
+                     double pub_vis_score,
+                     double pub_inlier_score,
+                     double pub_combined_score,
+                     double curr_vis_score,
+                     double curr_inlier_score,
+                     double curr_combined_score,
+                     size_t inlier_count,
+                     size_t subcloud_size,
+                     bool using_fallback);
 
 public:
     /** \brief Constructor

@@ -1,8 +1,12 @@
 #include <cstring>
 #include <memory>
+#include <cerrno>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <nodelet/nodelet.h>
 #include <pluginlib/class_list_macros.hpp>
+#include <ros/package.h>
 
 #include "global_ground_finder.h"
 
@@ -12,6 +16,30 @@
 
 namespace global_ground_finder
 {
+    namespace
+    {
+        bool ensureDirExists(const std::string &path)
+        {
+            struct stat info;
+            if (::stat(path.c_str(), &info) == 0)
+            {
+                return S_ISDIR(info.st_mode);
+            }
+
+            if (::mkdir(path.c_str(), 0755) == 0)
+            {
+                return true;
+            }
+
+            if (errno == EEXIST)
+            {
+                return true;
+            }
+
+            return false;
+        }
+    } // namespace
+
     class GlobalGroundFinderNodelet : public nodelet::Nodelet
     {
     public:
@@ -41,6 +69,7 @@ namespace global_ground_finder
             {
                 NODELET_WARN("No plane_algorithm parameter specified, defaulting to 'ransac'");
                 plane_alg = RANSAC;
+                plane_alg_str = "ransac";
             }
             else
             {
@@ -68,11 +97,26 @@ namespace global_ground_finder
                 }
             }
 
+            const std::string package_path = ros::package::getPath("global_ground_finder");
+            const std::string data_dir = package_path + "/data";
+            const std::string algo_dir = data_dir + "/" + plane_alg_str;
+
+            if (!ensureDirExists(data_dir))
+            {
+                NODELET_ERROR("Failed to ensure data directory exists: %s", data_dir.c_str());
+                return;
+            }
+            if (!ensureDirExists(algo_dir))
+            {
+                NODELET_ERROR("Failed to ensure algorithm data directory exists: %s", algo_dir.c_str());
+                return;
+            }
+
             // File logging param
             std::string log_filename;
-            if (!pnh.getParam("log_file", log_filename))
+            if (!pnh.getParam("file", log_filename) && !pnh.getParam("log_file", log_filename))
             {
-                NODELET_INFO("No log_file parameter specified. CSV logging disabled.");
+                NODELET_INFO("No file parameter specified. CSV logging disabled.");
             }
             else if (log_filename != "default")
             {
@@ -81,7 +125,7 @@ namespace global_ground_finder
 
             node_.reset(new ::GlobalGroundFinder(nh, pnh, plane_alg));
             NODELET_INFO("Global Ground Finder node running...");
-            NODELET_INFO("Waiting for global map on /map_out and pose on /lkf/pose");
+            NODELET_INFO("Waiting for registered poses by lio_node on /only_reg_pose_out");
             NODELET_INFO("Global Ground Finder nodelet loaded.");
         }
 

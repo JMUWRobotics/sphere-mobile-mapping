@@ -12,8 +12,6 @@
   <depend>nodelet</depend>
   <depend>roscpp</depend>
 
-  <exec_depend>lio_sphere</exec_depend>
-  <exec_depend>global_ground_finder</exec_depend>
 
   <export>
   </export>

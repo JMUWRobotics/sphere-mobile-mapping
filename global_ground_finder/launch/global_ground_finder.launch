@@ -9,7 +9,7 @@
   <arg name="plane_algorithm" default="ransac" 
        doc="Plane fitting algorithm: 'pca', 'ransac', 'rht', or 'rht2'"/>
   
-  <arg name="extraction_radius" default="3.0" 
+  <arg name="extraction_radius" default="5.0" 
        doc="Radius [m] for local map extraction around pose"/>
   
   <arg name="extraction_height" default="0.5" 
@@ -24,7 +24,7 @@
   <arg name="min_score_window" default="0.3" 
        doc="Minimum acceptable score from history window"/>
 
-  <arg name="pose_topic" default="/lkf_pose" 
+  <arg name="pose_topic" default="/lkf/pose" 
        doc="Topic for robot pose (geometry_msgs/PoseStamped in map_lkf frame)"/>
 
   <!-- Smoothing parameters -->
@@ -45,6 +45,9 @@
 
   <arg name="file" default="default"
        doc="CSV log filename. Use 'default' to disable logging."/>
+
+  <arg name="debug_publish" default="false"
+       doc="Publish rejected intermediate inlier clouds for debugging"/>
 
      <arg name="manager" default="LIO_GF_nodelet_manager"
        doc="Name of the nodelet manager process"/>
@@ -85,7 +88,7 @@
     <param name="min_score_window" type="double" value="$(arg min_score_window)"/>
     <param name="weight_visibility" type="double" value="0.6"/>
     <param name="weight_inlier_ratio" type="double" value="0.4"/>
-    <param name="min_inliers" type="double" value="20.0"/>
+    <param name="min_inliers" type="double" value="10.0"/>
     <param name="inlier_scale" type="double" value="0.3"/>
 
     <!-- Smoothing parameters -->
@@ -97,9 +100,8 @@
 
     <!-- File logging -->
     <param name="file" type="string" value="$(arg file)"/>
+          <param name="debug_publish" type="bool" value="$(arg debug_publish)"/>
 
-    <!-- Topic remapping -->
-    <remap from="/current_pose" to="$(arg pose_topic)"/>
   </node>
 
 </launch>

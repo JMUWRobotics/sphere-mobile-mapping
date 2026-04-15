@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
 roscpp
 nodelet
 pluginlib
+lio_gf_nodelet_manager
 sensor_msgs
 geometry_msgs
 nav_msgs
@@ -27,7 +28,7 @@ find_package(TBB REQUIRED)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES lio_sphere_core lio_sphere_nodelet
-#  CATKIN_DEPENDS roscpp nodelet pluginlib sensor_msgs geometry_msgs nav_msgs pcl_ros tf2_ros state_estimator_msgs evaluation_msgs
+#  CATKIN_DEPENDS roscpp nodelet pluginlib  sensor_msgs geometry_msgs nav_msgs pcl_ros tf2_ros state_estimator_msgs evaluation_msgs
 #  DEPENDS system_lib
 )
 

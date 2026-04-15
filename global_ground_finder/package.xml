@@ -15,6 +15,7 @@
   <!-- Dependencies -->
   <depend>roscpp</depend>
   <depend>nodelet</depend>
+  <depend>lio_gf_nodelet_manager</depend>
   <depend>pluginlib</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>

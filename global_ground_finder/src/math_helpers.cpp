@@ -1,4 +1,5 @@
 #include "math_helpers.h"
+#include <ros/package.h>
 
 double deg2rad(const double deg)
 {
@@ -14,8 +15,12 @@ void subtract_points(const PointType &p1, const PointType &p2, std::vector<doubl
 
 double dot_product(const std::vector<double> &v1, const std::vector<double> &v2)
 {
+    if (v1.size() != v2.size())
+    {
+        return 0.0; // Size mismatch
+    }
     double product = 0.0;
-    for (int i = 0; i < v1.size(); i++)
+    for (size_t i = 0; i < v1.size(); i++)
         product += v1[i] * v2[i];
     return product;
 }
@@ -29,7 +34,22 @@ void cross_product(const std::vector<double> &v1, const std::vector<double> &v2,
 
 void normalize_vector(std::vector<double> &v)
 {
+    if (v.size() < 3)
+    {
+        return; // Invalid size - exit silently
+    }
+
     double norm = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+
+    if (norm < 1e-12) // Avoid division by zero
+    {
+        // Set to default (pointing down)
+        v[0] = 0.0;
+        v[1] = 0.0;
+        v[2] = -1.0;
+        return;
+    }
+
     v[0] /= norm;
     v[1] /= norm;
     v[2] /= norm;

@@ -1,7 +1,7 @@
 /*
  * Implementation of global map-based ground normal finder
  * Based on ground_finder.cpp by Carolin Bösch
- * Adapted for Moritz FIXME's globally consistent mapping node
+ * Adapted for lio_sphere node, providing a global map
  */
 
 #include "global_ground_finder.h"
@@ -22,7 +22,8 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
       last_inlier_count_(0),
       last_local_cloud_size_(0),
       last_roll_(0.0),
-      last_pitch_(0.0)
+      last_pitch_(0.0),
+      last_snapshot_version_(0)
 {
     // Initialize point cloud and kdtree
     global_map_.reset(new pcl::PointCloud<PointType>);
@@ -92,7 +93,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
         log_file_.open(log_file_path_, std::ios::out | std::ios::trunc);
         if (log_file_.is_open())
         {
-            log_file_ << "timestamp,nx,ny,nz,visibility_score,inlier_score,combined_score\n";
+            log_file_ << "timestamp,nx,ny,nz,qx,qy,qz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
             log_file_.flush();
             ROS_INFO("Logging to file: %s", log_file_path_.c_str());
         }
@@ -107,16 +108,24 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
         ROS_INFO("File logging disabled (use 'file' parameter to enable)");
     }
 
-    sub_map = nh.subscribe("/map_out", 10, &GlobalGroundFinder::mapCallback, this);
-    sub_pose = nh.subscribe("/lkf/pose", 10, &GlobalGroundFinder::poseCallback, this);
+    pnh.param<std::string>("trigger_topic", trigger_topic_, "/only_reg_pose_stamped_out"); // PoseStamped trigger from LIO
+    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, false);         // DISABLED: causes double-free in multi-threaded context
+    pnh.param<bool>("debug_publish", debug_publish_, false);
+    pnh.param<std::string>("shared_map_debug_topic", shared_map_debug_topic_, "/global_ground_finder/shared_map_out");
+
+    // sub_map = nh.subscribe("/map_out", 10, &GlobalGroundFinder::mapCallback, this);
+    sub_trigger = nh.subscribe(trigger_topic_, 10, &GlobalGroundFinder::triggerCallback, this);
+    // sub_pose = nh.subscribe("/lkf/pose", 10, &GlobalGroundFinder::poseCallback, this);
 
     pub_local_cloud = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/local_cloud", 1);
     pub_inliers = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/inliers", 1);
+    pub_rejected_inliers = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/rejected_inliers", 1);
     pub_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/normal", 1);
     pub_scored_normal = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal", 1);
     pub_smoothed_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_normal", 1);
     pub_smoothed_scored_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_scored_normal", 1);
     pub_normal_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
+    pub_shared_map_debug = nh.advertise<sensor_msgs::PointCloud2>(shared_map_debug_topic_, 1);
 
     initMarker();
 
@@ -124,6 +133,9 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     ROS_INFO("  Extraction radius: %.2f m", extraction_radius_);
     ROS_INFO("  Extraction height: %.2f m", extraction_height_);
     ROS_INFO("  Enable scoring: %s", enable_scoring_ ? "true" : "false");
+    ROS_INFO("  Publish shared map debug: %s on %s",
+             publish_shared_map_debug_ ? "true" : "false",
+             shared_map_debug_topic_.c_str());
     ROS_INFO("  Enable smoothing: %s (%s)",
              enable_normal_smoothing_ ? "true" : "false",
              use_gaussian_smoothing_ ? "Gaussian" : "EMA");
@@ -152,9 +164,11 @@ void GlobalGroundFinder::initMarker()
     normal_marker_.color.r = 0.0;
     normal_marker_.color.g = 1.0;
     normal_marker_.color.b = 0.0;
-    normal_marker_.header.frame_id = "pandar_frame";
+    normal_marker_.header.frame_id = "map_lio";
 }
 
+// old callback which calculated normal as soon as new registered point cloud arrives but now via memory sharing of global map
+/*
 void GlobalGroundFinder::mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
     if (!quiet_)
@@ -191,26 +205,102 @@ void GlobalGroundFinder::mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg
         processAtCurrentPose();
     }
 }
+    */
 
+void GlobalGroundFinder::triggerCallback(const geometry_msgs::PoseStampedConstPtr &msg)
+{
+    if (!msg)
+    {
+        return;
+    }
+
+    // Use registered PoseStamped trigger as query pose.
+    {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        current_pose_ = *msg;
+        pose_received_ = true;
+    }
+
+    if (publish_shared_map_debug_)
+    {
+        publishSharedMapDebug(msg->header.stamp); // causes seg fault
+    }
+
+    // process on scan cadence while avoiding callback pile-up
+    std::unique_lock<std::mutex> lock(processing_mutex_, std::try_to_lock);
+    // ROS_INFO("owning lock: %s", lock.owns_lock() ? "true" : "false");
+    if (lock.owns_lock())
+    {
+        processAtCurrentPose();
+    }
+}
+
+void GlobalGroundFinder::publishSharedMapDebug(const ros::Time &trigger_stamp)
+{
+
+    const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
+    if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
+    {
+        ROS_WARN_THROTTLE(2.0, "Cannot publish shared debug map: payload type mismatch (%s)", handle.payload_type.c_str());
+        return;
+    }
+    const auto shared_map = lio_gf_nodelet_manager::SharedIKDTree::castPayload<pcl::PointCloud<PointType>>(handle);
+
+    if (!shared_map || shared_map->points.empty())
+    {
+        ROS_WARN_THROTTLE(2.0, "Cannot publish shared debug map: snapshot is missing or empty");
+        return;
+    }
+
+    sensor_msgs::PointCloud2 map_msg;
+    pcl::toROSMsg(*shared_map, map_msg);
+    map_msg.header.frame_id = handle.frame_id;
+    ROS_INFO("Frame: %s, publishing shared map debug with %zu points", map_msg.header.frame_id.c_str(), shared_map->points.size());
+    map_msg.header.stamp = handle.stamp.isZero() ? trigger_stamp : handle.stamp;
+    pub_shared_map_debug.publish(map_msg);
+}
+
+void GlobalGroundFinder::publishRejectedInliers(const pcl::PointCloud<PointType>::Ptr &rejected_cloud)
+{
+    if (!debug_publish_ || !rejected_cloud || rejected_cloud->points.empty())
+    {
+        return;
+    }
+
+    sensor_msgs::PointCloud2 rejected_msg;
+    pcl::toROSMsg(*rejected_cloud, rejected_msg);
+    rejected_msg.header.stamp = ros::Time::now();
+
+    {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        if (!current_pose_.header.frame_id.empty())
+        {
+            rejected_msg.header.frame_id = current_pose_.header.frame_id;
+            if (!current_pose_.header.stamp.isZero())
+            {
+                rejected_msg.header.stamp = current_pose_.header.stamp;
+            }
+        }
+        else
+        {
+            rejected_msg.header.frame_id = "map_lio";
+        }
+    }
+
+    pub_rejected_inliers.publish(rejected_msg);
+}
+
+// cur not used and sub commented out
 void GlobalGroundFinder::poseCallback(const geometry_msgs::PoseStampedConstPtr &msg)
 {
     // Update current pose with protection
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
-        current_pose_ = *msg; // pose arrives in pandar_frame //TODO: check
+        current_pose_ = *msg; // pose arrives in pandar_frame currently but i need it in map_lio //TODO: check frames
         pose_received_ = true;
     }
 
-    if (map_received_)
-    {
-        // try to process only if not already busy
-        std::unique_lock<std::mutex> lock(processing_mutex_, std::try_to_lock);
-        if (lock.owns_lock())
-        {
-            processAtCurrentPose();
-        }
-        // else skip this pose update to avoid mutex lock blocking
-    }
+    // Processing is triggered by scan callback so this callback remains lightweight.
 }
 
 void GlobalGroundFinder::processAtCurrentPose()
@@ -226,7 +316,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
     // get local cloud around curr pose
     pcl::PointCloud<PointType>::Ptr local_cloud(new pcl::PointCloud<PointType>);
-    if (!extractLocalCloud(pose_copy, local_cloud))
+    if (!extractLocalCloud(pose_copy, local_cloud)) // checks for map received and sufficient local points
     {
         ROS_WARN("Failed to extract local cloud");
         count_fail_++;
@@ -238,13 +328,14 @@ void GlobalGroundFinder::processAtCurrentPose()
     sensor_msgs::PointCloud2 local_msg;
     pcl::toROSMsg(*local_cloud, local_msg);
     local_msg.header.stamp = pose_copy.header.stamp;
-    local_msg.header.frame_id = "pandar_frame";
+    local_msg.header.frame_id = pose_copy.header.frame_id;
     pub_local_cloud.publish(local_msg);
 
     // calc ground plane
     std::vector<double> normal;
     size_t inlier_count = 0;
-    if (!fitGroundPlane(local_cloud, normal, inlier_count))
+    pcl::PointCloud<PointType>::Ptr inlier_cloud(new pcl::PointCloud<PointType>);
+    if (!fitGroundPlane(local_cloud, normal, inlier_count, inlier_cloud))
     {
         ROS_WARN("Failed to fit ground plane");
         count_fail_++;
@@ -252,6 +343,12 @@ void GlobalGroundFinder::processAtCurrentPose()
     }
 
     last_inlier_count_ = inlier_count;
+
+    sensor_msgs::PointCloud2 inliers_msg;
+    pcl::toROSMsg(*inlier_cloud, inliers_msg);
+    inliers_msg.header.stamp = pose_copy.header.stamp;
+    inliers_msg.header.frame_id = pose_copy.header.frame_id;
+    pub_inliers.publish(inliers_msg);
 
     auto end_total = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count();
@@ -284,11 +381,6 @@ void GlobalGroundFinder::processAtCurrentPose()
     scored_msg.inlier_score = inlier_score;
     scored_msg.combined_score = combined_score;
 
-    if (write2file)
-    {
-        log_results(pose_copy.header.stamp, normal, vis_score, inlier_score, combined_score);
-    }
-
     // Add to sliding window
     if (enable_scoring_)
     {
@@ -317,6 +409,22 @@ void GlobalGroundFinder::processAtCurrentPose()
         {
             ROS_WARN("No suitable fallback found");
         }
+    }
+
+    if (write2file)
+    {
+        log_results(pose_copy.header.stamp,
+                    normal,
+                    pose_copy.pose,
+                    scored_msg.visibility_score,
+                    scored_msg.inlier_score,
+                    scored_msg.combined_score,
+                    vis_score,
+                    inlier_score,
+                    combined_score,
+                    inlier_count,
+                    local_cloud->points.size(),
+                    using_fallback);
     }
 
     // Publish stuff
@@ -375,19 +483,91 @@ void GlobalGroundFinder::processAtCurrentPose()
 bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pose,
                                            pcl::PointCloud<PointType>::Ptr &local_cloud)
 {
-    if (!map_received_ || global_map_->points.size() == 0)
-    {
-        return false;
-    }
-
-    PointType query_point;
+    PointType query_point; // TOOD:check in which frame i am
     query_point.x = pose.pose.position.x;
     query_point.y = pose.pose.position.y;
     query_point.z = pose.pose.position.z;
 
-    // search in radius around curr pose
+    ROS_INFO("Extracting local cloud around query point: [%.2f, %.2f, %.2f]", query_point.x, query_point.y, query_point.z);
+
+    // Access immutable shared map snapshot and refresh local KdTree when version changes.
+    const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
+    if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
+    {
+        ROS_WARN_THROTTLE(2.0, "Shared snapshot payload type mismatch (%s)", handle.payload_type.c_str());
+        return false;
+    }
+    const auto shared_map = lio_gf_nodelet_manager::SharedIKDTree::castPayload<pcl::PointCloud<PointType>>(handle);
+    if (shared_map && !shared_map->points.empty())
+    {
+        if (handle.version != last_snapshot_version_)
+        {
+            if (handle.point_count != 0 && handle.point_count != shared_map->points.size())
+            {
+                ROS_WARN("SNAPCHK GF metadata mismatch: handle.point_count=%lu shared_map_size=%zu",
+                         static_cast<unsigned long>(handle.point_count),
+                         shared_map->points.size());
+            }
+            global_map_->points = shared_map->points;
+            global_map_->width = shared_map->points.size();
+            global_map_->height = 1;
+            global_map_->is_dense = true;
+            kdtree_->setInputCloud(global_map_);
+            map_received_ = true;
+            map_timestamp_ = handle.stamp;
+            last_snapshot_version_ = handle.version;
+            // ROS_INFO("Updated local KdTree from snapshot version %lu with %zu points (frame=%s, stamp=%.6f)",
+            //          static_cast<unsigned long>(last_snapshot_version_),
+            //          global_map_->points.size(),
+            //          handle.frame_id.c_str(),
+            //          handle.stamp.toSec());
+        }
+    }
+
+    // Search in radius around current pose from local KdTree built from latest snapshot.
     std::vector<int> indices;
     std::vector<float> distances;
+
+    if (map_received_ && kdtree_->radiusSearch(query_point, extraction_radius_, indices, distances) > 0)
+    {
+        if (!pose.header.frame_id.empty())
+        {
+            const auto handle_check = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
+            if (!handle_check.frame_id.empty() && handle_check.frame_id != pose.header.frame_id)
+            {
+                ROS_WARN_THROTTLE(1.0,
+                                  "Frame mismatch: pose frame=%s, map frame=%s. Local cloud may be inconsistent.",
+                                  pose.header.frame_id.c_str(),
+                                  handle_check.frame_id.c_str());
+            }
+        }
+
+        local_cloud->points.reserve(indices.size());
+        for (size_t i = 0; i < indices.size(); ++i)
+        {
+            const auto &pt = global_map_->points[indices[i]];
+            if (!pcl::isFinite(pt)) // drop invalid pts
+            {
+                continue;
+            }
+            const double height_diff = std::abs(pt.z - query_point.z); // vertical dist to curr pose's z component
+            if (height_diff <= extraction_height_)                     // only keep the points within +- 0.5m vertically
+            {
+                local_cloud->points.push_back(pt); // add to local cloud if within height threshold
+            }
+        }
+
+        local_cloud->width = local_cloud->points.size();
+        local_cloud->height = 1;
+        local_cloud->is_dense = true;
+        return local_cloud->points.size() >= min_points_for_plane_;
+    }
+
+    // Fallback: use latest /map_out cloud when shared tree is not available.
+    if (!map_received_ || global_map_->points.size() == 0)
+    {
+        return false;
+    }
 
     if (kdtree_->radiusSearch(query_point, extraction_radius_, indices, distances) == 0)
     {
@@ -399,6 +579,10 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     for (size_t i = 0; i < indices.size(); ++i)
     {
         const auto &pt = global_map_->points[indices[i]];
+        if (!pcl::isFinite(pt)) // drop invalid pts
+        {
+            continue;
+        }
         double height_diff = std::abs(pt.z - query_point.z); // vertical dist to curr pose's z component
 
         if (height_diff <= extraction_height_) // only keep the points within +- 0.5m vertically
@@ -416,29 +600,55 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
 
 bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &local_cloud,
                                         std::vector<double> &normal,
-                                        size_t &inlier_count)
+                                        size_t &inlier_count,
+                                        pcl::PointCloud<PointType>::Ptr &inlier_cloud)
 {
+    if (!local_cloud || local_cloud->points.size() < 3)
+    {
+        ROS_ERROR("Invalid cloud for plane fitting: nullptr=%s, size=%zu",
+                  !local_cloud ? "true" : "false",
+                  local_cloud ? local_cloud->points.size() : 0);
+        return false;
+    }
+
     bool success = false;
+    normal.clear();
+    normal.resize(3, 0.0);
+    if (!inlier_cloud)
+    {
+        inlier_cloud.reset(new pcl::PointCloud<PointType>);
+    }
+    inlier_cloud->clear();
 
     switch (plane_algorithm_)
     {
     case PCA:
-        success = fitPlanePCA(local_cloud, normal);
+        success = fitPlanePCA(local_cloud, normal, inlier_cloud);
         inlier_count = local_cloud->points.size(); // (PCA uses all points)
         break;
     case RANSAC:
-        success = fitPlaneRANSAC(local_cloud, normal, inlier_count);
+        success = fitPlaneRANSAC(local_cloud, normal, inlier_count, inlier_cloud);
         break;
     case RHT:
-        success = fitPlaneRHT(local_cloud, normal, inlier_count);
+        success = fitPlaneRHT(local_cloud, normal, inlier_count, inlier_cloud);
         break;
     case RHT2:
-        success = fitPlaneRHT2(local_cloud, normal, inlier_count);
+        success = fitPlaneRHT2(local_cloud, normal, inlier_count, inlier_cloud);
         break;
     }
 
     if (!success)
     {
+        ROS_WARN("Plane fitting failed with algorithm=%d", plane_algorithm_);
+        return false;
+    }
+
+    // Validate normal is not NaN or zero
+    if (normal.size() != 3 ||
+        std::isnan(normal[0]) || std::isnan(normal[1]) || std::isnan(normal[2]) ||
+        (std::abs(normal[0]) < 1e-9 && std::abs(normal[1]) < 1e-9 && std::abs(normal[2]) < 1e-9))
+    {
+        ROS_ERROR("Invalid normal computed: [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
         return false;
     }
 
@@ -447,10 +657,14 @@ bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &l
 }
 
 bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &cloud,
-                                     std::vector<double> &normal)
+                                     std::vector<double> &normal,
+                                     pcl::PointCloud<PointType>::Ptr &inlier_cloud)
 {
-    if (cloud->points.size() < 3)
+    if (!cloud || cloud->points.size() < 3)
     {
+        ROS_ERROR("PCA: Invalid cloud: nullptr=%s, size=%zu",
+                  !cloud ? "true" : "false",
+                  cloud ? cloud->points.size() : 0);
         return false;
     }
 
@@ -460,24 +674,51 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
         pca.setInputCloud(cloud);
         Eigen::Matrix3f eigen_vecs = pca.getEigenVectors();
 
+        // Validate eigen vectors are valid (not NaN, not infinite)
+        for (int i = 0; i < 3; ++i)
+        {
+            for (int j = 0; j < 3; ++j)
+            {
+                if (std::isnan(eigen_vecs(i, j)) || std::isinf(eigen_vecs(i, j)))
+                {
+                    ROS_ERROR("PCA: Invalid eigen vector at [%d,%d]: %f", i, j, eigen_vecs(i, j));
+                    return false;
+                }
+            }
+        }
+
         // Normal is smallest eigenvector (3rd column)
+        normal.clear();
         normal.resize(3);
         normal[0] = eigen_vecs(0, 2);
         normal[1] = eigen_vecs(1, 2);
         normal[2] = eigen_vecs(2, 2);
 
+        if (!inlier_cloud)
+        {
+            inlier_cloud.reset(new pcl::PointCloud<PointType>);
+        }
+        *inlier_cloud = *cloud;
+
+        ROS_DEBUG("PCA: Computed normal [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
         return true;
+    }
+    catch (const std::exception &e)
+    {
+        ROS_ERROR("PCA failed with exception: %s", e.what());
+        return false;
     }
     catch (...)
     {
-        ROS_ERROR("PCA failed");
+        ROS_ERROR("PCA failed with unknown exception");
         return false;
     }
 }
 
 bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &cloud,
                                         std::vector<double> &normal,
-                                        size_t &inlier_count)
+                                        size_t &inlier_count,
+                                        pcl::PointCloud<PointType>::Ptr &inlier_cloud)
 {
     if (cloud->points.size() < 3)
     {
@@ -524,9 +765,26 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             // Check if it's ground
             bool is_last = (iter == max_iterations_plane_detection_ - 1);
             std::vector<double> test_normal = normal;
-            if (validateGroundNormal(test_normal))
+            const bool valid_ground = validateGroundNormal(test_normal);
+            if (valid_ground)
             {
                 normal = test_normal;
+                if (!inlier_cloud)
+                {
+                    inlier_cloud.reset(new pcl::PointCloud<PointType>);
+                }
+                inlier_cloud->clear();
+                inlier_cloud->points.reserve(inliers.size());
+                for (const int idx : inliers)
+                {
+                    if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                    {
+                        inlier_cloud->points.push_back(cloud_work->points[idx]);
+                    }
+                }
+                inlier_cloud->width = inlier_cloud->points.size();
+                inlier_cloud->height = 1;
+                inlier_cloud->is_dense = true;
                 return true;
             }
             else if (is_last)
@@ -534,11 +792,34 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
                 return false;
             }
 
+            pcl::PointCloud<PointType>::Ptr rejected_cloud(new pcl::PointCloud<PointType>);
+            rejected_cloud->points.reserve(inliers.size());
+            for (const int idx : inliers)
+            {
+                if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                {
+                    rejected_cloud->points.push_back(cloud_work->points[idx]);
+                }
+            }
+            rejected_cloud->width = rejected_cloud->points.size();
+            rejected_cloud->height = 1;
+            rejected_cloud->is_dense = true;
+            publishRejectedInliers(rejected_cloud);
+
             // Remove inliers and try again (wall removal)
             pcl::PointCloud<PointType>::Ptr cloud_filtered(new pcl::PointCloud<PointType>);
             cloud_filtered->points.reserve(cloud_work->points.size() - inliers.size());
 
-            std::set<int> inlier_set(inliers.begin(), inliers.end());
+            std::set<int> inlier_set;
+            inlier_set.clear();
+            for (const int idx : inliers)
+            {
+                if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                {
+                    inlier_set.insert(idx);
+                }
+            }
+
             for (size_t i = 0; i < cloud_work->points.size(); ++i)
             {
                 if (inlier_set.find(i) == inlier_set.end())
@@ -550,6 +831,7 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             cloud_work = cloud_filtered;
             cloud_work->width = cloud_work->points.size();
             cloud_work->height = 1;
+            cloud_work->is_dense = true;
 
             if (cloud_work->points.size() < 3)
             {
@@ -558,6 +840,7 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
         }
         catch (...)
         {
+            ROS_ERROR("exception in fitPlaneRANSAC");
             return false;
         }
     }
@@ -567,7 +850,8 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
 
 bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &cloud,
                                      std::vector<double> &normal,
-                                     size_t &inlier_count)
+                                     size_t &inlier_count,
+                                     pcl::PointCloud<PointType>::Ptr &inlier_cloud)
 {
     if (cloud->points.size() < 3)
     {
@@ -605,6 +889,11 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
 
                 // Count inliers
                 inlier_count = 0;
+                if (!inlier_cloud)
+                {
+                    inlier_cloud.reset(new pcl::PointCloud<PointType>);
+                }
+                inlier_cloud->clear();
                 for (size_t i = 0; i < cloud_work->points.size(); ++i)
                 {
                     const PointType &p = cloud_work->points[i];
@@ -612,14 +901,20 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
                     if (distance <= 0.05) // 5cm threshold
                     {
                         inlier_count++;
+                        inlier_cloud->points.push_back(p);
                     }
                 }
+                inlier_cloud->width = inlier_cloud->points.size();
+                inlier_cloud->height = 1;
+                inlier_cloud->is_dense = true;
                 return true;
             }
             else if (last_iteration)
             {
                 return false;
             }
+
+            pcl::PointCloud<PointType>::Ptr rejected_cloud(new pcl::PointCloud<PointType>);
 
             // Remove inliers (wall) and try again
             pcl::PointCloud<PointType>::Ptr cloud_filtered(new pcl::PointCloud<PointType>);
@@ -631,7 +926,16 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
                 {
                     cloud_filtered->points.push_back(p);
                 }
+                else
+                {
+                    rejected_cloud->points.push_back(p);
+                }
             }
+
+            rejected_cloud->width = rejected_cloud->points.size();
+            rejected_cloud->height = 1;
+            rejected_cloud->is_dense = true;
+            publishRejectedInliers(rejected_cloud);
 
             cloud_work = cloud_filtered;
             cloud_work->width = cloud_work->points.size();
@@ -653,7 +957,8 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
 
 bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &cloud,
                                       std::vector<double> &normal,
-                                      size_t &inlier_count)
+                                      size_t &inlier_count,
+                                      pcl::PointCloud<PointType>::Ptr &inlier_cloud)
 {
     if (cloud->points.size() < 3)
     {
@@ -719,12 +1024,42 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
                     {
                         normal = test_normal;
                         inlier_count = inliers.size();
+                        if (!inlier_cloud)
+                        {
+                            inlier_cloud.reset(new pcl::PointCloud<PointType>);
+                        }
+                        inlier_cloud->clear();
+                        inlier_cloud->points.reserve(inliers.size());
+                        for (const int idx : inliers)
+                        {
+                            if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                            {
+                                inlier_cloud->points.push_back(cloud_work->points[idx]);
+                            }
+                        }
+                        inlier_cloud->width = inlier_cloud->points.size();
+                        inlier_cloud->height = 1;
+                        inlier_cloud->is_dense = true;
                         return true;
                     }
                     else if (last_iteration)
                     {
                         return false;
                     }
+
+                    pcl::PointCloud<PointType>::Ptr rejected_cloud(new pcl::PointCloud<PointType>);
+                    rejected_cloud->points.reserve(inliers.size());
+                    for (const int idx : inliers)
+                    {
+                        if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                        {
+                            rejected_cloud->points.push_back(cloud_work->points[idx]);
+                        }
+                    }
+                    rejected_cloud->width = rejected_cloud->points.size();
+                    rejected_cloud->height = 1;
+                    rejected_cloud->is_dense = true;
+                    publishRejectedInliers(rejected_cloud);
 
                     // Remove inliers and try again
                     pcl::PointCloud<PointType>::Ptr cloud_filtered(new pcl::PointCloud<PointType>);
@@ -771,6 +1106,32 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
 
 bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
 {
+    //  Validate normal vector before processing
+    if (normal.size() != 3)
+    {
+        ROS_ERROR("Normal vector has wrong size: %zu (expected 3)", normal.size());
+        return false;
+    }
+
+    // Check for NaN or infinity
+    for (int i = 0; i < 3; ++i)
+    {
+        if (std::isnan(normal[i]) || std::isinf(normal[i]))
+        {
+            ROS_ERROR("Normal contains invalid value at index %d: %f", i, normal[i]);
+            return false;
+        }
+    }
+
+    // Check if vector is nearly zero
+    double norm_sq = normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2];
+    if (norm_sq < 1e-12) // Avoid division by near-zero
+    {
+        ROS_ERROR("Normal vector is nearly zero: norm_sq=%.2e", norm_sq);
+        return false;
+    }
+
+    // Now safe to normalize
     normalize_vector(normal);
 
     // Check against down vector [0, 0, -1]
@@ -780,6 +1141,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
     // Check if it's a wall (perpendicular to down)
     if (std::abs(dot) < wall_threshold_)
     {
+        ROS_DEBUG("Rejecting plane: too parallel to horizontal (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
         return false;
     }
 
@@ -862,7 +1224,10 @@ bool GlobalGroundFinder::find_fallback_normal(double current_score,
 void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal, const ros::Time &stamp)
 {
     normal_marker_.header.stamp = stamp;
-    normal_marker_.header.frame_id = "pandar_frame"; // TODO: check frame
+    if (!current_pose_.header.frame_id.empty())
+        normal_marker_.header.frame_id = current_pose_.header.frame_id;
+    else
+        normal_marker_.header.frame_id = "map_lio";
 
     // Get current pose position under lock for marker visualization
     geometry_msgs::Point start;
@@ -1007,21 +1372,47 @@ geometry_msgs::Vector3Stamped GlobalGroundFinder::gaussian_smoothing(const geome
 
 void GlobalGroundFinder::log_results(const ros::Time &stamp,
                                      const std::vector<double> &normal,
-                                     double vis_score,
-                                     double inlier_score,
-                                     double combined_score)
+                                     const geometry_msgs::Pose &query_pose,
+                                     double pub_vis_score,
+                                     double pub_inlier_score,
+                                     double pub_combined_score,
+                                     double curr_vis_score,
+                                     double curr_inlier_score,
+                                     double curr_combined_score,
+                                     size_t inlier_count,
+                                     size_t subcloud_size,
+                                     bool using_fallback)
 {
     if (!log_file_.is_open())
     {
         return;
     }
 
+    const double inlier_ratio = (subcloud_size > 0)
+                                    ? static_cast<double>(inlier_count) / static_cast<double>(subcloud_size)
+                                    : 0.0;
+    const double roll_deg = last_roll_ * 180.0 / M_PI;
+    const double pitch_deg = last_pitch_ * 180.0 / M_PI;
+
     log_file_ << std::fixed << std::setprecision(9) << stamp.toSec() << ","
               << std::setprecision(6) << normal[0] << ","
               << normal[1] << ","
               << normal[2] << ","
-              << std::setprecision(4) << vis_score << ","
-              << inlier_score << ","
-              << combined_score << "\n";
+              << query_pose.position.x << ","
+              << query_pose.position.y << ","
+              << query_pose.position.z << ","
+              << roll_deg << ","
+              << pitch_deg << ","
+              << std::setprecision(4) << pub_vis_score << ","
+              << pub_inlier_score << ","
+              << pub_combined_score << ","
+              << curr_vis_score << ","
+              << curr_inlier_score << ","
+              << curr_combined_score << ","
+              << inlier_count << ","
+              << subcloud_size << ","
+              << std::setprecision(6) << inlier_ratio << ","
+              << (using_fallback ? 1 : 0) << ","
+              << std::setprecision(4) << extraction_radius_ << "\n";
     log_file_.flush();
 }

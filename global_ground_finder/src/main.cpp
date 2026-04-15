@@ -78,7 +78,7 @@ int main(int argc, char **argv)
     GlobalGroundFinder global_ground_finder(nh, pnh, plane_alg);
 
     ROS_INFO("Global Ground Finder node running...");
-    ROS_INFO("Waiting for global map on /map_out and pose on /lkf/pose");
+    ROS_INFO("Waiting for pose on /lkf/pose");
 
     // Loop
     ros::Rate freq(50);

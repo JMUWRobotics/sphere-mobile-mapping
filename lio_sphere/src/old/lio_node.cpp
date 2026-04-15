@@ -1,6 +1,5 @@
 #include "lio_node.hpp"
 #include "graph_slam.hpp"
-#include <lio_gf_nodelet_manager/shared_ikdtree_store.h>
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_reduce.h>
 #include <tbb/parallel_for.h>
@@ -11,8 +10,6 @@
 
 LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh), pnh_(pnh), tf2_listener_(tf2_buffer_)
 {
-    node_start_time_ = ros::Time::now();
-
     // get parameters
     pnh_.param("deskewing", config_.deskewing, true);
     pnh_.param("min_range", config_.min_range, 0.5);
@@ -85,17 +82,16 @@ LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh
     pose_sub_ = nh_.subscribe("/lkf/pose", 10, &LIONode::processPose, this, ros::TransportHints().tcpNoDelay());
     // publishers
     pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_out", 5);
-    pc_reg_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/only_reg_points_out", 5);
-    pc_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_debug_out", 1);
+    // pc_reg_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/only_reg_points_out", 5);
+    //pc_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/points_debug_out", 1);
     map_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/map_out", 1);
-    traj_all_pub_ = nh_.advertise<nav_msgs::Path>("/full_traj_out", 1);
-    traj_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_traj_out", 1);
-    traj_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_traj_out", 1);
-    pose_all_pub_ = nh_.advertise<nav_msgs::Path>("/all_pose_out", 5);
+    // traj_all_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/full_traj_out", 1);
+    //traj_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_traj_out", 1);
+    //traj_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_traj_out", 1);
+    pose_all_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/all_pose_out", 5);
     // pose_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_pose_out", 1);
-    pose_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_pose_out", 5);
-    pose_reg_stamped_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/only_reg_pose_stamped_out", 5);
-    init_pose_pub_ = nh_.advertise<nav_msgs::Path>("/initial_guess", 5);
+    pose_reg_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/only_reg_pose_out", 5);
+    // init_pose_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/initial_guess", 5);
     // GICP debug clouds
     source_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/gicp_source", 1);
     target_pc_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("/gicp_target", 1);
@@ -120,72 +116,6 @@ LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh
 
 void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
-    // // runtime_start
-    // runtime_t0 = std::chrono::high_resolution_clock::now();
-    // runtime_pp_t0 = std::chrono::high_resolution_clock::now();
-    // std::string err_msg;
-    // // if (!tf2_buffer_._frameExists(config_.lidar_frame))
-    // // {
-    // //     ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: lidar_frame missing in TF buffer: " << config_.lidar_frame);
-    // //     return;
-    // // }
-    // // Save first scan time early so startup diagnostics are consistent.
-    // if (first_scan_stamp_.isZero())
-    // {
-    //     first_scan_stamp_ = msg->header.stamp;
-    //     ROS_INFO("First scan received at: %f", first_scan_stamp_.toSec());
-    // }
-
-    // // Dynamic odom transforms from external estimators can lag first lidar scans in bag replay.
-    // // Use latest available TF here (consistent with getInitialGuess()) to avoid startup extrapolation drops.
-    // switch (config_.initial_method)
-    // {
-    // case KALMAN:
-    //     if (!tf2_buffer_._frameExists(config_.kalman_odom_frame))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //         {
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: frame missing in TF buffer: " << config_.kalman_odom_frame);
-    //         }
-    //         return;
-    //     }
-    //     if (!tf2_buffer_.canTransform(config_.kalman_odom_frame, config_.base_frame, ros::Time(0), ros::Duration(0.05), &err_msg))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.kalman_odom_frame << " -> " << config_.base_frame << " (latest) reason: " << err_msg);
-    //         return;
-    //     }
-    //     break;
-    // case IMU:
-    //     if (!tf2_buffer_._frameExists(config_.imu_odom_frame))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //         {
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: frame missing in TF buffer: " << config_.imu_odom_frame);
-    //         }
-    //         return;
-    //     }
-    //     if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, ros::Time(0), ros::Duration(0.05), &err_msg))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.imu_odom_frame << " -> " << config_.base_frame << " (latest) reason: " << err_msg);
-    //         return;
-    //     }
-    //     break;
-    // }
-
-    // // Static extrinsic: use ros::Time(0) since temporal accuracy irrelevant for fixed calibration
-    // if (!tf2_buffer_.canTransform(config_.lidar_frame, config_.base_frame, ros::Time(0), &err_msg))
-    // {
-    //     ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.lidar_frame << " -> " << config_.base_frame << " reason: " << err_msg);
-    //     return;
-    // }
-    // ROS_DEBUG_STREAM_THROTTLE(1.0, "LIO TF gate passed: using lidar<->base extrinsic at latest TF");
-    // tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, ros::Time(0));
-
-    // auto pc_undist = boost::make_shared<pcl::PointCloud<PointType>>();
-
-    // git version
     // runtime_start
     runtime_t0 = std::chrono::high_resolution_clock::now();
     runtime_pp_t0 = std::chrono::high_resolution_clock::now();
@@ -286,17 +216,12 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pc_vx_icp->is_dense = pc_vx_map->is_dense;
     voxelize(pc_vx_map, pc_vx_icp, config_.vox_l_gicp);
     runtime_pp_t1 = std::chrono::high_resolution_clock::now();
-    ROS_DEBUG_STREAM_THROTTLE(1.0, "LIO preprocessing done: undist_points=" << pc_undist->size()
-                                                                            << " map_vox_points=" << pc_vx_map->size()
-                                                                            << " icp_vox_points=" << pc_vx_icp->size());
 
     runtime_ig_t0 = std::chrono::high_resolution_clock::now();
     auto [initial_guess, pose_diff] = getInitialGuess(msg->header.stamp);
     runtime_ig_t1 = std::chrono::high_resolution_clock::now();
-    ROS_DEBUG_STREAM_THROTTLE(1.0, "LIO initial guess ready");
     if (config_.map_init_method != OFF && !map_initialized_)
     {
-        // ROS_INFO_THROTTLE(1.0, "Map initialization in progress. map_init_method=%d, initialized=%d", config_.map_init_method, map_initialized_);
         build_map(pc_vx_map, initial_guess, pose_diff, msg->header.stamp);
         return;
     }
@@ -310,18 +235,10 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
     runtime_gicp_t0 = std::chrono::high_resolution_clock::now();
     reg_suc = registerPointsGICP(pc_vx_icp, initial_guess, registered_pose, config_.gicp_kernel_value, config_.gicp_max_corr_dist, config_.gicp_max_it, matching_error);
     runtime_gicp_t1 = std::chrono::high_resolution_clock::now();
-    if (!reg_suc)
-    {
-        ROS_WARN_STREAM_THROTTLE(1.0, "LIO registration failed: matching_error=" << matching_error << ", scan stamp=" << msg->header.stamp);
-    }
-    else
-    {
-        ROS_DEBUG_STREAM_THROTTLE(1.0, "LIO registration success: matching_error=" << matching_error);
-    }
 
     // add points to ikd tree
     if (reg_suc)
-    {
+    {   
         auto pc_vx_map_tf = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
         pc_vx_map_tf->points.reserve(pc_vx_map->points.size());
         pc_vx_map_tf->header = pc_vx_map->header;
@@ -367,9 +284,6 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
         if (poses_.empty())
             poses_.push_back(registered_pose);
     }
-
-    // Shared snapshot publish is done in publishPointClouds/build_map paths.
-
     publishOdometry(msg->header.stamp);
     if (config_.publish_clouds)
         publishPointClouds(reg_suc, pc_undist, msg->header.stamp, registered_pose);
@@ -422,14 +336,16 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
 void LIONode::processIMU(const state_estimator_msgs::EstimatorConstPtr &msg)
 {
     imu_meas_.stamp = msg->header.stamp.toSec();
-    imu_meas_.ang_vel = tf2::quatRotate(imu2lidar_rot,
-                                        tf2::Vector3(
-                                            msg->imu.angular_velocity.x, msg->imu.angular_velocity.y, msg->imu.angular_velocity.z));
+    imu_meas_.ang_vel = tf2::quatRotate(imu2lidar_rot, 
+        tf2::Vector3(
+            msg->imu.angular_velocity.x, msg->imu.angular_velocity.y, msg->imu.angular_velocity.z)
+    );
     imu_meas_.pose = Sophus::SE3d(
         Sophus::SE3d::QuaternionType(
             msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z),
         Sophus::SE3d::Point(
-            msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z));
+            msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z)
+    );
     mtx_imu_.lock();
     imu_buffer_.push_front(this->imu_meas_);
     mtx_imu_.unlock();
@@ -438,23 +354,21 @@ void LIONode::processIMU(const state_estimator_msgs::EstimatorConstPtr &msg)
 
 void LIONode::processPose(const geometry_msgs::PoseStamped::ConstPtr &msg) {}
 
-void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
-                        const Sophus::SE3d &pose,
-                        const Sophus::SE3d &pose_diff,
+void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in, 
+                        const Sophus::SE3d &pose, 
+                        const Sophus::SE3d &pose_diff, 
                         const ros::Time &stamp)
 {
     // Integrate incremental yaw (about global Z) from the relative pose
     const Eigen::Vector3d rotvec = pose_diff.so3().log(); // axis-angle (axis * angle), |rotvec| in [0, pi]
     const double dpitch = rotvec.x();
-    const double droll = rotvec.y(); // signed rotation around Z [rad]
+    const double droll = rotvec.y();                      // signed rotation around Z [rad]
     static int count = 0;
     // applying moving_average filter
     d_roll_.push_back(droll);
     d_pitch_.push_back(dpitch);
-    ROS_DEBUG_STREAM("build_map: droll=" << droll << " dpitch=" << dpitch << " map_init_started=" << map_init_started_);
     if (!map_init_started_)
     {
-        ROS_DEBUG_STREAM("Angle detection: angle_roll_=" << angle_roll_ << " angle_pitch_=" << angle_pitch_);
         if (angle_roll_ == 0)
         {
             if (d_roll_.size() > 5)
@@ -470,7 +384,6 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
         else
         {
             map_init_started_ = true;
-            // ROS_INFO_STREAM("Roll motion detected! angle_roll_=" << angle_roll_);
             return;
         }
 
@@ -489,7 +402,6 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
         else
         {
             map_init_started_ = true;
-            // ROS_INFO_STREAM("Pitch motion detected! angle_pitch_=" << angle_pitch_);
             return;
         }
     }
@@ -503,33 +415,33 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
         std::vector<Eigen::Vector3d> points_tf;
         points_tf.resize((map_pc_buffer_.end() - 1)->size());
         tbb::parallel_for(tbb::blocked_range<size_t>(0, (map_pc_buffer_.end() - 1)->size()),
-                          [&](const tbb::blocked_range<size_t> &range)
-                          {
-                              for (size_t i = range.begin(); i < range.end(); ++i)
-                              {
-                                  points_tf[i] = pose * Eigen::Vector3d(
-                                                            (map_pc_buffer_.end() - 1)->points[i].x, (map_pc_buffer_.end() - 1)->points[i].y, (map_pc_buffer_.end() - 1)->points[i].z);
-                              }
-                          });
+            [&](const tbb::blocked_range<size_t> &range)
+            {
+                for (size_t i = range.begin(); i < range.end(); ++i)
+                {
+                    points_tf[i] = pose * Eigen::Vector3d(
+                        (map_pc_buffer_.end() - 1)->points[i].x, (map_pc_buffer_.end() - 1)->points[i].y, (map_pc_buffer_.end() - 1)->points[i].z);
+                }
+            }
+        );
         map_pc_eigen_buffer_.push_back(points_tf);
     }
-
-    // ROS_INFO_STREAM_THROTTLE(1.0, "-----Init Map Graph (" << config_.map_init_angle << " deg)-----");
-    // ROS_INFO_STREAM_THROTTLE(1.0, "Roll Angle: " << angle_roll_ / M_PI * 180);
-    // ROS_INFO_STREAM_THROTTLE(1.0, "Pitch Angle: " << angle_pitch_ / M_PI * 180);
+    
+    ROS_INFO_STREAM_THROTTLE(1.0, "-----Init Map Graph (" << config_.map_init_angle << " deg)-----");
+    ROS_INFO_STREAM_THROTTLE(1.0, "Roll Angle: " << angle_roll_ / M_PI * 180);
+    ROS_INFO_STREAM_THROTTLE(1.0, "Pitch Angle: " << angle_pitch_ / M_PI * 180);
 
     // Detect completed full turns and keep remainder in angle_
     static int full_turns_roll = 0;
     static int full_turns_pitch = 0;
     static bool init_rotated = false;
-    ROS_DEBUG_STREAM("Checking rotation thresholds: angle_roll_=" << std::abs(angle_roll_) << " vs " << (config_.map_init_angle / 180.0 * M_PI));
     if (std::abs(angle_roll_) >= config_.map_init_angle / 180.0 * M_PI)
     {
         const int dir = (angle_roll_ > 0.0) ? 1 : -1; // +CCW, -CW
         angle_roll_ -= dir * 2.0 * M_PI;              // keep remainder for continued integration
         ++full_turns_roll;
         init_rotated = true;
-        // ROS_INFO_STREAM("Full self-rotation (roll) detected (" << (dir > 0 ? "+" : "-") << "1), total=" << full_turns_roll);
+        ROS_INFO_STREAM("Full self-rotation (roll) detected (" << (dir > 0 ? "+" : "-") << "1), total=" << full_turns_roll);
     }
     if (std::abs(angle_pitch_) >= config_.map_init_angle / 180.0 * M_PI)
     {
@@ -537,7 +449,7 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
         angle_pitch_ -= dir * 2.0 * M_PI;              // keep remainder for continued integration
         ++full_turns_pitch;
         init_rotated = true;
-        // ROS_INFO_STREAM("Full self-rotation (pitch) detected (" << (dir > 0 ? "+" : "-") << "1), total=" << full_turns_pitch);
+        ROS_INFO_STREAM("Full self-rotation (pitch) detected (" << (dir > 0 ? "+" : "-") << "1), total=" << full_turns_pitch);
     }
     if (init_rotated)
     {
@@ -574,7 +486,7 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
                 std::lock_guard<std::mutex> map_lock(mtx_kdtree_);
                 if (ikdtree_ptr_->Root_Node == nullptr)
                 {
-                    ikdtree_ptr_->Build(pc_buffer_reduced[i].points);
+                    ikdtree_ptr_->Build(pc_buffer_reduced[i].points); 
                 }
                 else
                 {
@@ -584,24 +496,12 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
             }
         }
         auto map = boost::make_shared<pcl::PointCloud<PointType>>();
-        {
-            std::lock_guard<std::mutex> map_lock(mtx_kdtree_);
-            ikdtree_ptr_->flatten(ikdtree_ptr_->Root_Node, map->points, NOT_RECORD);
-        }
+        ikdtree_ptr_->flatten(ikdtree_ptr_->Root_Node, map->points, NOT_RECORD);
         sensor_msgs::PointCloud2 map_out;
         pcl::toROSMsg(*map, map_out);
         map_out.header.frame_id = config_.odom_frame;
         map_out.header.stamp = stamp;
         map_pub_.publish(map_out);
-
-        // ROS_INFO("Publishing updated immutable snapshot with %zu points", map->points.size());
-        auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
-        shared_map_snapshot->points = map->points;
-        shared_map_snapshot->width = map->points.size();
-        shared_map_snapshot->height = 1;
-        shared_map_snapshot->is_dense = true;
-        lio_gf_nodelet_manager::SharedIKDTreeStore::instance().publish<pcl::PointCloud<PointType>>(
-            shared_map_snapshot, map_out.header.stamp, map_out.header.frame_id);
         Sophus::SE3d zero;
         if (config_.publish_clouds)
             publishPointClouds(true, map, stamp, zero);
@@ -637,34 +537,14 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
         pc_reg_pub_.publish(scan_out);
     }
 
-    // current global map
+    // current global map    
     auto map = boost::make_shared<pcl::PointCloud<PointType>>();
-    {
-        std::lock_guard<std::mutex> map_lock(mtx_kdtree_);
-        ikdtree_ptr_->flatten(ikdtree_ptr_->Root_Node, map->points, NOT_RECORD);
-    }
+    ikdtree_ptr_->flatten(ikdtree_ptr_->Root_Node, map->points, NOT_RECORD);
     sensor_msgs::PointCloud2 map_out;
     pcl::toROSMsg(*map, map_out);
     map_out.header.frame_id = config_.odom_frame;
     map_out.header.stamp = stamp;
     map_pub_.publish(map_out);
-
-    // Publish in-process immutable snapshot for GF using the already flattened map.
-    auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
-    shared_map_snapshot->points = map->points;
-    shared_map_snapshot->width = map->points.size();
-    shared_map_snapshot->height = 1;
-    shared_map_snapshot->is_dense = true;
-
-    lio_gf_nodelet_manager::SharedIKDTreeStore::instance().publish<pcl::PointCloud<PointType>>(
-        shared_map_snapshot,
-        map_out.header.stamp,
-        map_out.header.frame_id,
-        static_cast<uint64_t>(shared_map_snapshot->points.size()));
-    ROS_INFO_STREAM_THROTTLE(1.0,
-                             "SNAPCHK LIO snapshot points=" << shared_map_snapshot->points.size()
-                                                            << " frame=" << map_out.header.frame_id
-                                                            << " stamp=" << map_out.header.stamp.toSec());
 }
 
 void LIONode::publishOdometry(const ros::Time &stamp)
@@ -693,48 +573,49 @@ void LIONode::publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::
             pose_msg.pose = sophusToPose(registered_pose);
         else
             pose_msg.pose = sophusToPose(initial_guess);
-        all_path_msg_.poses.push_back(pose_msg);
+
+        all_path_msg_.pose = pose_msg;
+        all_path_msg_.header = pose_msg.header;
+        //all_path_msg_.poses.push_back(pose_msg);
         traj_all_pub_.publish(all_path_msg_);
 
         pose_msg.pose = sophusToPose(registered_pose);
-        all_path2_msg_.poses.push_back(pose_msg);
-        traj_all2_pub_.publish(all_path2_msg_);
+        // all_path2_msg_.poses.push_back(pose_msg);
+        // traj_all2_pub_.publish(all_path2_msg_);
 
         if (reg_suc)
         {
             pose_msg.pose = sophusToPose(registered_pose);
-            reg_path_msg_.poses.push_back(pose_msg);
+            reg_path_msg_.pose = pose_msg;
+            reg_path_msg_.header = pose_msg.header;
         }
         traj_reg_pub_.publish(reg_path_msg_);
     }
     if (config_.publish_poses)
     {
+        state_estimator_msgs::Estimator est_msg;
+        est_msg.header.stamp = stamp;
+        est_msg.header.frame_id = config_.odom_frame;
         if (reg_suc)
         {
             pose_msg.pose = sophusToPose(registered_pose);
-            // Keep legacy Path output for compatibility.
-            nav_msgs::Path pose_path_msg;
-            pose_path_msg.header.stamp = stamp;
-            pose_path_msg.header.frame_id = config_.odom_frame;
-            pose_path_msg.poses.push_back(pose_msg);
-            pose_reg_pub_.publish(pose_path_msg);
-
-            // Dedicated trigger topic with unambiguous PoseStamped type.
-            pose_reg_stamped_pub_.publish(pose_msg);
+            est_msg.pose = pose_msg;
+            pose_reg_pub_.publish(est_msg);
         }
-
         pose_msg.pose = sophusToPose(registered_pose);
-        nav_msgs::Path pose_all_msg;
-        pose_all_msg.header.stamp = stamp;
-        pose_all_msg.header.frame_id = config_.odom_frame;
-        pose_all_msg.poses.push_back(pose_msg);
-        pose_all_pub_.publish(pose_all_msg);
-
-        pose_msg.pose = sophusToPose(initial_guess);
-        nav_msgs::Path init_pose_msg;
-        init_pose_msg.header.stamp = stamp;
-        init_pose_msg.header.frame_id = config_.odom_frame;
-        init_pose_msg.poses.push_back(pose_msg);
-        init_pose_pub_.publish(init_pose_msg);
+        est_msg.pose = pose_msg;
+        pose_all_pub_.publish(est_msg);
     }
+}
+
+int main(int argc, char **argv)
+{
+    ros::init(argc, argv, "lio_node");
+    ros::NodeHandle nh;       // public namespace
+    ros::NodeHandle pnh("~"); // private namespace
+    LIONode node(nh, pnh);
+    ros::AsyncSpinner spinner(2);
+    spinner.start(); 
+    ros::waitForShutdown();
+    return 0;
 }

@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   nodelet
   pluginlib
+  lio_gf_nodelet_manager
   sensor_msgs
   geometry_msgs
   visualization_msgs
@@ -54,6 +55,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${CMAKE_SOURCE_DIR}/lio_sphere/src/external/ikd-Tree
 )
 
 ## Declare C++ library for usage across nodelets
@@ -61,6 +63,7 @@ add_library(${PROJECT_NAME}
   src/global_ground_finder.cpp
   src/hough.cpp
   src/math_helpers.cpp
+  ${CMAKE_SOURCE_DIR}/lio_sphere/src/external/ikd-Tree/ikd_Tree.cpp
 )
 
 add_library(${PROJECT_NAME}_nodelet
