@@ -108,10 +108,13 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
         ROS_INFO("File logging disabled (use 'file' parameter to enable)");
     }
 
-    pnh.param<std::string>("trigger_topic", trigger_topic_, "/only_reg_pose_stamped_out"); // PoseStamped trigger from LIO
-    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, false);         // DISABLED: causes double-free in multi-threaded context
+    pnh.param<std::string>("trigger_topic", trigger_topic_, "/all_pose_out"); // Estimator trigger from LIO
+
+    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, true); // DISABLED: causes double-free in multi-threaded context
     pnh.param<bool>("debug_publish", debug_publish_, false);
     pnh.param<std::string>("shared_map_debug_topic", shared_map_debug_topic_, "/global_ground_finder/shared_map_out");
+
+    tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
 
     // sub_map = nh.subscribe("/map_out", 10, &GlobalGroundFinder::mapCallback, this);
     sub_trigger = nh.subscribe(trigger_topic_, 10, &GlobalGroundFinder::triggerCallback, this);
@@ -120,12 +123,14 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pub_local_cloud = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/local_cloud", 1);
     pub_inliers = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/inliers", 1);
     pub_rejected_inliers = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/rejected_inliers", 1);
-    pub_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/normal", 1);
-    pub_scored_normal = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal", 1);
-    pub_smoothed_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_normal", 1);
-    pub_smoothed_scored_normal = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_scored_normal", 1);
-    pub_normal_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
+    pub_n = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/normal", 1);
+    pub_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal", 1);
+    pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_normal", 1);
+    pub_smoothed_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal", 1);
+    pub_n_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
     pub_shared_map_debug = nh.advertise<sensor_msgs::PointCloud2>(shared_map_debug_topic_, 1);
+    pub_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal_pandar", 1);
+    pub_smoothed_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal_pandar", 1);
 
     initMarker();
 
@@ -207,23 +212,33 @@ void GlobalGroundFinder::mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg
 }
     */
 
-void GlobalGroundFinder::triggerCallback(const geometry_msgs::PoseStampedConstPtr &msg)
+void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorConstPtr &msg)
 {
     if (!msg)
     {
         return;
     }
 
-    // Use registered PoseStamped trigger as query pose.
+    geometry_msgs::PoseStamped latest_pose = msg->pose;
+    if (latest_pose.header.stamp.isZero())
+    {
+        latest_pose.header.stamp = msg->header.stamp;
+    }
+    if (latest_pose.header.frame_id.empty())
+    {
+        latest_pose.header.frame_id = msg->header.frame_id;
+    }
+
+    // Use newest pose from registered path as query pose.
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
-        current_pose_ = *msg;
+        current_pose_ = latest_pose;
         pose_received_ = true;
     }
 
     if (publish_shared_map_debug_)
     {
-        publishSharedMapDebug(msg->header.stamp); // causes seg fault
+        publishSharedMapDebug(latest_pose.header.stamp); // causes seg fault
     }
 
     // process on scan cadence while avoiding callback pile-up
@@ -433,43 +448,115 @@ void GlobalGroundFinder::processAtCurrentPose()
     n_msg.vector.x = normal[0];
     n_msg.vector.y = normal[1];
     n_msg.vector.z = normal[2];
-    pub_normal.publish(n_msg);
-    pub_scored_normal.publish(scored_msg);
-    publish_normal_marker(normal, pose_copy.header.stamp);
+    pub_n.publish(n_msg);
+    pub_scored_n.publish(scored_msg);
+
+    ground_finder_msgs::ScoredNormalStamped scored_msg_pandar;
+    scored_msg_pandar.header.stamp = scored_msg.header.stamp;
+    scored_msg_pandar.header.frame_id = "pandar_frame";
+    scored_msg_pandar.visibility_score = scored_msg.visibility_score;
+    scored_msg_pandar.inlier_score = scored_msg.inlier_score;
+    scored_msg_pandar.combined_score = scored_msg.combined_score;
+
+    geometry_msgs::TransformStamped t_map_lio_to_pandar;
+    try
+    {
+        t_map_lio_to_pandar = tf_buffer.lookupTransform("pandar_frame", scored_msg.header.frame_id, ros::Time(0));
+        geometry_msgs::Vector3Stamped normal_map_lio;
+        normal_map_lio.header = scored_msg.header;
+        normal_map_lio.vector = scored_msg.normal;
+
+        geometry_msgs::Vector3Stamped normal_pandar;
+        tf2::doTransform(normal_map_lio, normal_pandar, t_map_lio_to_pandar);
+        scored_msg_pandar.normal = normal_pandar.vector; // now holds scored normal in pandar frame
+    }
+    catch (tf2::TransformException &ex)
+    {
+        ROS_WARN("Transforming scored normal to pandar_frame failed: %s", ex.what());
+
+        // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
+        scored_msg_pandar.normal.x = n_[0];
+        scored_msg_pandar.normal.y = n_[1];
+        scored_msg_pandar.normal.z = n_[2];
+    }
+
+    pub_scored_n_pandar.publish(scored_msg_pandar);
 
     if (enable_normal_smoothing_)
     {
         // Smooth raw normal
-        geometry_msgs::Vector3Stamped smoothed_raw;
+        geometry_msgs::Vector3Stamped smoothed_raw_n;
         if (use_gaussian_smoothing_)
         {
-            smoothed_raw = gaussian_smoothing(n_msg);
+            smoothed_raw_n = gaussian_smoothing(n_msg);
         }
         else
         {
-            smoothed_raw = ema_smoothing(n_msg);
+            smoothed_raw_n = ema_smoothing(n_msg);
         }
-        smoothed_raw.header.stamp = n_msg.header.stamp;
-        smoothed_raw.header.frame_id = n_msg.header.frame_id;
-        pub_smoothed_normal.publish(smoothed_raw);
+        smoothed_raw_n.header.stamp = n_msg.header.stamp;
+        smoothed_raw_n.header.frame_id = n_msg.header.frame_id;
+        pub_smoothed_n.publish(smoothed_raw_n);
 
-        geometry_msgs::Vector3Stamped scored_vec;
-        scored_vec.header = scored_msg.header;
-        scored_vec.vector = scored_msg.normal;
+        // Smoothed scored normal
+        geometry_msgs::Vector3Stamped scored_n_stamped;
+        scored_n_stamped.header = scored_msg.header;
+        scored_n_stamped.vector = scored_msg.normal;
 
-        geometry_msgs::Vector3Stamped smoothed_scored;
-        if (use_gaussian_smoothing_)
+        // overwrite scored_n_stamped with smoothed values
+        if (use_gaussian_smoothing_ == false)
         {
-            smoothed_scored = gaussian_smoothing(scored_vec);
+            scored_n_stamped = ema_smoothing(scored_n_stamped);
         }
         else
         {
-            smoothed_scored = ema_smoothing(scored_vec);
+            scored_n_stamped = gaussian_smoothing(scored_n_stamped);
         }
-        smoothed_scored.header.stamp = scored_msg.header.stamp;
-        smoothed_scored.header.frame_id = scored_msg.header.frame_id;
-        pub_smoothed_scored_normal.publish(smoothed_scored);
+
+        // Wrap smoothed Vector3Stamped into ScoredNormalStamped Msg for publishing
+        ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg;
+        smoothed_scored_msg.header = scored_n_stamped.header;
+        smoothed_scored_msg.normal = scored_n_stamped.vector;
+        smoothed_scored_msg.visibility_score = scored_msg.visibility_score;
+        smoothed_scored_msg.inlier_score = scored_msg.inlier_score;
+        smoothed_scored_msg.combined_score = scored_msg.combined_score;
+        smoothed_scored_msg.header.stamp = scored_msg.header.stamp;
+        smoothed_scored_msg.header.frame_id = scored_msg.header.frame_id;
+
+        pub_smoothed_scored_n.publish(smoothed_scored_msg);
+
+        // Transform and publish smoothed & scored normal in local pandar_frame
+        ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg_pandar;
+        smoothed_scored_msg_pandar.header.stamp = smoothed_scored_msg.header.stamp;
+        smoothed_scored_msg_pandar.header.frame_id = "pandar_frame";
+        smoothed_scored_msg_pandar.visibility_score = smoothed_scored_msg.visibility_score;
+        smoothed_scored_msg_pandar.inlier_score = smoothed_scored_msg.inlier_score;
+        smoothed_scored_msg_pandar.combined_score = smoothed_scored_msg.combined_score;
+
+        geometry_msgs::TransformStamped t_map_lio_to_pandar;
+        try
+        {
+            t_map_lio_to_pandar = tf_buffer.lookupTransform("pandar_frame", smoothed_scored_msg.header.frame_id, ros::Time(0));
+            geometry_msgs::Vector3Stamped normal_map_lio;
+            normal_map_lio.header = smoothed_scored_msg.header;
+            normal_map_lio.vector = smoothed_scored_msg.normal;
+
+            geometry_msgs::Vector3Stamped normal_pandar;
+            tf2::doTransform(normal_map_lio, normal_pandar, t_map_lio_to_pandar);
+            smoothed_scored_msg_pandar.normal = normal_pandar.vector; // now holds smoothed & scored normal in pandar frame
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_WARN("Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
+            // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
+            smoothed_scored_msg_pandar.normal.x = n_[0];
+            smoothed_scored_msg_pandar.normal.y = n_[1];
+            smoothed_scored_msg_pandar.normal.z = n_[2];
+        }
+        pub_smoothed_scored_n_pandar.publish(smoothed_scored_msg_pandar);
     }
+
+    publish_normal_marker(normal, pose_copy.header.stamp);
 
     // internal state uodating
     n_ = normal;
@@ -490,7 +577,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
 
     ROS_INFO("Extracting local cloud around query point: [%.2f, %.2f, %.2f]", query_point.x, query_point.y, query_point.z);
 
-    // Access immutable shared map snapshot and refresh local KdTree when version changes.
+    // Access immutable shared map snapshot and refresh local KdTree
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
     if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
     {
@@ -1247,7 +1334,7 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
     normal_marker_.points.push_back(start);
     normal_marker_.points.push_back(end);
 
-    pub_normal_marker.publish(normal_marker_);
+    pub_n_marker.publish(normal_marker_);
 }
 
 geometry_msgs::Vector3Stamped GlobalGroundFinder::ema_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)

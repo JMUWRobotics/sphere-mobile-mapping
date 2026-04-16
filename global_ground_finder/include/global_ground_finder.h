@@ -24,8 +24,11 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Vector3Stamped.h>
 #include <nav_msgs/Path.h>
+#include <state_estimator_msgs/Estimator.h>
 #include <visualization_msgs/Marker.h>
 #include <ground_finder_msgs/ScoredNormalStamped.h>
+
+#include <tf2_ros/transform_listener.h>
 
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_types.h>
@@ -124,15 +127,17 @@ private:
     ros::Subscriber sub_trigger; // Trigger processing when a registered pose path is published by lio node
     ros::Subscriber sub_pose;    // Optional fallback pose source
 
-    ros::Publisher pub_local_cloud;            // Local extracted region for visualization
-    ros::Publisher pub_inliers;                // Inlier points used for plane fit
-    ros::Publisher pub_rejected_inliers;       // Inlier points from rejected intermediate plane candidates
-    ros::Publisher pub_normal;                 // Raw normal vector
-    ros::Publisher pub_scored_normal;          // Scored normal with quality metrics
-    ros::Publisher pub_smoothed_normal;        // Smoothed raw normal
-    ros::Publisher pub_smoothed_scored_normal; // Smoothed scored normal
-    ros::Publisher pub_normal_marker;          // Visualization marker
-    ros::Publisher pub_shared_map_debug;       // Debug map reconstructed from shared IKD-tree
+    ros::Publisher pub_local_cloud;              // Local extracted region for visualization
+    ros::Publisher pub_inliers;                  // Inlier points used for plane fit
+    ros::Publisher pub_rejected_inliers;         // Inlier points from rejected intermediate plane candidates
+    ros::Publisher pub_n;                        // Raw normal vector
+    ros::Publisher pub_scored_n;                 // Scored normal with quality metrics
+    ros::Publisher pub_smoothed_n;               // Smoothed raw normal
+    ros::Publisher pub_smoothed_scored_n;        // Smoothed scored normal
+    ros::Publisher pub_scored_n_pandar;          // Scored normal transformed to pandar_frame
+    ros::Publisher pub_smoothed_scored_n_pandar; // Smoothed & scored normal transformed to pandar_frame
+    ros::Publisher pub_n_marker;                 // Visualization marker
+    ros::Publisher pub_shared_map_debug;         // Debug map reconstructed from shared IKD-tree
 
     boost::shared_ptr<pcl::PointCloud<PointType>> global_map_;
     boost::shared_ptr<pcl::KdTreeFLANN<PointType>> kdtree_;
@@ -191,6 +196,10 @@ private:
     geometry_msgs::Vector3Stamped smoothed_normal_;       // Internally stored smoothed normal
     bool have_smoothed_normal_;                           // Flag if smoothed vector is initialized
 
+    // TF2 variables for frame transforms of published normals
+    tf2_ros::Buffer tf_buffer;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener{nullptr};
+
     // ---------------------- Callback functions ----------------------
     /** \brief Callback for global map updates
      * \param[in] msg PointCloud2 message containing global map
@@ -198,9 +207,9 @@ private:
     void mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg);
 
     /** \brief Callback for registered pose trigger
-     * \param[in] msg PoseStamped message on trigger topic.
+     * \param[in] msg Estimator message on trigger topic. The embedded pose is used.
      */
-    void triggerCallback(const geometry_msgs::PoseStampedConstPtr &msg);
+    void triggerCallback(const state_estimator_msgs::EstimatorConstPtr &msg);
 
     /** \brief Callback for pose updates
      * \param[in] msg PoseStamped message with current robot pose
@@ -348,16 +357,16 @@ private:
     /** \brief Write computed ground normal vector to CSV file
      * \param[in] stamp Timestamp
      * \param[in] normal Normal vector
-        * \param[in] query_pose Query pose used for extraction
-        * \param[in] pub_vis_score Published visibility score
-        * \param[in] pub_inlier_score Published inlier score
-        * \param[in] pub_combined_score Published combined score
-        * \param[in] curr_vis_score Current visibility score before fallback
-        * \param[in] curr_inlier_score Current inlier score before fallback
-        * \param[in] curr_combined_score Current combined score before fallback
-        * \param[in] inlier_count Number of inliers for accepted plane
-        * \param[in] subcloud_size Local cloud size used for fitting
-        * \param[in] using_fallback Whether a fallback normal was published
+     * \param[in] query_pose Query pose used for extraction
+     * \param[in] pub_vis_score Published visibility score
+     * \param[in] pub_inlier_score Published inlier score
+     * \param[in] pub_combined_score Published combined score
+     * \param[in] curr_vis_score Current visibility score before fallback
+     * \param[in] curr_inlier_score Current inlier score before fallback
+     * \param[in] curr_combined_score Current combined score before fallback
+     * \param[in] inlier_count Number of inliers for accepted plane
+     * \param[in] subcloud_size Local cloud size used for fitting
+     * \param[in] using_fallback Whether a fallback normal was published
      */
     void log_results(const ros::Time &stamp,
                      const std::vector<double> &normal,

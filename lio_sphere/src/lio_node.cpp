@@ -91,9 +91,9 @@ LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh
     traj_all_pub_ = nh_.advertise<nav_msgs::Path>("/full_traj_out", 1);
     traj_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_traj_out", 1);
     traj_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_traj_out", 1);
-    pose_all_pub_ = nh_.advertise<nav_msgs::Path>("/all_pose_out", 5);
+    pose_all_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/all_pose_out", 5);
     // pose_all2_pub_ = nh_.advertise<nav_msgs::Path>("/full2_pose_out", 1);
-    pose_reg_pub_ = nh_.advertise<nav_msgs::Path>("/only_reg_pose_out", 5);
+    pose_reg_pub_ = nh_.advertise<state_estimator_msgs::Estimator>("/only_reg_pose_out", 5);
     pose_reg_stamped_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/only_reg_pose_stamped_out", 5);
     init_pose_pub_ = nh_.advertise<nav_msgs::Path>("/initial_guess", 5);
     // GICP debug clouds
@@ -120,72 +120,6 @@ LIONode::LIONode(const ros::NodeHandle &nh, const ros::NodeHandle &pnh) : nh_(nh
 
 void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
-    // // runtime_start
-    // runtime_t0 = std::chrono::high_resolution_clock::now();
-    // runtime_pp_t0 = std::chrono::high_resolution_clock::now();
-    // std::string err_msg;
-    // // if (!tf2_buffer_._frameExists(config_.lidar_frame))
-    // // {
-    // //     ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: lidar_frame missing in TF buffer: " << config_.lidar_frame);
-    // //     return;
-    // // }
-    // // Save first scan time early so startup diagnostics are consistent.
-    // if (first_scan_stamp_.isZero())
-    // {
-    //     first_scan_stamp_ = msg->header.stamp;
-    //     ROS_INFO("First scan received at: %f", first_scan_stamp_.toSec());
-    // }
-
-    // // Dynamic odom transforms from external estimators can lag first lidar scans in bag replay.
-    // // Use latest available TF here (consistent with getInitialGuess()) to avoid startup extrapolation drops.
-    // switch (config_.initial_method)
-    // {
-    // case KALMAN:
-    //     if (!tf2_buffer_._frameExists(config_.kalman_odom_frame))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //         {
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: frame missing in TF buffer: " << config_.kalman_odom_frame);
-    //         }
-    //         return;
-    //     }
-    //     if (!tf2_buffer_.canTransform(config_.kalman_odom_frame, config_.base_frame, ros::Time(0), ros::Duration(0.05), &err_msg))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.kalman_odom_frame << " -> " << config_.base_frame << " (latest) reason: " << err_msg);
-    //         return;
-    //     }
-    //     break;
-    // case IMU:
-    //     if (!tf2_buffer_._frameExists(config_.imu_odom_frame))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //         {
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: frame missing in TF buffer: " << config_.imu_odom_frame);
-    //         }
-    //         return;
-    //     }
-    //     if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, ros::Time(0), ros::Duration(0.05), &err_msg))
-    //     {
-    //         if ((ros::Time::now() - node_start_time_) > ros::Duration(2.0))
-    //             ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.imu_odom_frame << " -> " << config_.base_frame << " (latest) reason: " << err_msg);
-    //         return;
-    //     }
-    //     break;
-    // }
-
-    // // Static extrinsic: use ros::Time(0) since temporal accuracy irrelevant for fixed calibration
-    // if (!tf2_buffer_.canTransform(config_.lidar_frame, config_.base_frame, ros::Time(0), &err_msg))
-    // {
-    //     ROS_WARN_STREAM_THROTTLE(1.0, "LIO early return: missing TF " << config_.lidar_frame << " -> " << config_.base_frame << " reason: " << err_msg);
-    //     return;
-    // }
-    // ROS_DEBUG_STREAM_THROTTLE(1.0, "LIO TF gate passed: using lidar<->base extrinsic at latest TF");
-    // tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, ros::Time(0));
-
-    // auto pc_undist = boost::make_shared<pcl::PointCloud<PointType>>();
-
-    // git version
     // runtime_start
     runtime_t0 = std::chrono::high_resolution_clock::now();
     runtime_pp_t0 = std::chrono::high_resolution_clock::now();
@@ -651,7 +585,7 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
 
     // Publish in-process immutable snapshot for GF using the already flattened map.
     auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
-    shared_map_snapshot->points = map->points;
+    shared_map_snapshot->points = map->points; // TODO: CHECK FOR PERFORMANCE
     shared_map_snapshot->width = map->points.size();
     shared_map_snapshot->height = 1;
     shared_map_snapshot->is_dense = true;
@@ -709,26 +643,23 @@ void LIONode::publishPosesTraj(const Sophus::SE3d &initial_guess, const Sophus::
     }
     if (config_.publish_poses)
     {
+        state_estimator_msgs::Estimator est_msg;
+        est_msg.header.stamp = stamp;
+        est_msg.header.frame_id = config_.odom_frame;
+
         if (reg_suc)
         {
             pose_msg.pose = sophusToPose(registered_pose);
-            // Keep legacy Path output for compatibility.
-            nav_msgs::Path pose_path_msg;
-            pose_path_msg.header.stamp = stamp;
-            pose_path_msg.header.frame_id = config_.odom_frame;
-            pose_path_msg.poses.push_back(pose_msg);
-            pose_reg_pub_.publish(pose_path_msg);
+            est_msg.pose = pose_msg;
+            pose_reg_pub_.publish(est_msg);
 
             // Dedicated trigger topic with unambiguous PoseStamped type.
             pose_reg_stamped_pub_.publish(pose_msg);
         }
 
         pose_msg.pose = sophusToPose(registered_pose);
-        nav_msgs::Path pose_all_msg;
-        pose_all_msg.header.stamp = stamp;
-        pose_all_msg.header.frame_id = config_.odom_frame;
-        pose_all_msg.poses.push_back(pose_msg);
-        pose_all_pub_.publish(pose_all_msg);
+        est_msg.pose = pose_msg;
+        pose_all_pub_.publish(est_msg);
 
         pose_msg.pose = sophusToPose(initial_guess);
         nav_msgs::Path init_pose_msg;
