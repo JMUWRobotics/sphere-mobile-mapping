@@ -9,7 +9,7 @@
   <arg name="plane_algorithm" default="ransac" 
        doc="Plane fitting algorithm: 'pca', 'ransac', 'rht', or 'rht2'"/>
   
-  <arg name="extraction_radius" default="5.0" 
+  <arg name="extraction_radius" default="2.0" 
        doc="Radius [m] for local map extraction around pose"/>
   
   <arg name="extraction_height" default="0.5" 
@@ -48,6 +48,31 @@
 
   <arg name="debug_publish" default="false"
        doc="Publish rejected intermediate inlier clouds for debugging"/>
+
+  <!-- Validation layer parameters -->
+  <arg name="enable_eigenvalue_validation" default="false"
+       doc="Enable eigenvalue ratio and eigenvector z-component checks"/>
+  
+  <arg name="eigenvalue_ratio_threshold" default="0.1"
+       doc="Threshold for λ3/(λ1+λ2) planarity check"/>
+  
+  <arg name="max_eigenvector_z_component" default="0.1"
+       doc="Max z-component of dominant eigenvectors (v1, v2). Lower = stricter wall rejection."/>
+  
+  <arg name="enable_plane_angle_validation" default="true"
+       doc="Enable angle-based wall rejection"/>
+  
+  <arg name="enable_z_mean_validation" default="false"
+       doc="Enable Z-mean deviation check"/>
+  
+  <arg name="max_z_deviation" default="0.1"
+       doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max = 2x this value)."/>
+  
+  <arg name="enable_convex_hull_validation" default="false"
+       doc="Enable convex hull center distance check"/>
+  
+  <arg name="max_hull_distance" default="0.3"
+       doc="Max 3D distance from robot to hull center [m]"/>
 
      <arg name="manager" default="LIO_GF_nodelet_manager"
        doc="Name of the nodelet manager process"/>
@@ -90,6 +115,16 @@
     <param name="weight_inlier_ratio" type="double" value="0.4"/>
     <param name="min_inliers" type="double" value="10.0"/>
     <param name="inlier_scale" type="double" value="0.3"/>
+
+    <!-- Validation layer parameters -->
+    <param name="enable_eigenvalue_validation" type="bool" value="$(arg enable_eigenvalue_validation)"/>
+    <param name="eigenvalue_ratio_threshold" type="double" value="$(arg eigenvalue_ratio_threshold)"/>
+    <param name="max_eigenvector_z_component_" type="double" value="$(arg max_eigenvector_z_component)"/>
+    <param name="enable_plane_angle_validation" type="bool" value="$(arg enable_plane_angle_validation)"/>
+    <param name="enable_z_mean_validation" type="bool" value="$(arg enable_z_mean_validation)"/>
+    <param name="max_z_deviation" type="double" value="$(arg max_z_deviation)"/>
+    <param name="enable_convex_hull_validation" type="bool" value="$(arg enable_convex_hull_validation)"/>
+    <param name="max_hull_distance" type="double" value="$(arg max_hull_distance)"/>
 
     <!-- Smoothing parameters -->
     <param name="enable_normal_smoothing" type="bool" value="$(arg enable_normal_smoothing)"/>

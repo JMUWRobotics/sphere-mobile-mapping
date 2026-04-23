@@ -254,6 +254,23 @@
         doc="CSV filename base, default disables logging"/>
     <arg name="debug_publish" default="false"
         doc="Publish rejected intermediate inlier clouds for debugging"/>
+    <!-- Validation layer parameters -->
+    <arg name="enable_eigenvalue_validation" default="false"
+        doc="Enable eigenvalue ratio and eigenvector z-component checks"/>
+    <arg name="eigenvalue_ratio_threshold" default="0.1"
+        doc="Threshold for λ3/(λ1+λ2) planarity check"/>
+    <arg name="max_eigenvector_z_component" default="0.1"
+        doc="Max z-component of dominant eigenvectors (v1, v2)"/>
+    <arg name="enable_plane_angle_validation" default="true"
+        doc="Enable angle-based wall rejection"/>
+    <arg name="enable_z_mean_validation" default="false"
+        doc="Enable Z-mean deviation check"/>
+    <arg name="max_z_deviation" default="0.1"
+        doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max is twice this)."/>
+    <arg name="enable_convex_hull_validation" default="false"
+        doc="Enable convex hull center distance check"/>
+    <arg name="max_hull_distance" default="1.0"
+        doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
     <arg name="lio_gf_manager" default="LIO_GF_nodelet_manager" 
         doc="Shared nodelet manager name"/>
 
@@ -391,7 +408,15 @@
       <arg name="smoothing_cutoff_freq" value="$(arg smoothing_cutoff_freq)"/>
       <arg name="update_rate" value="$(arg update_rate)"/>
       <arg name="file" value="$(arg file)"/>
-            <arg name="debug_publish" value="$(arg debug_publish)"/>
+      <arg name="debug_publish" value="$(arg debug_publish)"/>
+      <arg name="enable_eigenvalue_validation" value="$(arg enable_eigenvalue_validation)"/>
+      <arg name="eigenvalue_ratio_threshold" value="$(arg eigenvalue_ratio_threshold)"/>
+      <arg name="max_eigenvector_z_component" value="$(arg max_eigenvector_z_component)"/>
+      <arg name="enable_plane_angle_validation" value="$(arg enable_plane_angle_validation)"/>
+      <arg name="enable_z_mean_validation" value="$(arg enable_z_mean_validation)"/>
+      <arg name="max_z_deviation" value="$(arg max_z_deviation)"/>
+      <arg name="enable_convex_hull_validation" value="$(arg enable_convex_hull_validation)"/>
+      <arg name="max_hull_distance" value="$(arg max_hull_distance)"/>
       <arg name="manager" value="$(arg lio_gf_manager)"/>
       <arg name="start_manager" value="false"/>
     </include>

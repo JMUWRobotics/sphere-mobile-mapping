@@ -137,6 +137,7 @@ private:
     ros::Publisher pub_scored_n_pandar;          // Scored normal transformed to pandar_frame
     ros::Publisher pub_smoothed_scored_n_pandar; // Smoothed & scored normal transformed to pandar_frame
     ros::Publisher pub_n_marker;                 // Visualization marker
+    ros::Publisher pub_hull_center;              // Convex hull center point visualization
     ros::Publisher pub_shared_map_debug;         // Debug map reconstructed from shared IKD-tree
 
     boost::shared_ptr<pcl::PointCloud<PointType>> global_map_;
@@ -180,8 +181,20 @@ private:
     double inlier_scale_;                // Normalization scale for inlier ratio
     int max_iterations_plane_detection_; // Max iterations for RANSAC wall rejection
 
+    // Point distribution validation (improved wall rejection)
+    bool enable_eigenvalue_validation_;  // Enable combined eigenvalue + eigenvector check (planarity + xy-plane dominance)
+    double eigenvalue_ratio_threshold_;  // Threshold for λ3/(λ1+λ2) to detect non-planar (wall)
+    double max_eigenvector_z_component_; // Max z-component of dominant eigenvectors (v1, v2) to ensure xy-plane spread
+    bool enable_plane_angle_validation_; // Enable angle-based validation (wall threshold check)
+    bool enable_z_mean_validation_;      // Enable Z-mean deviation check
+    double max_z_deviation_;             // Maximum allowed deviation of Z-mean from robot Z [m]
+    bool enable_convex_hull_validation_; // Enable convex hull center distance check (tunnel mode)
+    double max_hull_distance_;           // Maximum 3D distance from robot to hull center [m]
+
     int count_success_;
     int count_fail_;
+    int count_valid_planes_;   // Number of planes that passed validation
+    int count_invalid_planes_; // Number of planes that failed validation
 
     bool write2file;
     std::string log_file_path_;
@@ -297,11 +310,27 @@ private:
                       size_t &inlier_count,
                       pcl::PointCloud<PointType>::Ptr &inlier_cloud);
 
-    /** \brief Validate that normal represents ground (not wall)
-     * \param[in,out] normal Normal vector to check/correct
-     * \return true if valid ground plane, false if wall detected
+    /** \brief Validate that normal represents ground (not wall/ceiling)
+     * Performs multi-layer validation: angle check (wall rejection), combined eigenvalue+eigenvector check
+     * (planarity + xy-plane dominance), and Z-mean check (height deviation from robot center).
+     * \param[in,out] normal Normal vector to check
+     * \param[in] inlier_cloud Point cloud of inliers (for Z-mean validation)
+     * \param[in] robot_z Robot-center Z coordinate (for Z-mean validation)
+     * \param[in] lambda1 Largest eigenvalue from PCA (0.0 = skip combined check)
+     * \param[in] lambda2 Middle eigenvalue from PCA (0.0 = skip combined check)
+     * \param[in] lambda3 Smallest eigenvalue from PCA (0.0 = skip combined check)
+     * \param[in] v1_z Z-component of eigenvector for lambda1 (0.0 = skip combined check)
+     * \param[in] v2_z Z-component of eigenvector for lambda2 (0.0 = skip combined check)
+     * \return true if valid ground plane, false otherwise
      */
-    bool validateGroundNormal(std::vector<double> &normal);
+    bool validateGroundNormal(std::vector<double> &normal,
+                              const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
+                              double robot_z,
+                              float lambda1 = 0.0f,
+                              float lambda2 = 0.0f,
+                              float lambda3 = 0.0f,
+                              float v1_z = 0.0f,
+                              float v2_z = 0.0f);
 
     /** \brief Compute quality scores for current normal
      * \param[in] pose Current pose
@@ -353,6 +382,7 @@ private:
      * \param[in] stamp Timestamp for marker
      */
     void publish_normal_marker(const std::vector<double> &normal, const ros::Time &stamp);
+    void publishHullCenterMarker(const geometry_msgs::Point &hull_center);
 
     /** \brief Write computed ground normal vector to CSV file
      * \param[in] stamp Timestamp

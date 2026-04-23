@@ -125,7 +125,7 @@ namespace global_ground_finder
 
             node_.reset(new ::GlobalGroundFinder(nh, pnh, plane_alg));
             NODELET_INFO("Global Ground Finder node running...");
-            NODELET_INFO("Waiting for registered poses by lio_node on /only_reg_pose_out");
+            NODELET_INFO("Waiting for registered poses by lio_node on /all_pose_out");
             NODELET_INFO("Global Ground Finder nodelet loaded.");
         }
 

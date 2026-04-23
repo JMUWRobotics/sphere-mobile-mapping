@@ -19,6 +19,8 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
       pose_received_(false),
       count_success_(0),
       count_fail_(0),
+      count_valid_planes_(0),
+      count_invalid_planes_(0),
       last_inlier_count_(0),
       last_local_cloud_size_(0),
       last_roll_(0.0),
@@ -45,6 +47,16 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<double>("min_inliers", min_inliers_, 20.0);
     pnh.param<double>("inlier_scale", inlier_scale_, 0.3);
     pnh.param<int>("max_iterations_plane_detection", max_iterations_plane_detection_, 3);
+
+    // Point distribution validation parameters (improved wall rejection)
+    pnh.param<bool>("enable_eigenvalue_validation", enable_eigenvalue_validation_, false);
+    pnh.param<double>("eigenvalue_ratio_threshold", eigenvalue_ratio_threshold_, 0.1);    // threshold for λ3/(λ1+λ2) - smaller -> stricter -> rejects more non planar structures
+    pnh.param<double>("max_eigenvector_z_component_", max_eigenvector_z_component_, 0.2); // max z-component of v1, v2 eigenvectors to ensure xy-plane spread
+    pnh.param<bool>("enable_plane_angle_validation", enable_plane_angle_validation_, true);
+    pnh.param<bool>("enable_z_mean_validation", enable_z_mean_validation_, false);
+    pnh.param<double>("max_z_deviation", max_z_deviation_, 0.2); // max deviation from robot Z [m]
+    pnh.param<bool>("enable_convex_hull_validation", enable_convex_hull_validation_, false);
+    pnh.param<double>("max_hull_distance", max_hull_distance_, 1.0); // maximum 3D distance from robot to hull center [m]
 
     // Smoothing params
     pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing_, true);
@@ -128,6 +140,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_normal", 1);
     pub_smoothed_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal", 1);
     pub_n_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
+    pub_hull_center = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/hull_center", 1);
     pub_shared_map_debug = nh.advertise<sensor_msgs::PointCloud2>(shared_map_debug_topic_, 1);
     pub_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal_pandar", 1);
     pub_smoothed_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal_pandar", 1);
@@ -144,6 +157,18 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     ROS_INFO("  Enable smoothing: %s (%s)",
              enable_normal_smoothing_ ? "true" : "false",
              use_gaussian_smoothing_ ? "Gaussian" : "EMA");
+    ROS_INFO("  Eigenvalue validation: %s (threshold: %.4f)",
+             enable_eigenvalue_validation_ ? "enabled" : "disabled",
+             eigenvalue_ratio_threshold_);
+    ROS_INFO("  Plane angle validation: %s (threshold: %.1f deg)",
+             enable_plane_angle_validation_ ? "enabled" : "disabled",
+             std::acos(wall_threshold_) * 180.0 / M_PI);
+    ROS_INFO("  Z-mean validation: %s (max deviation: %.2f m)",
+             enable_z_mean_validation_ ? "enabled" : "disabled",
+             max_z_deviation_);
+    ROS_INFO("  Convex hull validation: %s (max distance: %.2f m)",
+             enable_convex_hull_validation_ ? "enabled" : "disabled",
+             max_hull_distance_);
 }
 
 GlobalGroundFinder::~GlobalGroundFinder()
@@ -155,6 +180,7 @@ GlobalGroundFinder::~GlobalGroundFinder()
     }
     ROS_INFO("Global Ground Finder shutting down");
     ROS_INFO("  Success: %d, Failures: %d", count_success_, count_fail_);
+    ROS_INFO("  Valid planes: %d, Invalid planes: %d", count_valid_planes_, count_invalid_planes_);
 }
 
 void GlobalGroundFinder::initMarker()
@@ -270,7 +296,7 @@ void GlobalGroundFinder::publishSharedMapDebug(const ros::Time &trigger_stamp)
     sensor_msgs::PointCloud2 map_msg;
     pcl::toROSMsg(*shared_map, map_msg);
     map_msg.header.frame_id = handle.frame_id;
-    ROS_INFO("Frame: %s, publishing shared map debug with %zu points", map_msg.header.frame_id.c_str(), shared_map->points.size());
+    // ROS_INFO("Frame: %s, publishing shared map debug with %zu points", map_msg.header.frame_id.c_str(), shared_map->points.size());
     map_msg.header.stamp = handle.stamp.isZero() ? trigger_stamp : handle.stamp;
     pub_shared_map_debug.publish(map_msg);
 }
@@ -575,7 +601,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     query_point.y = pose.pose.position.y;
     query_point.z = pose.pose.position.z;
 
-    ROS_INFO("Extracting local cloud around query point: [%.2f, %.2f, %.2f]", query_point.x, query_point.y, query_point.z);
+    // ROS_INFO("Extracting local cloud around query point: [%.2f, %.2f, %.2f]", query_point.x, query_point.y, query_point.z);
 
     // Access immutable shared map snapshot and refresh local KdTree
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
@@ -739,8 +765,7 @@ bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &l
         return false;
     }
 
-    // Validate it's ground (not wall)
-    return validateGroundNormal(normal);
+    return true;
 }
 
 bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &cloud,
@@ -760,6 +785,7 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
         pcl::PCA<PointType> pca;
         pca.setInputCloud(cloud);
         Eigen::Matrix3f eigen_vecs = pca.getEigenVectors();
+        Eigen::Vector3f eigen_vals = pca.getEigenValues();
 
         // Validate eigen vectors are valid (not NaN, not infinite)
         for (int i = 0; i < 3; ++i)
@@ -788,7 +814,11 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
         *inlier_cloud = *cloud;
 
         ROS_DEBUG("PCA: Computed normal [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
-        return true;
+
+        // Validate ground plane (not wall / ceiling, good point distribution, reasonable Z values)
+        return validateGroundNormal(normal, inlier_cloud, current_pose_.pose.position.z,
+                                    eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                    eigen_vecs(2, 0), eigen_vecs(2, 1));
     }
     catch (const std::exception &e)
     {
@@ -840,7 +870,8 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             pcl::PCA<PointType> pca;
             pca.setInputCloud(cloud_work);
             pca.setIndices(inlier_indices);
-            Eigen::Matrix3f eigen_vecs = pca.getEigenVectors();
+            Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // e.g. eigen_vecs(2,0) (row 2, col 0 - z component of v1)
+            Eigen::Vector3f eigen_vals = pca.getEigenValues();  // eigen_vals(0) (largest), eigen_vals(1), eigen_vals(2) (smallest)
 
             normal.resize(3);
             normal[0] = eigen_vecs(0, 2);
@@ -849,29 +880,32 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
 
             inlier_count = inliers.size();
 
+            if (!inlier_cloud)
+            {
+                inlier_cloud.reset(new pcl::PointCloud<PointType>);
+            }
+            inlier_cloud->clear();
+            inlier_cloud->points.reserve(inliers.size());
+            for (const int idx : inliers)
+            {
+                if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                {
+                    inlier_cloud->points.push_back(cloud_work->points[idx]);
+                }
+            }
+            inlier_cloud->width = inlier_cloud->points.size();
+            inlier_cloud->height = 1;
+            inlier_cloud->is_dense = true;
+
             // Check if it's ground
             bool is_last = (iter == max_iterations_plane_detection_ - 1);
             std::vector<double> test_normal = normal;
-            const bool valid_ground = validateGroundNormal(test_normal);
+            const bool valid_ground = validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z,
+                                                           eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                                           eigen_vecs(2, 0), eigen_vecs(2, 1)); // pass z component of 1st and 2nd eigenvectors to check if planes point distribution is majorly in xy plane
             if (valid_ground)
             {
                 normal = test_normal;
-                if (!inlier_cloud)
-                {
-                    inlier_cloud.reset(new pcl::PointCloud<PointType>);
-                }
-                inlier_cloud->clear();
-                inlier_cloud->points.reserve(inliers.size());
-                for (const int idx : inliers)
-                {
-                    if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
-                    {
-                        inlier_cloud->points.push_back(cloud_work->points[idx]);
-                    }
-                }
-                inlier_cloud->width = inlier_cloud->points.size();
-                inlier_cloud->height = 1;
-                inlier_cloud->is_dense = true;
                 return true;
             }
             else if (is_last)
@@ -970,7 +1004,7 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
         {
             // Found a plane candidate, check if it's ground
             std::vector<double> test_normal = n;
-            if (validateGroundNormal(test_normal))
+            if (validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z)) // no eigenvalues/vecs for RHT since no PCA step, so pass 0.0 and 0.0 for those params
             {
                 normal = test_normal;
 
@@ -1099,34 +1133,38 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
                     pca.setInputCloud(cloud_work);
                     pca.setIndices(inlier_indices);
                     Eigen::Matrix3f eigen_vecs = pca.getEigenVectors();
+                    Eigen::Vector3f eigen_vals = pca.getEigenValues();
 
                     std::vector<double> n(3);
                     n[0] = eigen_vecs(0, 2);
                     n[1] = eigen_vecs(1, 2);
                     n[2] = eigen_vecs(2, 2);
 
+                    inlier_count = inliers.size();
+                    if (!inlier_cloud)
+                    {
+                        inlier_cloud.reset(new pcl::PointCloud<PointType>);
+                    }
+                    inlier_cloud->clear();
+                    inlier_cloud->points.reserve(inliers.size());
+                    for (const int idx : inliers)
+                    {
+                        if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
+                        {
+                            inlier_cloud->points.push_back(cloud_work->points[idx]);
+                        }
+                    }
+                    inlier_cloud->width = inlier_cloud->points.size();
+                    inlier_cloud->height = 1;
+                    inlier_cloud->is_dense = true;
+
                     // Check if it's ground
                     std::vector<double> test_normal = n;
-                    if (validateGroundNormal(test_normal))
+                    if (validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z,
+                                             eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                             eigen_vecs(2, 0), eigen_vecs(2, 1))) // pass z component of 1st and 2nd eigenvectors to check if planes point distribution is majorly in xy plane
                     {
                         normal = test_normal;
-                        inlier_count = inliers.size();
-                        if (!inlier_cloud)
-                        {
-                            inlier_cloud.reset(new pcl::PointCloud<PointType>);
-                        }
-                        inlier_cloud->clear();
-                        inlier_cloud->points.reserve(inliers.size());
-                        for (const int idx : inliers)
-                        {
-                            if (idx >= 0 && static_cast<size_t>(idx) < cloud_work->points.size())
-                            {
-                                inlier_cloud->points.push_back(cloud_work->points[idx]);
-                            }
-                        }
-                        inlier_cloud->width = inlier_cloud->points.size();
-                        inlier_cloud->height = 1;
-                        inlier_cloud->is_dense = true;
                         return true;
                     }
                     else if (last_iteration)
@@ -1191,12 +1229,24 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
     return false;
 }
 
-bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
+bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
+                                              const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
+                                              double robot_z,
+                                              float lambda1,
+                                              float lambda2,
+                                              float lambda3,
+                                              float v1_z,
+                                              float v2_z)
+// lamda1 - largest eigenvalue, lambda2 - middle eigenvalue, lambda3 - smallest eigenvalue
+// v1 and v2: corresponding eigenvectors of lambda1 and lambda2 -check their z components to see if they are mostly in xy plane or if they have significant z component (wall/vertical plane)
 {
-    //  Validate normal vector before processing
+    ROS_INFO("validateGroundNormal: Called with normal=[%.3f, %.3f, %.3f]", normal[0], normal[1], normal[2]);
+
+    // Validate normal vector before processing
     if (normal.size() != 3)
     {
         ROS_ERROR("Normal vector has wrong size: %zu (expected 3)", normal.size());
+        count_invalid_planes_++;
         return false;
     }
 
@@ -1206,30 +1256,124 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
         if (std::isnan(normal[i]) || std::isinf(normal[i]))
         {
             ROS_ERROR("Normal contains invalid value at index %d: %f", i, normal[i]);
+            count_invalid_planes_++;
             return false;
         }
     }
 
-    // Check if vector is nearly zero
+    // Check if vector is near zero
     double norm_sq = normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2];
     if (norm_sq < 1e-12) // Avoid division by near-zero
     {
         ROS_ERROR("Normal vector is nearly zero: norm_sq=%.2e", norm_sq);
+        count_invalid_planes_++;
         return false;
     }
 
-    // Now safe to normalize
     normalize_vector(normal);
 
     // Check against down vector [0, 0, -1]
     std::vector<double> down = {0.0, 0.0, -1.0};
-    double dot = dot_product(normal, down); // TODO: make sure we are in the correct frame here for "normal"
+    double dot = dot_product(normal, down);
 
-    // Check if it's a wall (perpendicular to down)
-    if (std::abs(dot) < wall_threshold_)
+    // #############################################
+    // ####### Angle-based validation (Caro) #######
+    // #############################################
+
+    // Check if it's a wall (perpendicular to down) - angle-based validation
+    if (enable_plane_angle_validation_)
     {
-        ROS_DEBUG("Rejecting plane: too parallel to horizontal (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
-        return false;
+        if (std::abs(dot) < wall_threshold_)
+        {
+            ROS_WARN("Rejecting plane: too parallel to horizontal (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
+            count_invalid_planes_++;
+            return false;
+        }
+    }
+
+    // ###################################################
+    // ####### Eigenvalue + Eigenvector validation #######
+    // ###################################################
+
+    // check for planarity + xy-plane dominance using eigenvalue ratio (point distribution is 2D) AND eigenvector z-components (spread is in xy-plane)
+    if (enable_eigenvalue_validation_ && lambda1 > 0.0f && lambda2 > 0.0f && lambda3 > 0.0f &&
+        v1_z != 0.0f && v2_z != 0.0f)
+    {
+        double eigenvalue_ratio = 0.0;
+        bool eigenvalue_valid = validatePointDistributionFromEigenvalues(lambda1, lambda2, lambda3,
+                                                                         eigenvalue_ratio_threshold_,
+                                                                         eigenvalue_ratio);
+
+        // Check that dominant eigenvectors don't point upward (z-dominance would indicate wall)
+        float max_dominant_z = std::max(std::abs(v1_z), std::abs(v2_z));
+        bool eigenvector_valid = max_dominant_z < max_eigenvector_z_component_;
+
+        if (!eigenvalue_valid)
+        {
+            ROS_WARN("Rejecting plane: eigenvalue ratio too high (ratio=%.4f, threshold=%.4f)",
+                     eigenvalue_ratio, eigenvalue_ratio_threshold_);
+            count_invalid_planes_++;
+            return false;
+        }
+
+        if (!eigenvector_valid)
+        {
+            ROS_WARN("Rejecting plane: dominant eigenvectors not in xy-plane (max_z=%.3f, threshold=%.3f)",
+                     max_dominant_z, max_eigenvector_z_component_);
+            count_invalid_planes_++;
+            return false;
+        }
+    }
+
+    // ##################################
+    // ####### z value validation #######
+    // ##################################
+
+    // checks inlier cloud Z coordinate consistency with robot-center Z
+    if (enable_z_mean_validation_ && inlier_cloud && !inlier_cloud->points.empty())
+    {
+        double z_mean = 0.0;
+        if (!validateZMeanDeviation(inlier_cloud, robot_z, max_z_deviation_, z_mean))
+        {
+            ROS_WARN("Rejecting plane: Z-mean too far from robot Z (z_mean=%.3f, robot_z=%.3f, max_dev=%.3f)",
+                     z_mean, robot_z, max_z_deviation_);
+            count_invalid_planes_++;
+            return false;
+        }
+    }
+
+    // ######################################
+    // ####### Convex hull validation #######
+    // ######################################
+
+    ROS_INFO("validateGroundNormal: Reaching convex hull validation section. enabled=%s, has_cloud=%s, cloud_size=%zu",
+             enable_convex_hull_validation_ ? "true" : "false",
+             (inlier_cloud ? "true" : "false"),
+             (inlier_cloud ? inlier_cloud->points.size() : 0));
+
+    if (enable_convex_hull_validation_ && inlier_cloud && !inlier_cloud->points.empty())
+    {
+        ROS_INFO("  Calling validateConvexHullCenter with cloud size=%zu", inlier_cloud->points.size());
+
+        double hull_distance = 0.0;
+        geometry_msgs::Point hull_center;
+        bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
+
+        ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
+                 hull_valid ? "true" : "false", hull_distance);
+
+        // Always publish hull center for visualization (useful for debugging)
+        publishHullCenterMarker(hull_center);
+
+        if (!hull_valid)
+        {
+            ROS_WARN("Rejecting plane: Convex hull center too far from robot (distance=%.3f m, max=%.3f m)",
+                     hull_distance, max_hull_distance_);
+            count_invalid_planes_++;
+            return false;
+        }
+
+        ROS_INFO("  Hull validation PASSED");
     }
 
     // Make sure it points downward
@@ -1240,6 +1384,8 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal)
         normal[2] = -normal[2];
     }
 
+    // Plane passed all validation checks
+    count_valid_planes_++;
     return true;
 }
 
@@ -1337,6 +1483,44 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
     pub_n_marker.publish(normal_marker_);
 }
 
+void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hull_center)
+{
+    ROS_INFO("publishHullCenterMarker: Publishing hull center at [%.3f, %.3f, %.3f]", hull_center.x, hull_center.y, hull_center.z);
+
+    visualization_msgs::Marker hull_marker;
+    hull_marker.header.stamp = ros::Time::now();
+
+    {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        if (!current_pose_.header.frame_id.empty())
+            hull_marker.header.frame_id = current_pose_.header.frame_id;
+        else
+            hull_marker.header.frame_id = "map_lio";
+    }
+
+    hull_marker.ns = "hull_center";
+    hull_marker.id = 0;
+    hull_marker.type = visualization_msgs::Marker::SPHERE;
+    hull_marker.action = visualization_msgs::Marker::ADD;
+
+    hull_marker.pose.position = hull_center;
+    hull_marker.pose.orientation.w = 1.0;
+
+    // Sphere with 0.1m radius
+    hull_marker.scale.x = 0.1;
+    hull_marker.scale.y = 0.1;
+    hull_marker.scale.z = 0.1;
+
+    // Cyan color, semi-transparent
+    hull_marker.color.r = 0.0;
+    hull_marker.color.g = 1.0;
+    hull_marker.color.b = 1.0;
+    hull_marker.color.a = 0.7;
+
+    // hull_marker.lifetime = ros::Duration(0.5); // disappear after 500ms if not updated
+
+    pub_hull_center.publish(hull_marker);
+}
 geometry_msgs::Vector3Stamped GlobalGroundFinder::ema_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)
 {
     // Pass-through if disabled
