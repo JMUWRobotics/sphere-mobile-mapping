@@ -329,7 +329,7 @@
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
     <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
 
-    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> 
+    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />  -->
     <!-- <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
@@ -339,10 +339,12 @@
     <!-- <node pkg="vio_tracking_t265" type="center_extrinsics" name="realsense_extrinsics" output="screen" /> -->
 
     <!-- <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/> -->
-    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
+    <!-- <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/> -->
 
 
     <!-- node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /-->
+    
+    
     <!-- Ground Finder - CARO MA /-->
     <!-- <arg name="quiet"     default="true" />
     <arg name="filter"    default="geo" />

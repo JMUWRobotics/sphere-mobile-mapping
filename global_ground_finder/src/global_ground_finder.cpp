@@ -1240,7 +1240,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 // lamda1 - largest eigenvalue, lambda2 - middle eigenvalue, lambda3 - smallest eigenvalue
 // v1 and v2: corresponding eigenvectors of lambda1 and lambda2 -check their z components to see if they are mostly in xy plane or if they have significant z component (wall/vertical plane)
 {
-    ROS_INFO("validateGroundNormal: Called with normal=[%.3f, %.3f, %.3f]", normal[0], normal[1], normal[2]);
+    // ROS_INFO("validateGroundNormal: Called with normal=[%.3f, %.3f, %.3f]", normal[0], normal[1], normal[2]);
 
     // Validate normal vector before processing
     if (normal.size() != 3)
@@ -1285,7 +1285,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     {
         if (std::abs(dot) < wall_threshold_)
         {
-            ROS_WARN("Rejecting plane: too parallel to horizontal (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
+            ROS_WARN("Rejecting plane: too vertical (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
             count_invalid_planes_++;
             return false;
         }
@@ -1335,7 +1335,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
         double z_mean = 0.0;
         if (!validateZMeanDeviation(inlier_cloud, robot_z, max_z_deviation_, z_mean))
         {
-            ROS_WARN("Rejecting plane: Z-mean too far from robot Z (z_mean=%.3f, robot_z=%.3f, max_dev=%.3f)",
+            ROS_WARN("Rejecting plane: Z-mean too far from robot-center Z-component (z_mean=%.3f, robot_z=%.3f, max_dev=%.3f)",
                      z_mean, robot_z, max_z_deviation_);
             count_invalid_planes_++;
             return false;
@@ -1346,21 +1346,21 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     // ####### Convex hull validation #######
     // ######################################
 
-    ROS_INFO("validateGroundNormal: Reaching convex hull validation section. enabled=%s, has_cloud=%s, cloud_size=%zu",
-             enable_convex_hull_validation_ ? "true" : "false",
-             (inlier_cloud ? "true" : "false"),
-             (inlier_cloud ? inlier_cloud->points.size() : 0));
+    // ROS_INFO("validateGroundNormal: Reaching convex hull validation section. enabled=%s, has_cloud=%s, cloud_size=%zu",
+    //          enable_convex_hull_validation_ ? "true" : "false",
+    //          (inlier_cloud ? "true" : "false"),
+    //          (inlier_cloud ? inlier_cloud->points.size() : 0));
 
     if (enable_convex_hull_validation_ && inlier_cloud && !inlier_cloud->points.empty())
     {
-        ROS_INFO("  Calling validateConvexHullCenter with cloud size=%zu", inlier_cloud->points.size());
+        // ROS_INFO("  Calling validateConvexHullCenter with cloud size=%zu", inlier_cloud->points.size());
 
         double hull_distance = 0.0;
         geometry_msgs::Point hull_center;
         bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
 
-        ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
-                 hull_valid ? "true" : "false", hull_distance);
+        // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
+        //          hull_valid ? "true" : "false", hull_distance);
 
         // Always publish hull center for visualization (useful for debugging)
         publishHullCenterMarker(hull_center);
@@ -1373,7 +1373,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
             return false;
         }
 
-        ROS_INFO("  Hull validation PASSED");
+        // ROS_INFO("  Hull validation PASSED");
     }
 
     // Make sure it points downward

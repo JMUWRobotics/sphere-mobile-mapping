@@ -126,7 +126,7 @@
     <arg name="points_in" default="/hesai/pandar"/>
     <arg name="imu_in" default="/posePub_merged" />
     <arg name="points_out" default="/lidar/points_undistorted" />
-    <arg name="radius_filter" default="50" />   
+    <arg name="radius_filter" default="15" />   <!-- in cm throw away points in this radius; try radius of sphere--> <!-- initial:50-->
 
     <!-- ========== T265 cam ARGUMENTS ========== -->
     <!-- FROM sphere center TO t265 where Z is down, Y is front, X is left -->

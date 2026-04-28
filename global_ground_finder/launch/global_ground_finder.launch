@@ -16,7 +16,7 @@
        doc="Height limit [m] for vertical filtering around pose"/>
   
   <arg name="enable_scoring" default="true" 
-       doc="Enable quality scoring and fallback mechanism"/>
+       doc="Enable quality scoring and fasllback mechanism"/>
   
   <arg name="score_threshold" default="0.2" 
        doc="Minimum score to accept current normal (else use fallback)"/>
