@@ -1,8 +1,13 @@
 <launch> 
 
+    <!-- ========================== -->
+    <!-- ========== ARGS ========== -->
+    <!-- ========================== -->
+
     <arg name="sphere_radius" value="0.145"
     doc="in m" />
 
+    <!-- ========== IMUJASPER ARGUMENTS ========== -->
     <!-- Arguments for ImuJasper ENTER YOUR PHIDGETS SERIAL NUMBERS HERE -->
     <arg name="jasper_serial0" value="415233"
         doc="IMU LEFT (from camera viewing direction)" />
@@ -19,6 +24,7 @@
     <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
     <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
     
+    <!-- ========== ATTITUDE FILTER ARGUMENTS ========== -->
     <!-- Filter parameters for mahony filter -->
     <arg name="mahony_kp" value="1" />
     <arg name="mahony_ki" value="0.001" />
@@ -65,11 +71,13 @@
     <arg name="imu1_z" value="0.0287838"
         doc="in meters" />
     <arg name="imu2_x" value="-0.07202"
-        doc="in meters" />
+        doc="in meters" />    <!-- ========== T265 cam ARGUMENTS ========== -->
+
     <arg name="imu2_y" value="-0.00149266"
         doc="in meters" />
     <arg name="imu2_z" value="0.0325564" /> 
 
+    <!-- ========== POSE FILTER ARGUMENTS ========== -->
     <!-- Arguments for Kalman pose filter -->
     <arg name="topic_publish" value="/lkf/pose" />
     <arg name="topic_pose_imu" value="/posePub_merged" />
@@ -85,6 +93,7 @@
     <arg name="small_omega" value="0.1" 
         doc="in rad/s" /> 
 
+    <!-- ========== VISUALIZER ARGUMENTS ========== -->
     <!-- Arguments for the visualizer node: pose to lidar -->
     <arg name="topic_listen" value="/posePub_merged" />
     <arg name="global_frame" value="map"
@@ -92,7 +101,7 @@
     <arg name="center_frame" value="center" />
     <arg name="lidar_frame" value="pandar_frame" />
 
-    <!-- Arguments for the LiDAR -->
+    <!-- ========== LIDAR ARGUMENTS ========== -->
     <arg name="pcap_file"  default=""/>
     <arg name="server_ip" default="192.168.1.201"/>
     <arg name="lidar_recv_port"  default="2368"/>
@@ -119,7 +128,7 @@
     <arg name="points_out" default="/lidar/points_undistorted" />
     <arg name="radius_filter" default="50" />   
 
-    <!-- Arguments for the T265 camera -->
+    <!-- ========== T265 cam ARGUMENTS ========== -->
     <!-- FROM sphere center TO t265 where Z is down, Y is front, X is left -->
     <arg name="enable_fisheye_stream" value="false" />
     <arg name="offset_x" value="0.02865" />
@@ -254,25 +263,34 @@
         doc="CSV filename base, default disables logging"/>
     <arg name="debug_publish" default="false"
         doc="Publish rejected intermediate inlier clouds for debugging"/>
-    <!-- Validation layer parameters -->
+        
+    <!-- Validation toggles -->
     <arg name="enable_eigenvalue_validation" default="false"
         doc="Enable eigenvalue ratio and eigenvector z-component checks"/>
-    <arg name="eigenvalue_ratio_threshold" default="0.1"
-        doc="Threshold for λ3/(λ1+λ2) planarity check"/>
-    <arg name="max_eigenvector_z_component" default="0.1"
-        doc="Max z-component of dominant eigenvectors (v1, v2)"/>
     <arg name="enable_plane_angle_validation" default="true"
         doc="Enable angle-based wall rejection"/>
     <arg name="enable_z_mean_validation" default="false"
         doc="Enable Z-mean deviation check"/>
-    <arg name="max_z_deviation" default="0.1"
+    <arg name="max_z_deviation" default="0.2"
         doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max is twice this)."/>
     <arg name="enable_convex_hull_validation" default="false"
         doc="Enable convex hull center distance check"/>
+
+    <!-- Validation thresholds -->
+    <arg name="eigenvalue_ratio_threshold" default="0.1"
+        doc="Threshold for λ3/(λ1+λ2) planarity check"/>
+    <arg name="max_eigenvector_z_component" default="0.1"
+        doc="Max z-component of dominant eigenvectors (v1, v2)"/>
     <arg name="max_hull_distance" default="1.0"
         doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
     <arg name="lio_gf_manager" default="LIO_GF_nodelet_manager" 
         doc="Shared nodelet manager name"/>
+
+
+
+    <!-- ============================ -->
+    <!-- ========== PARAMS ========== -->
+    <!-- ============================ -->
 
 <param name="topic_publish" type="string" value="$(arg topic_publish)" />
     <param name="topic_pose_imu" type="string" value="$(arg topic_pose_imu)" />
