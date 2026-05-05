@@ -234,6 +234,12 @@ private:
      */
     void processAtCurrentPose();
 
+    /** \brief Get robot's center frame pose by TF lookup
+     * \param[in] pose_frame Current pose with frame_id
+     * \return PoseStamped of robot center expressed in the same frame as pose_frame; falls back to pose_frame on TF failure
+     */
+    geometry_msgs::PoseStamped getRobotCenterPose(const geometry_msgs::PoseStamped &pose_frame);
+
     /** \brief Publish full map from shared IKD-tree for debugging
      * \param[in] trigger_stamp Fallback timestamp when shared handle stamp is zero
      */

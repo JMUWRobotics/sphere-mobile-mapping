@@ -344,6 +344,31 @@ void GlobalGroundFinder::poseCallback(const geometry_msgs::PoseStampedConstPtr &
     // Processing is triggered by scan callback so this callback remains lightweight.
 }
 
+geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry_msgs::PoseStamped &pose_frame)
+{
+    geometry_msgs::PoseStamped center_pose;
+    center_pose.header = pose_frame.header;
+
+    try
+    {
+        // Lookup transform that maps points from center_frame into the pose_frame's frame
+        geometry_msgs::TransformStamped t = tf_buffer.lookupTransform(pose_frame.header.frame_id, "center", ros::Time(0));
+
+        center_pose.pose.position.x = t.transform.translation.x;
+        center_pose.pose.position.y = t.transform.translation.x;
+        center_pose.pose.position.z = t.transform.translation.x;
+        center_pose.pose.orientation = t.transform.rotation;
+
+        return center_pose;
+    }
+    catch (tf2::TransformException &ex)
+    {
+        ROS_WARN_THROTTLE(1.0, "Failed to lookup center_frame transform: %s. Falling back to provided pose.", ex.what());
+        center_pose.pose = pose_frame.pose;
+        return center_pose;
+    }
+}
+
 void GlobalGroundFinder::processAtCurrentPose()
 {
     auto start_total = std::chrono::high_resolution_clock::now();
@@ -1272,6 +1297,9 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
     normalize_vector(normal);
 
+    // Lookup robot center pose (center_frame) expressed in current pose frame
+    geometry_msgs::PoseStamped center_pose = getRobotCenterPose(current_pose_);
+
     // Check against down vector [0, 0, -1]
     std::vector<double> down = {0.0, 0.0, -1.0};
     double dot = dot_product(normal, down);
@@ -1332,11 +1360,12 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     // checks inlier cloud Z coordinate consistency with robot-center Z
     if (enable_z_mean_validation_ && inlier_cloud && !inlier_cloud->points.empty())
     {
+        double center_frame_z = center_pose.pose.position.z;
         double z_mean = 0.0;
-        if (!validateZMeanDeviation(inlier_cloud, robot_z, max_z_deviation_, z_mean))
+        if (!validateZMeanDeviation(inlier_cloud, center_frame_z, max_z_deviation_, z_mean))
         {
-            ROS_WARN("Rejecting plane: Z-mean too far from robot-center Z-component (z_mean=%.3f, robot_z=%.3f, max_dev=%.3f)",
-                     z_mean, robot_z, max_z_deviation_);
+            ROS_WARN("Rejecting plane: Z-mean too far from robot-center Z-component (z_mean=%.3f, center_z=%.3f, max_dev=%.3f)",
+                     z_mean, center_frame_z, max_z_deviation_);
             count_invalid_planes_++;
             return false;
         }
@@ -1357,7 +1386,8 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
         double hull_distance = 0.0;
         geometry_msgs::Point hull_center;
-        bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
+        geometry_msgs::Point robot_center = center_pose.pose.position;
+        bool hull_valid = validateConvexHullCenter(inlier_cloud, robot_center, max_hull_distance_, hull_distance, hull_center);
 
         // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
         //          hull_valid ? "true" : "false", hull_distance);
