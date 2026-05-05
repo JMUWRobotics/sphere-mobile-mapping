@@ -248,6 +248,9 @@
         doc="Minimum acceptable score for current normal"/>
     <arg name="min_score_window" default="0.3" 
         doc="Minimum fallback score from history window"/>
+    <arg name="inlier_scale" default="0.55"
+        doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
+    <param name="score_threshold" value="0.2" />    <!-- fallback triggers only on poor detection -->
     <arg name="pose_topic" default="/lkf/pose"/>
     <arg name="enable_normal_smoothing" default="true" 
         doc="Enable smoothing for estimated normals"/>
@@ -421,6 +424,7 @@
       <arg name="enable_scoring" value="$(arg enable_scoring)"/>
       <arg name="score_threshold" value="$(arg score_threshold)"/>
       <arg name="min_score_window" value="$(arg min_score_window)"/>
+      <arg name="inlier_scale" value="$(arg inlier_scale)"/>
       <arg name="pose_topic" value="$(arg pose_topic)"/>
       <arg name="enable_normal_smoothing" value="$(arg enable_normal_smoothing)"/>
       <arg name="use_gaussian_smoothing" value="$(arg use_gaussian_smoothing)"/>
@@ -483,5 +487,7 @@
     <!-- <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/> -->
     <!-- <node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /> -->
 
+
+
 </launch>
-    
+

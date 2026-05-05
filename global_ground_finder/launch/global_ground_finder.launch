@@ -24,6 +24,9 @@
   <arg name="min_score_window" default="0.3" 
        doc="Minimum acceptable score from history window"/>
 
+  <arg name="inlier_scale" default="0.3"
+       doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
+
   <arg name="pose_topic" default="/lkf/pose" 
        doc="Topic for robot pose (geometry_msgs/PoseStamped in map_lkf frame)"/>
 
@@ -114,7 +117,7 @@
     <param name="weight_visibility" type="double" value="0.6"/>
     <param name="weight_inlier_ratio" type="double" value="0.4"/>
     <param name="min_inliers" type="double" value="10.0"/>
-    <param name="inlier_scale" type="double" value="0.3"/>
+    <param name="inlier_scale" type="double" value="$(arg inlier_scale)"/>
 
     <!-- Validation layer parameters -->
     <param name="enable_eigenvalue_validation" type="bool" value="$(arg enable_eigenvalue_validation)"/>
