@@ -1,0 +1,982 @@
+/**
+ * @author Fabian Arzberger, JMU
+ * @author Jasper Zevering, JMU 
+ * 
+ * This cpp file implements the structural framework where multiple IMU measurements are 
+ * merged into consistent accelerometer and gyroscope readings. 
+ * 
+ */
+#include "imuJasper.hpp"
+
+/**
+ * ----- DEFINE ALTERNATIVE STATE (JUST FOR EVALUATION) -------
+ */
+float q0_alt1 = 1;
+float q1_alt1 = 0;
+float q2_alt1 = 0;
+float q3_alt1 = 0;
+float q0_alt2 = 1;
+float q1_alt2 = 0;
+float q2_alt2 = 0;
+float q3_alt2 = 0;
+float q0_last_alt1 = 1;
+float q1_last_alt1 = 0;
+float q2_last_alt1 = 0;
+float q3_last_alt1 = 0;
+float q0_last_alt2 = 1;
+float q1_last_alt2 = 0;
+float q2_last_alt2 = 0;
+float q3_last_alt2 = 0;
+float a0_alt[3] = {0, 0, 0};
+float a1_alt[3] = {0, 0, 0};
+float a2_alt[3] = {0, 0, 0};
+float a0_comp[3] = {0, 0, 0};
+float a1_comp[3] = {0, 0, 0};
+float a2_comp[3] = {0, 0, 0};
+float ax_alt = 0;
+float ay_alt = 0;
+float az_alt = 0;
+int altStatus = 1;
+float pXAlt = 0;
+float pYAlt = 0;
+float pZAlt = 0;
+
+/**
+ * This function switches between the curent and alternative state of the program. 
+ * It is a quite ugly function I know that this should be implemented using an object instance.
+ */
+void changeAlt()
+{
+    if (altStatus == 1) {
+        altStatus = 2;
+        q0_alt1 = q0;
+        q1_alt1 = q1;
+        q2_alt1 = q2;
+        q3_alt1 = q3;
+        q0_last_alt1 = lastq0;
+        q1_last_alt1 = lastq1;
+        q2_last_alt1 = lastq2;
+        q3_last_alt1 = lastq3;
+        q0 = q0_alt2;
+        q1 = q1_alt2;
+        q2 = q2_alt2;
+        q3 = q3_alt2;
+        lastq0 = q0_last_alt2;
+        lastq1 = q1_last_alt2;
+        lastq2 = q2_last_alt2;
+        lastq3 = q3_last_alt2;
+    } else {
+        altStatus = 1;
+        q0_alt2 = q0;
+        q1_alt2 = q1;
+        q2_alt2 = q2;
+        q3_alt2 = q3;
+        q0_last_alt2 = lastq0;
+        q1_last_alt2 = lastq1;
+        q2_last_alt2 = lastq2;
+        q3_last_alt2 = lastq3;
+        q0 = q0_alt1;
+        q1 = q1_alt1;
+        q2 = q2_alt1;
+        q3 = q3_alt1;
+        lastq0 = q0_last_alt1;
+        lastq1 = q1_last_alt1;
+        lastq2 = q2_last_alt1;
+        lastq3 = q3_last_alt1;
+    }
+    // Let the estimator know that the state was swapped
+    estimator_instance->override_state(q0, q1, q2, q3);
+};
+
+void apply_intrinsics(const double raw[3],
+    std::vector<double> &align,
+    std::vector<double> &scale,
+    std::vector<double> &bias,
+    double* result)
+{
+    // Apply bias first
+    result[0] = raw[0] + bias[0];
+    result[1] = raw[1] + bias[1];
+    result[2] = raw[2] + bias[2];
+    // Apply scale 
+    double tmp0 = scale[0]*result[0];
+    double tmp1 = scale[4]*result[1];
+    double tmp2 = scale[8]*result[2];
+    // Apply misalignment matrix
+    result[0] = align[0]*tmp0 + align[1]*tmp1 + align[2]*tmp2;
+    result[1] = align[3]*tmp0 + align[4]*tmp1 + align[5]*tmp2;
+    result[2] = align[6]*tmp0 + align[7]*tmp1 + align[8]*tmp2;
+}
+
+void process_phidget_to_calibrated_ros_msg(
+    int serial, int spatial,
+    double *acc_inverse, double* angular_radians,
+    float* gx, float* gy, float* gz,
+    float* ax, float* ay, float* az,
+    passive_time_sync &sync,
+    double ros_now_s, double timestamp, double &last_time_ms, 
+    std::vector<double> &gyr_align,
+    std::vector<double> &gyr_scale,
+    std::vector<double> &gyr_bias,
+    std::vector<double> &acc_align,
+    std::vector<double> &acc_scale,
+    std::vector<double> &acc_bias,
+    double *acc_calibrated, double* gyr_calibrated,
+    const char* frame,
+    int &count,
+    sensor_msgs::Imu &imu_msg,
+    ros::Publisher &raw_pub,
+    ros::Publisher &calibrated_pub 
+)
+{   
+    timestamp = sync.online_sync(timestamp, ros_now_s * 1000.0);
+    double dt_ms = timestamp - last_time_ms;
+    double dt_s = dt_ms / 1000; // to seconds
+    last_time_ms = timestamp;
+    apply_intrinsics(acc_inverse, acc_align, acc_scale, acc_bias, acc_calibrated);
+    apply_intrinsics(angular_radians, gyr_align, gyr_scale, gyr_bias, gyr_calibrated);
+    setValsAndCompensateCentripetal(serial, 
+        acc_calibrated, gyr_calibrated, 
+        dt_s, gx, gy, gz, ax, ay, az
+    );
+
+    /*
+    * -- Construct the calibrated msg --
+    */
+    ms_to_ros_stamp(timestamp, imu_msg.header.stamp);
+    imu_msg.header.frame_id = std::string(frame);
+    imu_msg.angular_velocity.x = gyr_calibrated[0];
+    imu_msg.angular_velocity.y = gyr_calibrated[1];
+    imu_msg.angular_velocity.z = gyr_calibrated[2];
+    
+    if (debugMode) {
+        // in debugmode we want to compare the calibrated compensated
+        // measurements against the calibrated uncompensated ones
+        if (serial == SERIAL_0) {
+            imu_msg.linear_acceleration.x = a0_comp[0];
+            imu_msg.linear_acceleration.y = a0_comp[1];
+            imu_msg.linear_acceleration.z = a0_comp[2];
+        } else if (serial == SERIAL_1) {
+            imu_msg.linear_acceleration.x = a1_comp[0];
+            imu_msg.linear_acceleration.y = a1_comp[1];
+            imu_msg.linear_acceleration.z = a1_comp[2];
+        } else if (serial == SERIAL_2) {
+            imu_msg.linear_acceleration.x = a2_comp[0];
+            imu_msg.linear_acceleration.y = a2_comp[1];
+            imu_msg.linear_acceleration.z = a2_comp[2];
+        }
+    } else {
+        // Otherwise just put the calibrated measurements 
+        // for downstream tasks
+        imu_msg.linear_acceleration.x = acc_calibrated[0];
+        imu_msg.linear_acceleration.y = acc_calibrated[1];
+        imu_msg.linear_acceleration.z = acc_calibrated[2];
+    }
+    imu_msg.header.seq = count++;
+    calibrated_pub.publish(imu_msg);
+    
+    /*
+    * -- Construct the RAW msg --
+    */
+    imu_msg.angular_velocity.x = angular_radians[0];
+    imu_msg.angular_velocity.y = angular_radians[1];
+    imu_msg.angular_velocity.z = angular_radians[2];
+    if (debugMode) {
+        // In debugmode we want to compare the calibrated 
+        // uncompensated measurements against the compensated ones
+        imu_msg.linear_acceleration.x = acc_calibrated[0];
+        imu_msg.linear_acceleration.y = acc_calibrated[1];
+        imu_msg.linear_acceleration.z = acc_calibrated[2];
+    } else {
+        // Otherwise just put the raw (uncalibrated) measurements
+        // such that we can perform calibration with it
+        imu_msg.linear_acceleration.x = acc_inverse[0];
+        imu_msg.linear_acceleration.y = acc_inverse[1];
+        imu_msg.linear_acceleration.z = acc_inverse[2];
+    }
+    
+    raw_pub.publish(imu_msg);
+}
+
+// Handler for data from spatial0
+void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx, 
+    const double acceleration[3],  // acceleration is in negative g (1g = 9.81m/s^2)
+    const double angularRate[3],   // angularRate is in deg/s
+    const double magneticField[3], // magneticField is not used
+    double timestamp) // timestamp is in ms
+{
+    double now_in_s = ros::Time::now().toSec();
+    int serialNr;
+    int spatialNr;
+    /* We invert the measured acceleration to get correct gravity direction */
+    double accelerationInverse[3] = {
+        -acceleration[0],
+        -acceleration[1],
+        -acceleration[2]
+    };
+    /* Angular rate should not be in deg/s but rad/s for downstream calculations */
+    double angularRateRadians[3] = {
+        angularRate[0] * M_PI_BY_180,
+        angularRate[1] * M_PI_BY_180,
+        angularRate[2] * M_PI_BY_180
+    };
+
+    Phidget_getDeviceSerialNumber((PhidgetHandle) ch, &serialNr);
+    if (serialNr == SERIAL_0) {
+        spatialNr = 0;
+        if (!initialized0) {
+            initialized0 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
+        mtx_n0.lock();
+        n0++;
+        process_phidget_to_calibrated_ros_msg(
+            serialNr, spatialNr,
+            accelerationInverse, angularRateRadians,
+            &gx0, &gy0, &gz0, &ax0, &ay0, &az0, sync0,
+            now_in_s, timestamp, lastTime_serial0_ms, 
+            gyr0_misalignment, gyr0_scale, gyr0_bias,
+            acc0_misalignment, acc0_scale, acc0_bias, 
+            acc0_calibrated, gyr0_calibrated,
+            "imu0", seq0,
+            imu0_msg, imu0_raw_pub, imu0_calib_pub
+        );
+        mtx_n0.unlock();
+    } else if (serialNr == SERIAL_1) {
+        spatialNr = 1;
+        if (!initialized1) {
+            initialized1 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
+        mtx_n1.lock();
+        n1++;
+        process_phidget_to_calibrated_ros_msg(
+            serialNr, spatialNr,
+            accelerationInverse, angularRateRadians,
+            &gx1, &gy1, &gz1, &ax1, &ay1, &az1, sync1,
+            now_in_s, timestamp, lastTime_serial1_ms, 
+            gyr1_misalignment, gyr1_scale, gyr1_bias,
+            acc1_misalignment, acc1_scale, acc1_bias, 
+            acc1_calibrated, gyr1_calibrated,
+            "imu1", seq1,
+            imu1_msg, imu1_raw_pub, imu1_calib_pub
+        );
+        mtx_n1.unlock();
+    } else if (serialNr == SERIAL_2) {
+        spatialNr = 2;
+        if (!initialized2) {
+            initialized2 = true;
+            n_imus++;
+            ROS_INFO_STREAM("Receiving data from " << spatialNr << " with serial " << serialNr << " works!");
+        }
+        mtx_n2.lock();
+        n2++;
+        process_phidget_to_calibrated_ros_msg(
+            serialNr, spatialNr,
+            accelerationInverse, angularRateRadians,
+            &gx2, &gy2, &gz2, &ax2, &ay2, &az2, sync2,
+            now_in_s, timestamp, lastTime_serial2_ms, 
+            gyr2_misalignment, gyr2_scale, gyr2_bias,
+            acc2_misalignment, acc2_scale, acc2_bias, 
+            acc2_calibrated, gyr2_calibrated,
+            "imu2", seq2,
+            imu2_msg, imu2_raw_pub, imu2_calib_pub
+        );
+        mtx_n2.unlock();
+    } else {
+        ROS_WARN("Attention! IMU with serial %d was not defined in config.launch!", serialNr);
+    }
+}
+
+void setValsAndCompensateCentripetal(const int serialNr,
+    const double acceleration[3], const double angularRate[3], const double dts,
+    float *gx, float *gy, float *gz, float *ax, float *ay, float *az)
+{
+    *gx = angularRate[0]; 
+    *gy = angularRate[1];
+    *gz = angularRate[2]; 
+    auto gdot = smooth_deriv_kernel->filter(*gx, *gy, *gz);
+    float wdot[3] = {gdot[0], gdot[1], gdot[2]};
+
+    // Set extrinsics based on serial number
+    float *pos_serial;
+    float *ur;
+    float r;
+    if (serialNr == SERIAL_0) {
+        a0_alt[0] += acceleration[0]; 
+        a0_alt[1] += acceleration[1];
+        a0_alt[2] += acceleration[2];
+        pos_serial = pos_serial0;
+    } else if (serialNr == SERIAL_1) {
+        a1_alt[0] += acceleration[0];
+        a1_alt[1] += acceleration[1];
+        a1_alt[2] += acceleration[2];
+        pos_serial = pos_serial1;
+    } else if (serialNr == SERIAL_2) {
+        a2_alt[0] += acceleration[0];
+        a2_alt[1] += acceleration[1];
+        a2_alt[2] += acceleration[2];
+        pos_serial = pos_serial2;
+    } else {
+        ROS_ERROR("IMU unexpected error: Serial %d not found.", serialNr);
+    }
+
+    // Compensate radial and tangential accelerations due to centripetal force caused by rotation
+    float gyr[3] = {*gx, *gy, *gz};
+    float gyr_cross_r[3];
+    vectorCross(gyr, pos_serial, gyr_cross_r); // cross product with length vector
+    float gyr_cross_gyr_cross_r[3];
+    vectorCross(gyr, gyr_cross_r, gyr_cross_gyr_cross_r);
+    float wdot_cross_r[3];
+    vectorCross(wdot, pos_serial, wdot_cross_r); // cross product with length vector (should be correct)
+
+    float axval = acceleration[0] - gyr_cross_gyr_cross_r[0] - wdot_cross_r[0];
+    float ayval = acceleration[1] - gyr_cross_gyr_cross_r[1] - wdot_cross_r[1];
+    float azval = acceleration[2] - gyr_cross_gyr_cross_r[2] - wdot_cross_r[2];
+    
+    // For debugging
+    if (debugMode) {
+        if (serialNr == SERIAL_0) {
+            a0_comp[0] = axval;
+            a0_comp[1] = ayval;
+            a0_comp[2] = azval;
+        } else if (serialNr == SERIAL_1) {
+            a1_comp[0] = axval;
+            a1_comp[1] = ayval;
+            a1_comp[2] = azval;
+        } else if (serialNr == SERIAL_2) {
+            a2_comp[0] = axval;
+            a2_comp[1] = ayval;
+            a2_comp[2] = azval;
+        }
+    }
+    *ax += axval;
+    *ay += ayval;
+    *az += azval;
+}
+
+inline float mergeGyros(const float g0, const float g1, const float g2, const float g_prev = 0.0)
+{
+    float res = 0.0;
+    if (use_serial0) res += g0;
+    if (use_serial1) res += g1;
+    if (use_serial2) res += g2;
+    if (slow) {
+        res += g_prev;
+        res /= (n_imus + 1);
+    } else {
+        res /= n_imus;
+    }
+    return res;
+}
+
+/** 
+ * This function combines (averages) the readings from all IMUs.
+ * If no arguments are given, average across all sensors. Pass bool values e.g.
+ *      combineRAWData(true, false, false) 
+ * to only use the first accelerometer. Gyroscope readings are always averaged.  
+ */
+void combineRAWData(bool use0 = true, bool use1 = true, bool use2 = true)
+{   
+    int n = 0;
+    mtx_n0.lock();
+    mtx_n1.lock();
+    mtx_n2.lock();
+    if (use0) n += n0;
+    if (use1) n += n1;
+    if (use2) n += n2;
+    
+    /* HANDLE ACCELEROMETER */
+    // Mean of accelerometers
+    if (n != 0) {
+        ax = 0;
+        ay = 0;
+        az = 0;
+        ax_alt = 0;
+        ay_alt = 0;
+        az_alt = 0;
+        if (use0) {
+            ax += ax0;
+            ay += ay0;
+            az += az0;
+            ax_alt += a0_alt[0];
+            ay_alt += a0_alt[1];
+            az_alt += a0_alt[2];
+        }
+        if (use1) {
+            ax += ax1;
+            ay += ay1;
+            az += az1;
+            ax_alt += a1_alt[0];
+            ay_alt += a1_alt[1];
+            az_alt += a1_alt[2];
+        }
+        if (use2) {
+            ax += ax2;
+            ay += ay2;
+            az += az2;
+            ax_alt += a2_alt[0];
+            ay_alt += a2_alt[1];
+            az_alt += a2_alt[2];
+        }
+        ax /= n;
+        ay /= n;
+        az /= n;
+        ax_alt /= n;
+        ay_alt /= n;
+        az_alt /= n;
+        a0_alt[0] = 0; a0_alt[1] = 0; a0_alt[2] = 0;
+        a1_alt[0] = 0; a1_alt[1] = 0; a1_alt[2] = 0;
+        a2_alt[0] = 0; a2_alt[1] = 0; a2_alt[2] = 0;
+        n0 = 0; n1 = 0; n2 = 0;
+        ax0 = 0; ay0 = 0; az0 = 0;
+        ax1 = 0; ay1 = 0; az1 = 0;
+        ax2 = 0; ay2 = 0; az2 = 0;
+    }
+    mtx_n0.unlock();
+    mtx_n1.unlock();
+    mtx_n2.unlock();
+
+    /* HANDLE GYROSCOPE */
+    if (firstRead < 4) {
+        ROS_INFO("Init Yaw Axis...");
+        gx = mergeGyros(gx0, gx1, gx2);
+        gy = mergeGyros(gy0, gy1, gy2);
+        gz = mergeGyros(gz0, gz1, gz2);
+        ovrwrtOrientWithAcc(ax, ay, az, 0);
+        changeAlt();
+        ovrwrtOrientWithAcc(ax, ay, az, 0);
+        changeAlt();
+        firstRead = 4;
+    } else if (!slow) /* THIS IS THE USUAL CASE ! */ {
+        gx = mergeGyros(gx0, gx1, gx2);
+        gy = mergeGyros(gy0, gy1, gy2);
+        gz = mergeGyros(gz0, gz1, gz2);
+    } else { /* If slow, smoother signal but time lag ! Not recommended */
+        gx = mergeGyros(gx0, gx1, gx2, gx);
+        gy = mergeGyros(gy0, gy1, gy2, gy);
+        gz = mergeGyros(gz0, gz1, gz2, gz);
+    }
+}
+
+void calc_position(float gx, float gy, float gz) 
+{
+    // calculating the factors describign if there is active rotation.
+    float factorX = (0.05 * gx) * (0.05 * gx);
+    float factorY = (0.05 * gy) * (0.05 * gy);
+    float factorZ = (0.05 * gz) * (0.05 * gz);
+    if (factorX > 1) factorX = 1;
+    if (factorY > 1) factorY = 1;
+    if (factorZ > 1) factorZ = 1;
+
+    // First row of the rotation matrix
+    float r00 = 1 - 2 * (q2 * q2 + q3 * q3);
+    float r01 = 2 * (q1 * q2 - q0 * q3);
+    float r02 = 2 * (q1 * q3 + q0 * q2);
+
+    // Second row of the rotation matrix
+    float r10 = 2 * (q1 * q2 + q0 * q3);
+    float r11 = 1 - 2 * (q1 * q1 + q3 * q3);
+    float r12 = 2 * (q2 * q3 - q0 * q1);
+
+    // Third row of the rotation matrix
+    float r20 = 2 * (q1 * q3 - q0 * q2);
+    float r21 = 2 * (q2 * q3 + q0 * q1);
+    float r22 = 1 - 2 * (q1 * q1 + q2 * q2);
+
+    // gravitational vector : rotate 001 from world ointo robot
+    float grav_x = r20;
+    float grav_y = r21;
+    float grav_z = r22;
+
+    if (fabs(ax - grav_x) > 0.02)
+        vel_x += (ax - grav_x) * 9.81 * dt;
+    if (fabs(ay - grav_y) > 0.02)
+        vel_y += (ay - grav_y) * 9.81 * dt;
+    if (fabs(az - grav_z) > 0.02)
+        vel_z += (az - grav_z) * 9.81 * dt;
+    
+    // couple it to the rotation speed!
+    // rotation around x enables translation-verlocity in y and z direction (robot frame)
+    vel_x *= std::max(factorY, factorZ);
+    vel_y *= std::max(factorZ, factorX);
+    vel_z *= std::max(factorX, factorY);
+
+    // integrate velocity to the points an rotate into world frame
+    // use this matrix tranformed to get back rotation
+    float vel_x_world = r00 * vel_x + r01 * vel_y + r02 * vel_z;
+    float vel_y_world = r10 * vel_x + r11 * vel_y + r12 * vel_z;
+    float vel_z_world = r20 * vel_x + r21 * vel_y + r22 * vel_z;
+    if (setZ0) vel_z_world = 0;
+
+    // rotation leads to translation (without slippage)
+    float rot_x_world = r00 * gx_filtered + r01 * gy_filtered + r02 * gz_filtered;
+    float rot_y_world = r10 * gx_filtered + r11 * gy_filtered + r12 * gz_filtered;
+    float vel_x_world_rot = rot_y_world * r;
+    float vel_y_world_rot = -rot_x_world * r;
+
+    // only evaluation (use unfiltered rotation speed from gyro directly)
+    float rot_x_world_alt = r00 * gx + r01 * gy + r02 * gz;
+    float rot_y_world_alt = r10 * gx + r11 * gy + r12 * gz;
+    float vel_x_world_rot_alt = rot_y_world_alt * r;
+    float vel_y_world_rot_alt = -rot_x_world_alt * r;
+    pXAlt += vel_x_world_rot_alt * dt;
+    pYAlt += vel_y_world_rot_alt * dt;
+
+    // limit velocity_z to the mean og vel_x by to and vel_y y rot. As Otherwise exponential error integration could happen.
+    float mean_vel_world_XY = sqrt(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot);
+    if (fabs(vel_z_world) > mean_vel_world_XY)
+        vel_z_world = std::copysign(1.0, vel_z_world) * mean_vel_world_XY;
+
+    // to prevent uncontrollable expoential error interation when rolling over a long time in one direction 
+    // (the factor_x for exapmple is 1, thefore the original problem with accellerometer integration occurs)
+    // we limit the velocity to 110% of the corressponending velocity by rotation.
+    // we skip z coordinate due to flat floor assumption
+    float trust = 0.1;
+    if (fabs(vel_x_world) > fabs(vel_x_world_rot))
+        vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
+    if (fabs(vel_y_world) > fabs(vel_y_world_rot))
+        vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
+    
+    // subtract velocity in z (othwerwie we would roll through the obstacle rather then over it). 
+    // if vz^2 is bigger then the rot velocity, we should take 0. 
+    // because it somehow means we are falling (mor translation in z than possible by rotation). 
+    // The square method takes care of this.
+    float vz2 = vel_z_world * vel_z_world;
+    vel_x_world_rot = std::copysign(1.0, vel_x_world_rot) * sqrt(vel_x_world_rot * vel_x_world_rot - vz2);
+    vel_y_world_rot = std::copysign(1.0, vel_y_world_rot) * sqrt(vel_y_world_rot * vel_y_world_rot - vz2);
+    
+    if (vel_x_world_rot*vel_x_world_rot > 0.001 
+        ||  vel_y_world_rot*vel_y_world_rot > 0.001) {
+        px += vel_x_world_rot * dt;
+        py += vel_y_world_rot * dt;
+        pz = 0;
+    }
+}
+
+void apply_attitude_filter(double stamp_ms, bool reuse_dt) {
+    // If the changeAlt() function is used in order to recalculate the filtered values
+    if (!reuse_dt) {
+        dt = (stamp_ms - lastTime) / 1000.0;
+        lastTime = stamp_ms;
+    }
+
+    // get last quaternion
+    lastq0 = q0;
+    lastq1 = q1;
+    lastq2 = q2;
+    lastq3 = q3;
+
+    // Prepare inputs, save previous iteration, and apply filter
+    Vec3 acc(ax, ay, az);
+    Vec3 gyro(gx, gy, gz);
+    quaternion res = estimator_instance->filter(gyro, acc, dt);
+    q0 = res.w;
+    q1 = res.x;
+    q2 = res.y;
+    q3 = res.z;
+
+    // Calculate filtered rot speed using quaternions to axisangle
+    // Get previous orientation and invert it, in order to calc filtered rot speed later
+    const quaternion qLast(lastq0, lastq1, lastq2, lastq3);
+    const quaternion qFiltered(q0, q1, q2, q3);
+    quaternion qLastInv;
+    quaternion_inverse(&qLast, &qLastInv);
+    quaternion relative_rotation;
+    quaternion_multiply(&qFiltered, &qLastInv, &relative_rotation);
+    double axis[3];
+    double angle;
+    quaternion_to_axis_angle(&relative_rotation, axis, &angle);
+    angle *= precalc_180_BY_M_PI;
+    
+    // calcualte filtered rotation speed
+    gx_filtered = axis[0] * angle;
+    gy_filtered = axis[1] * angle;
+    gz_filtered = axis[2] * angle;
+    // calculate position based on rolling (uses filtered rotation speed)
+    calc_position(gx, gy, gz);
+}
+
+int argumentHandler(ros::NodeHandle &nh)
+{
+    nh.param<float>("sphere_radius", r, 0.0);
+    if (r <= 0.0) {
+        ROS_WARN("Sphere radius not set (r = %f)! This leads to issues with position calculation!", r);
+    }
+    #ifdef MAHONY
+    nh.param<double>("mahony_kp", Kp, 1.0);
+    nh.param<double>("mahony_ki", Ki, 0.001);
+    #elif defined(QEKF) || defined(UKF)
+    nh.param<float>("sigma_g", sigma_gyr, 0.001);
+    nh.param<float>("sigma_a", sigma_a, 0.001);
+    nh.param<float>("P_init", P_init, 0.01);
+    #else
+    nh.param<float>("jasper_gain", gain_, 0);
+    nh.param<float>("jasper_alpha", alpha, 0.02);
+    nh.param<float>("jasper_autogain", autogain, 0);
+    if (autogain > 0) {
+        alpha = autogain;
+        ROS_INFO("autogain set to %f\n. Thefore gain_ is set to 0 and alpha initally to %f", autogain, autogain * 0.1);
+    }
+    gain_min = gain_;
+    #endif
+    #if defined(UKF)
+    nh.param<float>("ukf_alpha", alpha, 0.001);
+    nh.param<float>("ukf_beta", beta, 2.0);
+    nh.param<float>("ukf_kappa", kappa, 0.0);
+    #endif
+    nh.param<bool>("jasper_slow", slow, false);
+    nh.param<bool>("jasper_forceflat", setZ0, true);
+    int temp;
+    nh.param<int>("jasper_pub_rate", temp, 125);
+    if (temp > 0 && temp < 501) {
+        data_rate = temp;
+        data_intervall = 1.0 / temp;
+        ROS_INFO("data rate set to %d\n", data_rate);
+    } else {
+        ROS_WARN("Phidgets IMU data rate allowed between 1 and 500 Hz. Using default at %d", DATA_RATE_DEFAULT);
+    }
+    nh.param<int>("jasper_imu_rate", imu_data_rate, 250);
+    imu_data_rate = imu_data_rate > 250 ? 250 : imu_data_rate;
+    nh.param<bool>("jasper_debug", debugMode, false);
+    nh.param<std::string>("topicName", topicName, std::string("posePub_merged"));
+    nh.param<int>("jasper_serial0", SERIAL_0, 0);
+    nh.param<int>("jasper_serial1", SERIAL_1, 0);
+    nh.param<int>("jasper_serial2", SERIAL_2, 0);
+    nh.param<bool>("use_serial0", use_serial0, false);
+    nh.param<bool>("use_serial1", use_serial1, false);
+    nh.param<bool>("use_serial2", use_serial2, false);
+    if (use_serial0 && SERIAL_0 == 0) use_serial0 = false;
+    if (use_serial1 && SERIAL_1 == 0) use_serial1 = false;
+    if (use_serial2 && SERIAL_2 == 0) use_serial2 = false;
+    ROS_WARN_STREAM_COND(use_serial0, "Using IMU with serial " << SERIAL_0);
+    ROS_WARN_STREAM_COND(use_serial1, "Using IMU with serial " << SERIAL_1);
+    ROS_WARN_STREAM_COND(use_serial2, "Using IMU with serial " << SERIAL_2);
+    initialized0 = false;
+    initialized1 = false;
+    initialized2 = false;
+    n_imus = 0;
+    nh.param<float>("small_omega", small_omega2, 0.1); 
+    small_omega2 *= small_omega2;
+    
+    /*
+        INTRINSIC PARAMETERS
+
+    The intrinsic paramters have been calibrated using 
+    https://github.com/fallow24/ros_imu_calib 
+    Parameters include misalignment between axes, scaling factor, and bias.
+    */
+    std::string acc_calib0, acc_calib1, acc_calib2, gyr_calib0, gyr_calib1, gyr_calib2;
+    nh.param<std::string>("jasper_acc_calib0", acc_calib0, ""); 
+    nh.param<std::string>("jasper_acc_calib1", acc_calib1, ""); 
+    nh.param<std::string>("jasper_acc_calib2", acc_calib2, ""); 
+    nh.param<std::string>("jasper_gyr_calib0", gyr_calib0, ""); 
+    nh.param<std::string>("jasper_gyr_calib1", gyr_calib1, ""); 
+    nh.param<std::string>("jasper_gyr_calib2", gyr_calib2, ""); 
+    YAML::Node acc_config0 = YAML::LoadFile(acc_calib0);
+    YAML::Node acc_config1 = YAML::LoadFile(acc_calib1);
+    YAML::Node acc_config2 = YAML::LoadFile(acc_calib2);
+    YAML::Node gyr_config0 = YAML::LoadFile(gyr_calib0);
+    YAML::Node gyr_config1 = YAML::LoadFile(gyr_calib1);
+    YAML::Node gyr_config2 = YAML::LoadFile(gyr_calib2);
+    acc0_misalignment = acc_config0["misalignment"].as<std::vector<double> >();
+    acc0_scale = acc_config0["scale"].as<std::vector<double> >();
+    acc0_bias = acc_config0["bias"].as<std::vector<double> >();
+    acc1_misalignment = acc_config1["misalignment"].as<std::vector<double> >();
+    acc1_scale = acc_config1["scale"].as<std::vector<double> >();
+    acc1_bias = acc_config1["bias"].as<std::vector<double> >();
+    acc2_misalignment = acc_config2["misalignment"].as<std::vector<double> >();
+    acc2_scale = acc_config2["scale"].as<std::vector<double> >();
+    acc2_bias = acc_config2["bias"].as<std::vector<double> >();
+    gyr0_misalignment = gyr_config0["misalignment"].as<std::vector<double> >();
+    gyr0_scale = gyr_config0["scale"].as<std::vector<double> >();
+    gyr0_bias = gyr_config0["bias"].as<std::vector<double> >();
+    gyr1_misalignment = gyr_config1["misalignment"].as<std::vector<double> >();
+    gyr1_scale = gyr_config1["scale"].as<std::vector<double> >();
+    gyr1_bias = gyr_config1["bias"].as<std::vector<double> >();
+    gyr2_misalignment = gyr_config2["misalignment"].as<std::vector<double> >();
+    gyr2_scale = gyr_config2["scale"].as<std::vector<double> >();
+    gyr2_bias = gyr_config2["bias"].as<std::vector<double> >();
+
+    /*
+        EXTRINSIC PARAMETERS
+
+    The extrinsic parameters are defined using the coordinate system of the IMU.
+    That is, in the config file, you must specify the vector to the center point of the ball, as seen from
+    each individual IMU.
+    */
+    float tmpx, tmpy, tmpz;
+    nh.param<float>("imu0_x", tmpx, 0);
+    nh.param<float>("imu0_y", tmpy, 0);
+    nh.param<float>("imu0_z", tmpz, 0);
+    pos_serial0 = new float[3]{tmpx, tmpy, tmpz};
+    nh.param<float>("imu1_x", tmpx, 0);
+    nh.param<float>("imu1_y", tmpy, 0);
+    nh.param<float>("imu1_z", tmpz, 0);
+    pos_serial1 = new float[3]{tmpx, tmpy, tmpz};
+    nh.param<float>("imu2_x", tmpx, 0);
+    nh.param<float>("imu2_y", tmpy, 0);
+    nh.param<float>("imu2_z", tmpz, 0);
+    pos_serial2 = new float[3]{tmpx, tmpy, tmpz};
+    float freq_cut;
+    nh.param<float>("jasper_lowpass_freq", freq_cut, 10);
+    float sigma = 1.0 / (2 * M_PI * freq_cut);
+    float imu_data_dt = 1.0 / imu_data_rate;
+    int win_size = 6 * sigma / imu_data_dt;
+    win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
+    ROS_WARN("Window size: %d, Cutoff_freq %f, Sigma %f, dt %f", win_size, freq_cut, sigma, imu_data_dt);
+    smooth_deriv_kernel = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
+    return 0;
+}
+
+void CCONV detachHandler(PhidgetHandle ch, void *ctx)
+{
+    int serialNr;
+    Phidget_getDeviceSerialNumber((PhidgetHandle)ch, &serialNr);
+    ROS_ERROR("IMU with Serial Nr: %d detached!!!", serialNr);
+}
+
+int CCONV init()
+{
+    ROS_INFO("Initalizing");
+    Phidget_resetLibrary();
+    PhidgetSpatialHandle spatial0, spatial1, spatial2;
+    
+    // Create your Phidget channels
+    if (use_serial0) PhidgetSpatial_create(&spatial0);
+    if (use_serial1) PhidgetSpatial_create(&spatial1);
+    if (use_serial2) PhidgetSpatial_create(&spatial2);
+    
+    // Set addressing parameters to specify which channel to open (if any)
+    if (use_serial0) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial0, SERIAL_0);
+    if (use_serial1) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial1, SERIAL_1);
+    if (use_serial2) Phidget_setDeviceSerialNumber((PhidgetHandle) spatial2, SERIAL_2);
+    
+    // set the handler which handels detaching evcents
+    if (use_serial0) Phidget_setOnDetachHandler((PhidgetHandle) spatial0, detachHandler, NULL);
+    if (use_serial1) Phidget_setOnDetachHandler((PhidgetHandle) spatial1, detachHandler, NULL);
+    if (use_serial2) Phidget_setOnDetachHandler((PhidgetHandle) spatial2, detachHandler, NULL);
+    
+    ROS_INFO("Now Attaching the IMUS! Giving it maximum 3 seconds!");
+    // Open your Phidgets and wait for attachment
+    ros::Time begin = ros::Time::now();
+    if (use_serial0) Phidget_openWaitForAttachment((PhidgetHandle) spatial0, 1000);
+    if (use_serial1) Phidget_openWaitForAttachment((PhidgetHandle) spatial1, 1000);
+    if (use_serial2) Phidget_openWaitForAttachment((PhidgetHandle) spatial2, 1000);
+    if (ros::Time::now().toSec() - begin.toSec() >= 3) {
+        ROS_WARN("Phidgets IMU attachment timeout! Data may be compromised.");
+    } else {
+        ROS_INFO("Phidgets IMU attaching sucessfull.");
+    }
+    
+    // Set the data rate (set by user or IMU_DEFAULT_DATA_RATE
+    int imu_data_intervall = std::round(1000.0 / imu_data_rate);
+    if (use_serial0) PhidgetSpatial_setDataInterval(spatial0, imu_data_intervall);
+    if (use_serial1) PhidgetSpatial_setDataInterval(spatial1, imu_data_intervall);
+    if (use_serial2) PhidgetSpatial_setDataInterval(spatial2, imu_data_intervall);
+    
+    ROS_WARN("!!! CALIBRATING GYROSCOPES, DO NOT MOVE IMUs !!!");
+    ros::Duration(0.5).sleep();
+    if (use_serial0) PhidgetSpatial_zeroGyro(spatial0);
+    if (use_serial1) PhidgetSpatial_zeroGyro(spatial1);
+    if (use_serial2) PhidgetSpatial_zeroGyro(spatial2);
+    if (use_serial0) PhidgetSpatial_zeroAlgorithm(spatial0);
+    if (use_serial1) PhidgetSpatial_zeroAlgorithm(spatial1);
+    if (use_serial2) PhidgetSpatial_zeroAlgorithm(spatial2);
+    ROS_WARN("Gyroscope calibration succesfull!"); 
+    
+    // Assign any event handlers you need before calling open so that no events are missed.
+    if (use_serial0) PhidgetSpatial_setOnSpatialDataHandler(spatial0, onSpatial0_SpatialData, NULL);
+    if (use_serial1) PhidgetSpatial_setOnSpatialDataHandler(spatial1, onSpatial0_SpatialData, NULL);
+    if (use_serial2) PhidgetSpatial_setOnSpatialDataHandler(spatial2, onSpatial0_SpatialData, NULL);
+    
+    // initilizind data for filtering
+    q0 = 1.0;
+    q1 = 0.0;
+    q2 = 0.0;
+    q3 = 0.0;
+    vel_x = 0;
+    vel_y = 0;
+    vel_z = 0;
+    px = 0;
+    py = 0;
+    pz = 0;
+    
+    // initilaize output message
+    seq = 0; seq0 = 0; seq1 = 0; seq2 = 0;
+    output_msg.header.frame_id = "map";
+    output_msg.header.seq = seq++;
+    output_msg.header.stamp = ros::Time::now();
+    output_msg.pose.pose.position.x = 0;
+    output_msg.pose.pose.position.y = 0;
+    output_msg.pose.pose.position.z = 0;
+    output_msg.pose.pose.orientation.x = q1;
+    output_msg.pose.pose.orientation.y = q2;
+    output_msg.pose.pose.orientation.z = q3;
+    output_msg.pose.pose.orientation.w = q0;
+    ROS_INFO("Phidgets initalisation done");
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    ros::init(argc, argv, "imuHandling", ros::init_options::NoSigintHandler);
+    ROS_INFO("Starting Node");
+    if (argc > 1) {
+        ROS_INFO("Command-line args are not supported anymore.");
+        ROS_INFO("Please use the ROS parameter server and have a look at the config.launch file!");
+    }
+    signal(SIGINT, mySigIntHandler);
+
+    // Arguments as nodehandle parameters (from ROS server)
+    ros::NodeHandle nH;
+    argumentHandler(nH);
+    acc0_calibrated = new double[3];
+    gyr0_calibrated = new double[3];
+    acc1_calibrated = new double[3];
+    gyr1_calibrated = new double[3];
+    acc2_calibrated = new double[3];
+    gyr2_calibrated = new double[3];
+    imu0_raw_pub = nH.advertise<sensor_msgs::Imu>("/imu/0/raw", 1000);
+    imu1_raw_pub = nH.advertise<sensor_msgs::Imu>("/imu/1/raw", 1000);
+    imu2_raw_pub = nH.advertise<sensor_msgs::Imu>("/imu/2/raw", 1000);
+    imu0_calib_pub = nH.advertise<sensor_msgs::Imu>("/imu/0/calib", 1000);
+    imu1_calib_pub = nH.advertise<sensor_msgs::Imu>("/imu/1/calib", 1000);
+    imu2_calib_pub = nH.advertise<sensor_msgs::Imu>("/imu/2/calib", 1000);
+    init();
+#if defined(MAHONY)
+    estimator_instance = new MahonyFilter(Kp, Ki);
+#elif defined(QEKF)
+    estimator_instance = new ExtendedKalmanFilter(sigma_gyr, sigma_a, P_init);
+#elif defined(UKF)
+    estimator_instance = new UnscentedKalmanFilter();
+#else
+    estimator_instance = new AutogainFilter(gain_min, alpha, autogain); 
+#endif
+    ros::Publisher estimator_pub = nH.advertise<state_estimator_msgs::Estimator>(topicName, 1000);
+    // just for evaluation
+    ros::Publisher estimator_raw_pub = nH.advertise<state_estimator_msgs::Estimator>(topicName + "_raw", 1000);
+
+    ros::Rate loop_rate(data_rate);
+
+    // the gyro send right after starting just the value  0 for 1-3 seconds. We dont need that
+    while (gx0 == 0 && gx1 == 0 && gx2 == 0 && !g_request_shutdown) {
+        ROS_WARN("Phidgets gyroscopes still waiting...");
+        ros::Rate loop_rate_StartUp(1);
+        loop_rate_StartUp.sleep();
+    }
+    lastTime = ros::Time::now().toSec() * 1000.0;
+
+
+    ROS_INFO("Phidigets IMUs are now properly initialized!");
+    /*------------------------------------
+            Main Processing Loop
+    -------------------------------------*/
+    while (ros::ok() && !g_request_shutdown) {
+
+        // Each cycle gathers data and filters
+        combineRAWData(use_serial0, use_serial1, use_serial2);
+
+        double combined_stamp_ms = 0.0;
+        if (use_serial0) combined_stamp_ms += imu0_msg.header.stamp.toSec();
+        if (use_serial1) combined_stamp_ms += imu1_msg.header.stamp.toSec();
+        if (use_serial2) combined_stamp_ms += imu2_msg.header.stamp.toSec();
+        combined_stamp_ms /= n_imus;
+        combined_stamp_ms *= 1000.0;
+
+        apply_attitude_filter(combined_stamp_ms);
+
+        // Fill msg header
+        ms_to_ros_stamp(combined_stamp_ms, output_msg.header.stamp); 
+        output_msg.header.frame_id = "map_imu";
+        output_msg.header.seq = seq++;
+        
+        // Position determined by IMUs
+        output_msg.pose.header = output_msg.header;
+        output_msg.pose.pose.position.x = px;
+        output_msg.pose.pose.position.y = py;
+        output_msg.pose.pose.position.z = pz;
+        output_msg.pose.pose.orientation.w = q0;
+        output_msg.pose.pose.orientation.x = q1;
+        output_msg.pose.pose.orientation.y = q2;
+        output_msg.pose.pose.orientation.z = q3;
+        
+        // Raw Data of IMUs
+        output_msg.imu.header = output_msg.header;
+        output_msg.imu.orientation = output_msg.pose.pose.orientation;
+        // Gyroscope data is actually orientation differential 
+        output_msg.imu.angular_velocity.x = gx;
+        output_msg.imu.angular_velocity.y = gy;
+        output_msg.imu.angular_velocity.z = gz;
+        // Acceleration data compensates centripetal forces
+        output_msg.imu.linear_acceleration.x = ax;
+        output_msg.imu.linear_acceleration.y = ay;
+        output_msg.imu.linear_acceleration.z = az;
+        estimator_pub.publish(output_msg);
+
+        //-------------------------------------//
+        // just for evaluation purposes
+        // change to alternative flawed values which uses unfiltered gyro data for position,
+        // and also does not apply centripetal force compensation
+        changeAlt();
+        ax = ax_alt;
+        ay = ay_alt;
+        az = az_alt;
+
+        // Use alternative data and filter it, set reuse_dt = true
+        apply_attitude_filter(combined_stamp_ms, true);
+        
+        // Put filtered data inside msg
+        output_msg.header.frame_id = "map_raw";
+        output_msg.pose.pose.position.x = px;
+        output_msg.pose.pose.position.y = py;
+        output_msg.pose.pose.position.z = pz;
+        output_msg.pose.pose.orientation.w = q0;
+        output_msg.pose.pose.orientation.x = q1;
+        output_msg.pose.pose.orientation.y = q2;
+        output_msg.pose.pose.orientation.z = q3;
+        output_msg.imu.orientation = output_msg.pose.pose.orientation;
+        // RAW gyroscope data
+        output_msg.imu.angular_velocity.x = gx;
+        output_msg.imu.angular_velocity.y = gy;
+        output_msg.imu.angular_velocity.z = gz;
+        // RAW accelerometer data
+        output_msg.imu.linear_acceleration.x = ax;
+        output_msg.imu.linear_acceleration.y = ay;
+        output_msg.imu.linear_acceleration.z = az;
+        estimator_raw_pub.publish(output_msg);
+        changeAlt();
+        //-------------------------------------------------
+
+        ros::spinOnce();
+        loop_rate.sleep();
+    } // end main loop
+
+    ROS_WARN("Phidgets IMUs shutdown, GOODBYE!");
+    Phidget_resetLibrary();
+    ros::shutdown();
+}
+
+// Replacement SIGINT handler
+void mySigIntHandler(int sig)
+{
+    g_request_shutdown = 1;
+}
+
+void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
+{
+    float recipNorm = 1.0 / sqrt(ax * ax + ay * ay + az * az);
+    ax *= recipNorm;
+    ay *= recipNorm;
+    az *= recipNorm;
+    float acc_roll = atan2(ay, az);
+    float acc_pitch = atan2(-ax, sqrt(ay * ay + az * az));
+
+    quatFromEuler(&q0, &q1, &q2, &q3, acc_roll, acc_pitch, yaw);
+    ROS_INFO("Initial: Roll: %f Pitch: %f Yaw: %f", acc_roll * precalc_180_BY_M_PI, acc_pitch * precalc_180_BY_M_PI, yaw * precalc_180_BY_M_PI);
+}
+
+
+
