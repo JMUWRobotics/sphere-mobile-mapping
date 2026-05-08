@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   tf
   state_estimator_msgs
+  ground_finder_msgs
 )
 
 ###################################
