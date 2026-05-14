@@ -21,9 +21,12 @@ quaternion AutogainFilter::filter(const Vec3 &gyr, const Vec3 &acc, float dt)
     float factorX = (0.05 * gx) * (0.05 * gx);
     float factorY = (0.05 * gy) * (0.05 * gy);
     float factorZ = (0.05 * gz) * (0.05 * gz);
-    if (factorX > 1) factorX = 1;
-    if (factorY > 1) factorY = 1;
-    if (factorZ > 1) factorZ = 1;
+    if (factorX > 1)
+        factorX = 1;
+    if (factorY > 1)
+        factorY = 1;
+    if (factorZ > 1)
+        factorZ = 1;
 
     // adapt gains automatically
     if (!autogain <= 0)
@@ -38,8 +41,10 @@ quaternion AutogainFilter::filter(const Vec3 &gyr, const Vec3 &acc, float dt)
     }
 
     // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-    if (((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) recipNorm = 1;
-    else recipNorm = 1.0 / sqrt(ax * ax + ay * ay + az * az);
+    if (((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f)))
+        recipNorm = 1;
+    else
+        recipNorm = 1.0 / sqrt(ax * ax + ay * ay + az * az);
     // Normalize acc
     float axNom = ax * recipNorm;
     float ayNom = ay * recipNorm;
@@ -87,7 +92,7 @@ quaternion AutogainFilter::filter(const Vec3 &gyr, const Vec3 &acc, float dt)
     normalizeQuat(&q0, &q1, &q2, &q3);
 
     // Complementary Filter
-    float acc_roll = atan2f(ayNom, azNom);
+    float acc_roll = atan2f(ayNom, azNom); // TODO: adapt to use ground normal in equations?
     float acc_pitch = atan2f(-axNom, sqrt(ayNom * ayNom + azNom * azNom));
 
     // get RPY from quaternion
@@ -99,7 +104,8 @@ quaternion AutogainFilter::filter(const Vec3 &gyr, const Vec3 &acc, float dt)
     // the actual complementary step
 
     // gimbal lock avoidence
-    if (fabs(q2 * q1 + q0 * q3) - 0.5 < 0.01) acc_roll = roll;
+    if (fabs(q2 * q1 + q0 * q3) - 0.5 < 0.01)
+        acc_roll = roll;
 
     float q00, q11, q22, q33;
     quatFromEuler(&q00, &q11, &q22, &q33, acc_roll, acc_pitch, yaw);
@@ -127,4 +133,3 @@ quaternion AutogainFilter::filter(const Vec3 &gyr, const Vec3 &acc, float dt)
 
     return quaternion(q0, q1, q2, q3);
 }
-

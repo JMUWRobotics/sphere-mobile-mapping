@@ -552,9 +552,9 @@ void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::ConstPt
             gn_y /= norm;
             gn_z /= norm;
         }
-        if (gn_z < 0)
+        if (gn_z > 0)
         {
-            ROS_WARN("Ground normal z component is negative but should be upwards pointing in map_imu frame! Check your TF tree and the normal estimation!");
+            ROS_WARN("Ground normal z component is positive, but this code expects a downward-pointing normal in map_imu. Check your TF tree and the normal estimation!");
         }
         mtx_gn.unlock();
         if (ground_normal_available == false)
@@ -590,27 +590,12 @@ void calc_position(float gx, float gy, float gz)
     float r21 = 2 * (q2 * q3 + q0 * q1);
     float r22 = 1 - 2 * (q1 * q1 + q2 * q2);
 
-    // // gravitational vector : rotate 001 from world into robot
-    // float grav_x = r20;
-    // float grav_y = r21;
-    // float grav_z = r22;
+    // gravitational vector : rotate 001 from world into robot
+    float grav_x = r20;
+    float grav_y = r21;
+    float grav_z = r22;
 
-    // ground normal in world_imu frame (here 001 as default ??TODO)
-    float normal_world_x = 0.0f, normal_world_y = 0.0f, normal_world_z = 1.0f;
-    if (use_ground_normal)
-    {
-        mtx_gn.lock();
-        normal_world_x = gn_x;
-        normal_world_y = gn_y;
-        normal_world_z = gn_z;
-        mtx_gn.unlock();
-    }
-
-    // Transform into robot body frame using R^T (world to body)
-    float grav_x = r00 * normal_world_x + r01 * normal_world_y + r02 * normal_world_z;
-    float grav_y = r10 * normal_world_x + r11 * normal_world_y + r12 * normal_world_z;
-    float grav_z = r20 * normal_world_x + r21 * normal_world_y + r22 * normal_world_z;
-
+    // erkennen von stillstand abweichung
     if (fabs(ax - grav_x) > 0.02)
         vel_x += (ax - grav_x) * 9.81 * dt;
     if (fabs(ay - grav_y) > 0.02)
@@ -629,51 +614,73 @@ void calc_position(float gx, float gy, float gz)
     float vel_x_world = r00 * vel_x + r01 * vel_y + r02 * vel_z;
     float vel_y_world = r10 * vel_x + r11 * vel_y + r12 * vel_z;
     float vel_z_world = r20 * vel_x + r21 * vel_y + r22 * vel_z;
-    if (setZ0)
-        vel_z_world = 0; // TODO: check if this also uses flat ground assumption, if not we should use the normal vector
+    if (setZ0 && !use_ground_normal)
+        vel_z_world = 0;
 
     // rotation leads to translation (without slippage)
+    // now with dynamic model without flat floor assumption
     float rot_x_world = r00 * gx_filtered + r01 * gy_filtered + r02 * gz_filtered;
     float rot_y_world = r10 * gx_filtered + r11 * gy_filtered + r12 * gz_filtered;
-    float vel_x_world_rot = rot_y_world * r;
-    float vel_y_world_rot = -rot_x_world * r;
+    float rot_z_world = r20 * gx_filtered + r21 * gy_filtered + r22 * gz_filtered;
+
+    // previously:
+    // float vel_x_world_rot = rot_y_world * r;
+    // float vel_y_world_rot = -rot_x_world * r;
+
+    float normal_world_x = 0.0f, normal_world_y = 0.0f, normal_world_z = -1.0f;
+    if (use_ground_normal)
+    {
+        mtx_gn.lock();
+        normal_world_x = gn_x;
+        normal_world_y = gn_y;
+        normal_world_z = gn_z;
+        mtx_gn.unlock();
+    }
+
+    // see dynamic model without flat floor assumption
+    float vel_x_world_rot = r * (rot_y_world * normal_world_z - rot_z_world * normal_world_y);
+    float vel_y_world_rot = r * (rot_z_world * normal_world_x - rot_x_world * normal_world_z);
+    float vel_z_world_rot = r * (rot_x_world * normal_world_y - rot_y_world * normal_world_x);
 
     // only evaluation (use unfiltered rotation speed from gyro directly)
     float rot_x_world_alt = r00 * gx + r01 * gy + r02 * gz;
     float rot_y_world_alt = r10 * gx + r11 * gy + r12 * gz;
-    float vel_x_world_rot_alt = rot_y_world_alt * r;
-    float vel_y_world_rot_alt = -rot_x_world_alt * r;
+    float rot_z_world_alt = r20 * gx + r21 * gy + r22 * gz;
+
+    // previously:
+    // float vel_x_world_alt = rot_y_world_alt * r;
+    // float vel_y_world_alt = -rot_x_world_alt * r;
+
+    // see dynamic model without flat floor assumption
+    float vel_x_world_rot_alt = r * (rot_y_world_alt * normal_world_z - rot_z_world_alt * normal_world_y);
+    float vel_y_world_rot_alt = r * (rot_z_world_alt * normal_world_x - rot_x_world_alt * normal_world_z);
+    float vel_z_world_rot_alt = r * (rot_x_world_alt * normal_world_y - rot_y_world_alt * normal_world_x);
+
     pXAlt += vel_x_world_rot_alt * dt;
     pYAlt += vel_y_world_rot_alt * dt;
+    pZAlt += vel_z_world_rot_alt * dt;
 
     // limit velocity_z to the mean og vel_x by to and vel_y y rot. As Otherwise exponential error integration could happen.
-    float mean_vel_world_XY = sqrt(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot); // TODO: also assumes motion only in XY plane - not correct on slope
+    float mean_vel_world_XY = sqrt(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
     if (fabs(vel_z_world) > mean_vel_world_XY)
         vel_z_world = std::copysign(1.0, vel_z_world) * mean_vel_world_XY;
 
     // to prevent uncontrollable expoential error interation when rolling over a long time in one direction
     // (the factor_x for exapmple is 1, thefore the original problem with accellerometer integration occurs)
     // we limit the velocity to 110% of the corressponending velocity by rotation.
-    // we skip z coordinate due to flat floor assumption
     float trust = 0.1;
     if (fabs(vel_x_world) > fabs(vel_x_world_rot))
         vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
     if (fabs(vel_y_world) > fabs(vel_y_world_rot))
         vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
+    if (fabs(vel_z_world) > fabs(vel_z_world_rot))
+        vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
 
-    // subtract velocity in z (othwerwie we would roll through the obstacle rather then over it).
-    // if vz^2 is bigger then the rot velocity, we should take 0.
-    // because it somehow means we are falling (mor translation in z than possible by rotation).
-    // The square method takes care of this.
-    float vz2 = vel_z_world * vel_z_world;
-    vel_x_world_rot = std::copysign(1.0, vel_x_world_rot) * sqrt(vel_x_world_rot * vel_x_world_rot - vz2);
-    vel_y_world_rot = std::copysign(1.0, vel_y_world_rot) * sqrt(vel_y_world_rot * vel_y_world_rot - vz2);
-
-    if (vel_x_world_rot * vel_x_world_rot > 0.001 || vel_y_world_rot * vel_y_world_rot > 0.001)
+    if (vel_x_world_rot * vel_x_world_rot > 0.001 || vel_y_world_rot * vel_y_world_rot > 0.001 || vel_z_world_rot * vel_z_world_rot > 0.001)
     {
         px += vel_x_world_rot * dt;
         py += vel_y_world_rot * dt;
-        pz = 0;
+        pz += vel_z_world_rot * dt;
     }
 }
 
@@ -1019,6 +1026,8 @@ int main(int argc, char *argv[])
     imu1_calib_pub = nH.advertise<sensor_msgs::Imu>("/imu/1/calib", 1000);
     imu2_calib_pub = nH.advertise<sensor_msgs::Imu>("/imu/2/calib", 1000);
     init();
+
+    // TODO: ab hier in eigene node
 #if defined(MAHONY)
     estimator_instance = new MahonyFilter(Kp, Ki);
 #elif defined(QEKF)
@@ -1148,8 +1157,8 @@ void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
     ax *= recipNorm;
     ay *= recipNorm;
     az *= recipNorm;
-    float acc_roll = atan2(ay, az);                        // TODO: adapt for ground normal for more accurate quat initialization?
-    float acc_pitch = atan2(-ax, sqrt(ay * ay + az * az)); // TODO: adapt for ground normal for more accurate quat initialization?
+    float acc_roll = atan2(ay, az);
+    float acc_pitch = atan2(-ax, sqrt(ay * ay + az * az));
 
     quatFromEuler(&q0, &q1, &q2, &q3, acc_roll, acc_pitch, yaw);
     ROS_INFO("Initial: Roll: %f Pitch: %f Yaw: %f", acc_roll * precalc_180_BY_M_PI, acc_pitch * precalc_180_BY_M_PI, yaw * precalc_180_BY_M_PI);

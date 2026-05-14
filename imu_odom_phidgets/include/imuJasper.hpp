@@ -151,6 +151,7 @@ float autogain = 0;
 #if defined(UKF)
 float alpha, beta, kappa;
 #endif
+
 // gyroscope
 float gx;
 float gy;
@@ -217,13 +218,13 @@ bool slow = false;
 sig_atomic_t volatile g_request_shutdown = 0;
 
 // Ground Normal Variables
-bool use_ground_normal;
+bool use_ground_normal = true;
 std::string ground_normal_topic;
 
 // stores latest ground normal vector state
 float gn_x = 0.0;
 float gn_y = 0.0;
-float gn_z = 1.0;  // default gravity points up in +Z (world frame)
+float gn_z = -1.0; // dTODO: double check if + or -
 std::mutex mtx_gn; // protects ground normal vector
 bool ground_normal_available = false;
 
