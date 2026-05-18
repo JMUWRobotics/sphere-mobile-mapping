@@ -71,8 +71,9 @@
     <arg name="imu1_z" value="0.0287838"
         doc="in meters" />
     <arg name="imu2_x" value="-0.07202"
-        doc="in meters" />    <!-- ========== T265 cam ARGUMENTS ========== -->
-
+        doc="in meters" />    
+    
+    <!-- ========== T265 cam ARGUMENTS ========== -->
     <arg name="imu2_y" value="-0.00149266"
         doc="in meters" />
     <arg name="imu2_z" value="0.0325564" /> 
@@ -244,11 +245,11 @@
         doc="Vertical extraction limit in meters"/>
     <arg name="enable_scoring" default="true" 
         doc="Enable scored normal output and fallback logic"/>
-    <arg name="score_threshold" default="0.2" 
+    <arg name="score_threshold" default="0.4" 
         doc="Minimum acceptable score for current normal"/>
-    <arg name="min_score_window" default="0.3" 
+    <arg name="min_score_window" default="0.5" 
         doc="Minimum fallback score from history window"/>
-    <arg name="inlier_scale" default="0.55"
+    <arg name="inlier_scale" default="0.66"
         doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
     <param name="score_threshold" value="0.2" />    <!-- fallback triggers only on poor detection -->
     <arg name="pose_topic" default="/lkf/pose"/>
