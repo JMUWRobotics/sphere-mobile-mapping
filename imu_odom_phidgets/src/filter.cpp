@@ -22,6 +22,8 @@
  */
 #include "filter.hpp"
 #include <cmath>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
 
 // -----------------------------------------------------------------------
 // Global state definitions  (declared extern in filter.hpp)
@@ -145,6 +147,12 @@ bool ground_normal_available = false;
 tf2_ros::Buffer tf_buffer_;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 ros::Subscriber ground_normal_sub;
+
+// Static TF used to rotate ground normals from source sensor frame into IMU frame.
+static bool ground_normal_tf_ready = false;
+static geometry_msgs::TransformStamped ground_normal_tf;
+static std::string ground_normal_source_frame = "pandar_frame";
+static std::string ground_normal_target_frame = "imu_frame";
 
 // -----------------------------------------------------------------------
 // changeAlt  —  swap between primary and alternative quaternion state
@@ -510,9 +518,12 @@ void calc_position(float gx, float gy, float gz)
     {
         mtx_gn.lock();
         // Rotate ground normal from IMU frame to world frame
-        normal_world_x = r00 * gn_x + r01 * gn_y + r02 * gn_z;
-        normal_world_y = r10 * gn_x + r11 * gn_y + r12 * gn_z;
-        normal_world_z = r20 * gn_x + r21 * gn_y + r22 * gn_z;
+        // normal_world_x = r00 * gn_x + r01 * gn_y + r02 * gn_z;
+        // normal_world_y = r10 * gn_x + r11 * gn_y + r12 * gn_z;
+        // normal_world_z = r20 * gn_x + r21 * gn_y + r22 * gn_z;
+        normal_world_x = gn_x;
+        normal_world_y = gn_y;
+        normal_world_z = gn_z;
         mtx_gn.unlock();
     }
 
@@ -529,6 +540,23 @@ void calc_position(float gx, float gy, float gz)
     float vel_x_world_rot_alt = r * (rot_y_world_alt * normal_world_z - rot_z_world_alt * normal_world_y);
     float vel_y_world_rot_alt = r * (rot_z_world_alt * normal_world_x - rot_x_world_alt * normal_world_z);
     float vel_z_world_rot_alt = r * (rot_x_world_alt * normal_world_y - rot_y_world_alt * normal_world_x);
+
+    // Debugging: log key values when using dynamic ground normal
+    if (use_ground_normal && ground_normal_available)
+    {
+        ROS_INFO_THROTTLE(2.0,
+                          "DBG calc_position: r=%.3f q=(%.3f,%.3f,%.3f,%.3f) gn=(%.3f,%.3f,%.3f) normal_world=(%.3f,%.3f,%.3f) rot_f=(%.3f,%.3f,%.3f) vel_rot=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f)",
+                          r, q0, q1, q2, q3, gn_x, gn_y, gn_z, normal_world_x, normal_world_y, normal_world_z,
+                          rot_x_world, rot_y_world, rot_z_world,
+                          vel_x_world_rot, vel_y_world_rot, vel_z_world_rot,
+                          vel_x_world, vel_y_world, vel_z_world);
+
+        if (!std::isfinite(normal_world_x) || !std::isfinite(normal_world_y) || !std::isfinite(normal_world_z) ||
+            !std::isfinite(rot_x_world) || !std::isfinite(rot_y_world) || !std::isfinite(rot_z_world))
+        {
+            ROS_WARN_THROTTLE(2.0, "DBG calc_position: non-finite values detected in rotation/normal computation");
+        }
+    }
 
     pXAlt += vel_x_world_rot_alt * dt;
     pYAlt += vel_y_world_rot_alt * dt;
@@ -666,11 +694,48 @@ static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::
 {
     if (use_ground_normal)
     {
+        geometry_msgs::Vector3Stamped n_src, n_imu;
+        n_src.header = msg->header;
+        n_src.vector = msg->normal;
+
+        // if (ground_normal_tf_ready)
+        // {
+        //     try
+        //     {
+        //         tf2::doTransform(n_src, n_imu, ground_normal_tf);
+        //     }
+        //     catch (const tf2::TransformException &ex)
+        //     {
+        //         ROS_WARN_THROTTLE(2.0, "Failed to transform ground normal: %s", ex.what());
+        //         n_imu = n_src;
+        //     }
+        // }
+        // else
+        // {
+        //     n_imu = n_src;
+        // }
+
+        // // Normalize to unit length
+        // float nx = n_imu.vector.x;
+        // float ny = n_imu.vector.y;
+        // float nz = n_imu.vector.z;
+        float nx = n_src.vector.x;
+        float ny = n_src.vector.y;
+        float nz = n_src.vector.z;
+        const float n_norm = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (n_norm > 1e-6f)
+        {
+            nx /= n_norm;
+            ny /= n_norm;
+            nz /= n_norm;
+        }
+
         mtx_gn.lock();
-        gn_x = msg->normal.x;
-        gn_y = msg->normal.y;
-        gn_z = msg->normal.z;
+        gn_x = nx;
+        gn_y = ny;
+        gn_z = nz;
         ground_normal_available = true;
+        ROS_INFO_THROTTLE(2.0, "Ground normal in imu_frame: (%.3f, %.3f, %.3f)", gn_x, gn_y, gn_z);
         mtx_gn.unlock();
     }
 }
@@ -848,13 +913,36 @@ int filterArgumentHandler(ros::NodeHandle &nh)
     // Ground normal parameters
     // -----------------------------------------------------------------------
     nh.param<bool>("use_ground_normal", use_ground_normal, true);
+
     if (use_ground_normal)
     {
-        ground_normal_topic = "/global_ground_finder/smoothed_scored_normal";
+        ground_normal_topic = "/global_ground_finder/scored_normal";
         ground_normal_sub = nh.subscribe(ground_normal_topic, 1, groundNormalCallback);
         ROS_INFO("Using ground normal for imu pose estimation. Subscribing to topic %s", ground_normal_topic.c_str());
         // Initialize tf2 listener for frame transformations
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(tf_buffer_);
+
+        // try
+        // {
+        //     if (tf_buffer_.canTransform(ground_normal_target_frame, ground_normal_source_frame, ros::Time(0), ros::Duration(2.0)))
+        //     {
+        //         ground_normal_tf = tf_buffer_.lookupTransform(ground_normal_target_frame, ground_normal_source_frame,
+        //                                                       ros::Time(0), ros::Duration(0.1));
+        //         ground_normal_tf_ready = true;
+        //         ROS_INFO("Loaded static TF for ground normal rotation: %s -> %s",
+        //                  ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+        //     }
+        //     else
+        //     {
+        //         ROS_WARN("TF not available for ground normal rotation (%s -> %s). Using incoming normal as-is.",
+        //                  ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+        //     }
+        // }
+        // catch (const tf2::TransformException &ex)
+        // {
+        //     ROS_WARN("Failed to lookup TF for ground normal rotation (%s -> %s): %s. Using incoming normal as-is.",
+        //              ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str(), ex.what());
+        // }
     }
 
     return 0;
@@ -899,11 +987,6 @@ int main(int argc, char *argv[])
         sub1 = nH.subscribe("/imu/1/calib", 1000, imu1Callback);
     if (use_serial2)
         sub2 = nH.subscribe("/imu/2/calib", 1000, imu2Callback);
-
-    // ---- Subscribe to ground normal topic (optional) ----
-    ros::Subscriber ground_normal_sub;
-    if (use_ground_normal)
-        ground_normal_sub = nH.subscribe(ground_normal_topic, 1, groundNormalCallback);
 
     // ---- Advertise output topics ----
     ros::Publisher estimator_pub = nH.advertise<state_estimator_msgs::Estimator>(topicName, 1000);
