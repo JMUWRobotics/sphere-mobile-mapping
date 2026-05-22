@@ -106,7 +106,7 @@ float q0_alt2 = 1, q1_alt2 = 0, q2_alt2 = 0, q3_alt2 = 0;
 float q0_last_alt1 = 1, q1_last_alt1 = 0, q2_last_alt1 = 0, q3_last_alt1 = 0;
 float q0_last_alt2 = 1, q1_last_alt2 = 0, q2_last_alt2 = 0, q3_last_alt2 = 0;
 int altStatus = 1;
-float pXAlt = 0, pYAlt = 0;
+float pXAlt = 0, pYAlt = 0, pZAlt = 0;
 
 AttitudeEstimator *estimator_instance = nullptr;
 // One derivative kernel per IMU: each kernel holds its own ring-buffer
@@ -209,6 +209,7 @@ void changeAlt()
 // the result into the per-IMU running totals (ax0/ax1/ax2, gx0/gx1/gx2).
 // The plain calibrated acceleration (no compensation) is also accumulated
 // in a0_alt … for the evaluation path.
+// TODO: use normal vector according to paper eq 12
 // -----------------------------------------------------------------------
 void setValsAndCompensateCentripetal(
     int serialNr,
@@ -443,18 +444,6 @@ int combineRAWData(bool use0, bool use1, bool use2)
         gy = mergeGyros(gy0, gy1, gy2, gy);
         gz = mergeGyros(gz0, gz1, gz2, gz);
     }
-    // // Reset per-IMU gyro accumulators after merging so they don't accumulate
-    // // across cycles. Protect with the same per-IMU mutexes used by the
-    // // subscriber callbacks.
-    // mtx_n0.lock();
-    // mtx_n1.lock();
-    // mtx_n2.lock();
-    // gx0 = gy0 = gz0 = 0.0f;
-    // gx1 = gy1 = gz1 = 0.0f;
-    // gx2 = gy2 = gz2 = 0.0f;
-    // mtx_n0.unlock();
-    // mtx_n1.unlock();
-    // mtx_n2.unlock();
 
     return n;
 }
@@ -517,10 +506,6 @@ void calc_position(float gx, float gy, float gz)
     if (use_ground_normal && ground_normal_available)
     {
         mtx_gn.lock();
-        // Rotate ground normal from IMU frame to world frame
-        // normal_world_x = r00 * gn_x + r01 * gn_y + r02 * gn_z;
-        // normal_world_y = r10 * gn_x + r11 * gn_y + r12 * gn_z;
-        // normal_world_z = r20 * gn_x + r21 * gn_y + r22 * gn_z;
         normal_world_x = gn_x;
         normal_world_y = gn_y;
         normal_world_z = gn_z;
@@ -560,26 +545,27 @@ void calc_position(float gx, float gy, float gz)
 
     pXAlt += vel_x_world_rot_alt * dt;
     pYAlt += vel_y_world_rot_alt * dt;
+    pZAlt += vel_z_world_rot_alt * dt;
 
-    // Limit velocity magnitude to rotation-based velocity magnitude (prevent error accumulation)
-    float mean_vel_world = sqrtf(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
-    if (fabs(vel_z_world) > mean_vel_world)
-        vel_z_world = std::copysign(1.0f, vel_z_world) * mean_vel_world;
+    // // Limit velocity magnitude to rotation-based velocity magnitude (prevent error accumulation)
+    // float mean_vel_world = sqrtf(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
+    // if (fabs(vel_z_world) > mean_vel_world)
+    //     vel_z_world = std::copysign(1.0f, vel_z_world) * mean_vel_world;
 
-    // Cap accel-integrated velocity to 110% of rotation-based velocity
-    float trust = 0.1f;
-    if (fabs(vel_x_world) > fabs(vel_x_world_rot))
-        vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
-    if (fabs(vel_y_world) > fabs(vel_y_world_rot))
-        vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
-    if (fabs(vel_z_world) > fabs(vel_z_world_rot))
-        vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
+    // // Cap accel-integrated velocity to 110% of rotation-based velocity
+    // float trust = 0.1f;
+    // if (fabs(vel_x_world) > fabs(vel_x_world_rot))
+    //     vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
+    // if (fabs(vel_y_world) > fabs(vel_y_world_rot))
+    //     vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
+    // if (fabs(vel_z_world) > fabs(vel_z_world_rot))
+    //     vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
 
-    // Subtract contact-normal component from rolling velocity
-    float vn2 = vel_z_world * vel_z_world; // component along normal
-    vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
-    vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
-    vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
+    // // Subtract contact-normal component from rolling velocity
+    // float vn2 = vel_z_world * vel_z_world; // component along normal
+    // vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
+    // vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
+    // vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
 
     if (vel_x_world_rot * vel_x_world_rot > 0.001f || vel_y_world_rot * vel_y_world_rot > 0.001f || vel_z_world_rot * vel_z_world_rot > 0.001f)
     {
@@ -662,12 +648,12 @@ void apply_attitude_filter(double stamp_ms, bool reuse_dt)
 }
 
 // -----------------------------------------------------------------------
-// ovrwrtOrientWithAcc  —  initialise quaternion from accelerometer
+// initialise quaternion from accelerometer
 // -----------------------------------------------------------------------
 void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
 {
     float acc_mag_sq = ax * ax + ay * ay + az * az;
-    // Guard against near-zero acceleration (can happen at startup or with bad data)
+    // Guard against near-zero acceleration
     if (acc_mag_sq < 1e-6f)
     {
         ROS_WARN("ovrwrtOrientWithAcc: acceleration near zero (mag²=%e), skipping initialization", acc_mag_sq);
@@ -681,14 +667,11 @@ void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
     float acc_roll = atan2f(ay, az);
     float acc_pitch = atan2f(-ax, sqrtf(ay * ay + az * az));
     quatFromEuler(&q0, &q1, &q2, &q3, acc_roll, acc_pitch, yaw);
-    ROS_INFO("Init orientation — Roll: %.2f  Pitch: %.2f  Yaw: %.2f",
-             acc_roll * precalc_180_BY_M_PI,
-             acc_pitch * precalc_180_BY_M_PI,
-             yaw * precalc_180_BY_M_PI);
+    ROS_INFO("Initial: Roll: %f Pitch: %f Yaw: %f", acc_roll * precalc_180_BY_M_PI, acc_pitch * precalc_180_BY_M_PI, yaw * precalc_180_BY_M_PI);
 }
 
 // -----------------------------------------------------------------------
-// groundNormalCallback  —  receive updated ground normal from finder node
+// receive updated ground normal from global ground finder node
 // -----------------------------------------------------------------------
 static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::ConstPtr &msg)
 {
@@ -744,7 +727,7 @@ static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::
 // ROS subscriber callbacks  (one per IMU)
 //
 // Each callback applies centripetal compensation and accumulates into
-// the per-IMU running totals.  The main loop then calls combineRAWData()
+// the per-IMU running totals. main loop then calls combineRAWData()
 // to produce the averaged gx/gy/gz and ax/ay/az.
 // -----------------------------------------------------------------------
 static void imu0Callback(const sensor_msgs::Imu::ConstPtr &msg)
@@ -814,11 +797,11 @@ static void imu2Callback(const sensor_msgs::Imu::ConstPtr &msg)
 }
 
 // -----------------------------------------------------------------------
-// filterArgumentHandler  —  parse ROS parameters for the filter node
+// parse ROS parameters for the filter node
 // -----------------------------------------------------------------------
-int filterArgumentHandler(ros::NodeHandle &nh)
+int argumentHandler(ros::NodeHandle &nh)
 {
-    nh.param<float>("sphere_radius", r, 0.0f);
+    nh.param<float>("sphere_radius", r, 0.145f);
     if (r <= 0.0f)
         ROS_WARN("sphere_radius not set (%f) — position estimates will be unreliable!", r);
 
@@ -872,11 +855,13 @@ int filterArgumentHandler(ros::NodeHandle &nh)
         use_serial2 = false;
     n_imus = (use_serial0 ? 1 : 0) + (use_serial1 ? 1 : 0) + (use_serial2 ? 1 : 0);
 
-    // -----------------------------------------------------------------------
-    // Extrinsic parameters
-    // Each vector describes the position of the IMU wrt the sphere centre,
-    // expressed in the IMU's own coordinate frame.
-    // -----------------------------------------------------------------------
+    /*
+        EXTRINSIC PARAMETERS
+
+    The extrinsic parameters are defined using the coordinate system of the IMU.
+    That is, in the config file, you must specify the vector to the center point of the ball, as seen from
+    each individual IMU.
+    */
     float tmpx, tmpy, tmpz;
     nh.param<float>("imu0_x", tmpx, 0.0f);
     nh.param<float>("imu0_y", tmpy, 0.0f);
@@ -966,9 +951,9 @@ int main(int argc, char *argv[])
     signal(SIGINT, mySigIntHandler);
 
     ros::NodeHandle nH;
-    filterArgumentHandler(nH);
+    argumentHandler(nH);
 
-    // ---- Instantiate the compile-time-selected attitude estimator ----
+    // ---- Instantiate compile-time-selected attitude estimator ----
 #if defined(MAHONY)
     estimator_instance = new MahonyFilter(Kp, Ki);
 #elif defined(QEKF)

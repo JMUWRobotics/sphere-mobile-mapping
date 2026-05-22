@@ -23,9 +23,6 @@
  */
 #include "imuJasper.hpp"
 
-// ---------------------------------------------------------------------------
-// apply_intrinsics
-// ---------------------------------------------------------------------------
 void apply_intrinsics(
     const double raw[3],
     std::vector<double> &align,
@@ -33,25 +30,22 @@ void apply_intrinsics(
     std::vector<double> &bias,
     double *result)
 {
-    // 1. Bias correction
+    // Apply bias first
     result[0] = raw[0] + bias[0];
     result[1] = raw[1] + bias[1];
     result[2] = raw[2] + bias[2];
 
-    // 2. Diagonal scale
+    // Apply scale
     double tmp0 = scale[0] * result[0];
     double tmp1 = scale[4] * result[1];
     double tmp2 = scale[8] * result[2];
 
-    // 3. Misalignment matrix
+    // Apply misalignment matrix
     result[0] = align[0] * tmp0 + align[1] * tmp1 + align[2] * tmp2;
     result[1] = align[3] * tmp0 + align[4] * tmp1 + align[5] * tmp2;
     result[2] = align[6] * tmp0 + align[7] * tmp1 + align[8] * tmp2;
 }
 
-// ---------------------------------------------------------------------------
-// process_phidget_to_calibrated_ros_msg
-// ---------------------------------------------------------------------------
 void process_phidget_to_calibrated_ros_msg(
     int serial, int spatial,
     double *acc_inverse, double *angular_radians,
@@ -78,7 +72,11 @@ void process_phidget_to_calibrated_ros_msg(
     apply_intrinsics(acc_inverse, acc_align, acc_scale, acc_bias, acc_calibrated);
     apply_intrinsics(angular_radians, gyr_align, gyr_scale, gyr_bias, gyr_calibrated);
 
-    // ---- Calibrated message ----
+    // centripetal compensation now done in filter.cpp
+
+    /*
+     * -- Construct the calibrated msg --
+     */
     ms_to_ros_stamp(timestamp, imu_msg.header.stamp);
     imu_msg.header.frame_id = std::string(frame);
     imu_msg.header.seq = count++;
@@ -87,7 +85,7 @@ void process_phidget_to_calibrated_ros_msg(
     imu_msg.angular_velocity.y = gyr_calibrated[1];
     imu_msg.angular_velocity.z = gyr_calibrated[2];
     // Publish the calibrated (but not centripetal-compensated) acceleration.
-    // filter.cpp will apply lever-arm / centripetal compensation on its side.
+    // filter.cpp will apply centripetal compensation on its side.
     imu_msg.linear_acceleration.x = acc_calibrated[0];
     imu_msg.linear_acceleration.y = acc_calibrated[1];
     imu_msg.linear_acceleration.z = acc_calibrated[2];
@@ -109,27 +107,28 @@ void process_phidget_to_calibrated_ros_msg(
 // Phidget spatial data callback
 // (single handler used for all three IMUs; serial number used to dispatch)
 // ---------------------------------------------------------------------------
-void CCONV onSpatial0_SpatialData(
-    PhidgetSpatialHandle ch, void *ctx,
-    const double acceleration[3],  // in negative g (1 g = 9.81 m/s²)
-    const double angularRate[3],   // in deg/s
-    const double magneticField[3], // not used
-    double timestamp)              // in ms
+void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
+                                  const double acceleration[3],  // acceleration is in negative g (1g = 9.81m/s^2)
+                                  const double angularRate[3],   // angularRate is in deg/s
+                                  const double magneticField[3], // magneticField is not used
+                                  double timestamp)              // timestamp is in ms
 {
     double now_in_s = ros::Time::now().toSec();
+    int serialNr;
+    int spatialNr;
 
-    // Phidget reports acceleration in negative g — invert to get +z = up
+    /* We invert the measured acceleration to get correct gravity direction */
     double accelerationInverse[3] = {
         -acceleration[0],
         -acceleration[1],
         -acceleration[2]};
-    // Convert deg/s → rad/s
+
+    /* Angular rate should not be in deg/s but rad/s for downstream calculations */
     double angularRateRadians[3] = {
         angularRate[0] * M_PI_BY_180,
         angularRate[1] * M_PI_BY_180,
         angularRate[2] * M_PI_BY_180};
 
-    int serialNr, spatialNr;
     Phidget_getDeviceSerialNumber((PhidgetHandle)ch, &serialNr);
 
     if (serialNr == SERIAL_0)
@@ -199,7 +198,7 @@ void CCONV onSpatial0_SpatialData(
 }
 
 // ---------------------------------------------------------------------------
-// argumentHandler  — ROS parameter loading + YAML calibration
+// ROS parameter loading + YAML calibration
 // ---------------------------------------------------------------------------
 int argumentHandler(ros::NodeHandle &nh)
 {
@@ -244,10 +243,13 @@ int argumentHandler(ros::NodeHandle &nh)
     initialized2 = false;
     n_imus = 0;
 
-    // -----------------------------------------------------------------------
-    // Intrinsic calibration (misalignment, scale, bias)
-    // Calibrated using https://github.com/fallow24/ros_imu_calib
-    // -----------------------------------------------------------------------
+    /*
+        INTRINSIC PARAMETERS
+
+    The intrinsic paramters have been calibrated using
+    https://github.com/fallow24/ros_imu_calib
+    Parameters include misalignment between axes, scaling factor, and bias.
+    */
     std::string acc_calib0, acc_calib1, acc_calib2;
     std::string gyr_calib0, gyr_calib1, gyr_calib2;
     nh.param<std::string>("jasper_acc_calib0", acc_calib0, "");
@@ -286,9 +288,6 @@ int argumentHandler(ros::NodeHandle &nh)
     return 0;
 }
 
-// ---------------------------------------------------------------------------
-// Phidget detach handler
-// ---------------------------------------------------------------------------
 void CCONV detachHandler(PhidgetHandle ch, void *ctx)
 {
     int serialNr;
@@ -297,7 +296,7 @@ void CCONV detachHandler(PhidgetHandle ch, void *ctx)
 }
 
 // ---------------------------------------------------------------------------
-// init  — Phidget lifecycle (create → address → open → zero gyro → assign cb)
+// Phidget lifecycle (create → address → open → zero gyro → assign cb)
 // ---------------------------------------------------------------------------
 int CCONV init()
 {
@@ -306,6 +305,7 @@ int CCONV init()
 
     PhidgetSpatialHandle spatial0, spatial1, spatial2;
 
+    // Create your Phidget channels
     if (use_serial0)
         PhidgetSpatial_create(&spatial0);
     if (use_serial1)
@@ -313,6 +313,7 @@ int CCONV init()
     if (use_serial2)
         PhidgetSpatial_create(&spatial2);
 
+    // Set addressing parameters to specify which channel to open (if any)
     if (use_serial0)
         Phidget_setDeviceSerialNumber((PhidgetHandle)spatial0, SERIAL_0);
     if (use_serial1)
@@ -320,6 +321,7 @@ int CCONV init()
     if (use_serial2)
         Phidget_setDeviceSerialNumber((PhidgetHandle)spatial2, SERIAL_2);
 
+    // set the handler which handels detaching evcents
     if (use_serial0)
         Phidget_setOnDetachHandler((PhidgetHandle)spatial0, detachHandler, NULL);
     if (use_serial1)
@@ -327,7 +329,8 @@ int CCONV init()
     if (use_serial2)
         Phidget_setOnDetachHandler((PhidgetHandle)spatial2, detachHandler, NULL);
 
-    ROS_INFO("Attaching IMUs (timeout 3 s)…");
+    ROS_INFO("Now Attaching the IMUS! Giving it maximum 3 seconds!");
+    // Open your Phidgets and wait for attachment
     ros::Time begin = ros::Time::now();
     if (use_serial0)
         Phidget_openWaitForAttachment((PhidgetHandle)spatial0, 1000);
@@ -344,7 +347,7 @@ int CCONV init()
         ROS_INFO("Phidget IMU attachment successful.");
     }
 
-    // Set sensor data rate
+    // Set the data rate (set by user or IMU_DEFAULT_DATA_RATE
     int imu_data_intervall = std::round(1000.0 / imu_data_rate);
     if (use_serial0)
         PhidgetSpatial_setDataInterval(spatial0, imu_data_intervall);
@@ -370,7 +373,7 @@ int CCONV init()
         PhidgetSpatial_zeroAlgorithm(spatial2);
     ROS_WARN("Gyroscope zeroing complete.");
 
-    // Register data callbacks
+    // Assign any event handlers you need before calling open so that no events are missed.
     if (use_serial0)
         PhidgetSpatial_setOnSpatialDataHandler(spatial0, onSpatial0_SpatialData, NULL);
     if (use_serial1)
@@ -382,27 +385,23 @@ int CCONV init()
     return 0;
 }
 
-// ---------------------------------------------------------------------------
-// SIGINT handler
-// ---------------------------------------------------------------------------
 void mySigIntHandler(int sig)
 {
     g_request_shutdown = 1;
 }
 
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
-    ros::init(argc, argv, "imu_jasper", ros::init_options::NoSigintHandler);
-    ROS_INFO("imu_jasper node starting…");
+    ros::init(argc, argv, "imuHandling", ros::init_options::NoSigintHandler);
+    ROS_INFO("Starting Node imuJasper");
     if (argc > 1)
     {
-        ROS_INFO("Command-line args are not supported. Use the ROS parameter server.");
+        ROS_INFO("Command-line args are not supported anymore.");
+        ROS_INFO("Please use the ROS parameter server and have a look at the config.launch file!");
     }
     signal(SIGINT, mySigIntHandler);
 
+    // Arguments as nodehandle parameters (from ROS server)
     ros::NodeHandle nH;
     argumentHandler(nH);
 
