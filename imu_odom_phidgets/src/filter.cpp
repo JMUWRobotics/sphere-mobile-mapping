@@ -143,10 +143,22 @@ float gn_z = -1.0f; // default: downward normal
 std::mutex mtx_gn;  // protects ground normal vector
 bool ground_normal_available = false;
 
+// Ground Normal for Centripetal Compensation (in IMU frame)
+bool use_normal_centripetal = false;
+float gn_x_imu = 0.0f;
+float gn_y_imu = 0.0f;
+float gn_z_imu = -1.0f; // default: downward normal
+float gn_x_imu_prev = 0.0f;
+float gn_y_imu_prev = 0.0f;
+float gn_z_imu_prev = -1.0f; // previous normal for derivative
+std::mutex mtx_gn_imu;
+bool ground_normal_centripetal_available = false;
+
 // --- TF2 buffer for frame transformations ---
 tf2_ros::Buffer tf_buffer_;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 ros::Subscriber ground_normal_sub;
+ros::Subscriber ground_normal_centripetal_sub;
 
 // Static TF used to rotate ground normals from source sensor frame into IMU frame.
 static bool ground_normal_tf_ready = false;
@@ -208,8 +220,11 @@ void changeAlt()
 // Apply the lever-arm / centripetal correction for one IMU and accumulate
 // the result into the per-IMU running totals (ax0/ax1/ax2, gx0/gx1/gx2).
 // The plain calibrated acceleration (no compensation) is also accumulated
-// in a0_alt … for the evaluation path.
-// TODO: use normal vector according to paper eq 12
+// in a0_alt for the evaluation path.
+//
+// Two models supported (switchable via use_normal_centripetal flag):
+//   Eq. 5 (flat-ground):  a_g = w × (w × r) + (dw/dt) × r
+//   Eq. 12 (with normal): a_g = w × (w × r_e) + (dw/dt) × r_e + R*(dw/dt) × n + R*w × (dn/dt)
 // -----------------------------------------------------------------------
 void setValsAndCompensateCentripetal(
     int serialNr,
@@ -256,22 +271,95 @@ void setValsAndCompensateCentripetal(
         return;
     }
 
-    // ω × r  (centripetal direction)
-    float gyr[3] = {cur_gx, cur_gy, cur_gz};
-    float gyr_cross_r[3];
-    vectorCross(gyr, pos_serial, gyr_cross_r);
+    float axval, ayval, azval;
 
-    // ω × (ω × r)  (centripetal acceleration)
-    float gyr_cross_gyr_cross_r[3];
-    vectorCross(gyr, gyr_cross_r, gyr_cross_gyr_cross_r);
+    if (!use_normal_centripetal)
+    {
+        // ========== EQUATION 5: Flat-ground model ==========
+        // ω × r  (centripetal direction)
+        float gyr[3] = {cur_gx, cur_gy, cur_gz};
+        float gyr_cross_r[3];
+        vectorCross(gyr, pos_serial, gyr_cross_r);
 
-    // ω̇ × r  (tangential acceleration due to angular acceleration)
-    float wdot_cross_r[3];
-    vectorCross(wdot, pos_serial, wdot_cross_r);
+        // ω × (ω × r)  (centripetal acceleration)
+        float gyr_cross_gyr_cross_r[3];
+        vectorCross(gyr, gyr_cross_r, gyr_cross_gyr_cross_r);
 
-    float axval = acceleration[0] - gyr_cross_gyr_cross_r[0] - wdot_cross_r[0];
-    float ayval = acceleration[1] - gyr_cross_gyr_cross_r[1] - wdot_cross_r[1];
-    float azval = acceleration[2] - gyr_cross_gyr_cross_r[2] - wdot_cross_r[2];
+        // ω̇ × r  (tangential acceleration due to angular acceleration)
+        float wdot_cross_r[3];
+        vectorCross(wdot, pos_serial, wdot_cross_r);
+
+        axval = acceleration[0] - gyr_cross_gyr_cross_r[0] - wdot_cross_r[0];
+        ayval = acceleration[1] - gyr_cross_gyr_cross_r[1] - wdot_cross_r[1];
+        azval = acceleration[2] - gyr_cross_gyr_cross_r[2] - wdot_cross_r[2];
+    }
+    else
+    {
+        // ========== EQUATION 12: Normal-based model ==========
+        // Get current and previous normal vectors (in IMU frame)
+        float n_imu[3], n_imu_prev[3];
+        mtx_gn_imu.lock();
+        n_imu[0] = gn_x_imu;
+        n_imu[1] = gn_y_imu;
+        n_imu[2] = gn_z_imu;
+        n_imu_prev[0] = gn_x_imu_prev;
+        n_imu_prev[1] = gn_y_imu_prev;
+        n_imu_prev[2] = gn_z_imu_prev;
+        mtx_gn_imu.unlock();
+
+        // Compute normal rate-of-change: dn/dt
+        float dn_dt[3];
+        if (dt > 0.0f)
+        {
+            dn_dt[0] = (n_imu[0] - n_imu_prev[0]) / dt;
+            dn_dt[1] = (n_imu[1] - n_imu_prev[1]) / dt;
+            dn_dt[2] = (n_imu[2] - n_imu_prev[2]) / dt;
+        }
+        else
+        {
+            dn_dt[0] = 0.0f;
+            dn_dt[1] = 0.0f;
+            dn_dt[2] = 0.0f;
+        }
+
+        // ω × r_e
+        float gyr[3] = {cur_gx, cur_gy, cur_gz};
+        float gyr_cross_r_e[3];
+        vectorCross(gyr, pos_serial, gyr_cross_r_e); // double check if pos_serial is really r_e
+
+        // ω × (ω × r_e)  (centripetal acceleration, same as before)
+        float gyr_cross_gyr_cross_r_e[3];
+        vectorCross(gyr, gyr_cross_r_e, gyr_cross_gyr_cross_r_e);
+
+        // ω̇ × r_e  (tangential acceleration)
+        float wdot_cross_r_e[3];
+        vectorCross(wdot, pos_serial, wdot_cross_r_e);
+
+        // R * (ω̇ × n)  sphere radius times normal dependent angular acceleration
+        float wdot_cross_n[3];
+        vectorCross(wdot, n_imu, wdot_cross_n);
+        float R_wdot_cross_n[3] = {r * wdot_cross_n[0], r * wdot_cross_n[1], r * wdot_cross_n[2]};
+
+        // R * (ω × dn/dt)  sphere radius times normal-rate coupling
+        float gyr_cross_dn_dt[3];
+        vectorCross(gyr, dn_dt, gyr_cross_dn_dt);
+        float R_gyr_cross_dn_dt[3] = {r * gyr_cross_dn_dt[0], r * gyr_cross_dn_dt[1], r * gyr_cross_dn_dt[2]};
+
+        // Combine all terms to eq 12: a_g = w×(w×r_e) + (dw/dt)×r_e + R*(dw/dt)×n + R*w×(dn/dt)
+        axval = acceleration[0] - gyr_cross_gyr_cross_r_e[0] - wdot_cross_r_e[0] - R_wdot_cross_n[0] - R_gyr_cross_dn_dt[0];
+        ayval = acceleration[1] - gyr_cross_gyr_cross_r_e[1] - wdot_cross_r_e[1] - R_wdot_cross_n[1] - R_gyr_cross_dn_dt[1];
+        azval = acceleration[2] - gyr_cross_gyr_cross_r_e[2] - wdot_cross_r_e[2] - R_wdot_cross_n[2] - R_gyr_cross_dn_dt[2];
+
+        if (debugMode)
+        {
+            ROS_DEBUG_THROTTLE(1.0,
+                               "Centripetal (Eq. 12): gyr=(%.3f,%.3f,%.3f) wdot=(%.3f,%.3f,%.3f) n=(%.3f,%.3f,%.3f) dn/dt=(%.3f,%.3f,%.3f) "
+                               "R*wdot×n=(%.3f,%.3f,%.3f) R*gyr×dn/dt=(%.3f,%.3f,%.3f)",
+                               gyr[0], gyr[1], gyr[2], wdot[0], wdot[1], wdot[2], n_imu[0], n_imu[1], n_imu[2],
+                               dn_dt[0], dn_dt[1], dn_dt[2], R_wdot_cross_n[0], R_wdot_cross_n[1], R_wdot_cross_n[2],
+                               R_gyr_cross_dn_dt[0], R_gyr_cross_dn_dt[1], R_gyr_cross_dn_dt[2]);
+        }
+    }
 
     if (debugMode)
     {
@@ -547,25 +635,25 @@ void calc_position(float gx, float gy, float gz)
     pYAlt += vel_y_world_rot_alt * dt;
     pZAlt += vel_z_world_rot_alt * dt;
 
-    // // Limit velocity magnitude to rotation-based velocity magnitude (prevent error accumulation)
-    // float mean_vel_world = sqrtf(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
-    // if (fabs(vel_z_world) > mean_vel_world)
-    //     vel_z_world = std::copysign(1.0f, vel_z_world) * mean_vel_world;
+    // Limit velocity magnitude to rotation-based velocity magnitude (prevent error accumulation)
+    float mean_vel_world = sqrtf(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
+    if (fabs(vel_z_world) > mean_vel_world)
+        vel_z_world = std::copysign(1.0f, vel_z_world) * mean_vel_world;
 
-    // // Cap accel-integrated velocity to 110% of rotation-based velocity
-    // float trust = 0.1f;
-    // if (fabs(vel_x_world) > fabs(vel_x_world_rot))
-    //     vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
-    // if (fabs(vel_y_world) > fabs(vel_y_world_rot))
-    //     vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
-    // if (fabs(vel_z_world) > fabs(vel_z_world_rot))
-    //     vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
+    // Cap accel-integrated velocity to 110% of rotation-based velocity
+    float trust = 0.1f;
+    if (fabs(vel_x_world) > fabs(vel_x_world_rot))
+        vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
+    if (fabs(vel_y_world) > fabs(vel_y_world_rot))
+        vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
+    if (fabs(vel_z_world) > fabs(vel_z_world_rot))
+        vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
 
-    // // Subtract contact-normal component from rolling velocity
-    // float vn2 = vel_z_world * vel_z_world; // component along normal
-    // vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
-    // vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
-    // vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
+    // Subtract contact-normal component from rolling velocity
+    float vn2 = vel_z_world * vel_z_world; // component along normal
+    vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
+    vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
+    vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
 
     if (vel_x_world_rot * vel_x_world_rot > 0.001f || vel_y_world_rot * vel_y_world_rot > 0.001f || vel_z_world_rot * vel_z_world_rot > 0.001f)
     {
@@ -677,34 +765,13 @@ static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::
 {
     if (use_ground_normal)
     {
-        geometry_msgs::Vector3Stamped n_src, n_imu;
-        n_src.header = msg->header;
-        n_src.vector = msg->normal;
+        geometry_msgs::Vector3Stamped n;
+        n.header = msg->header;
+        n.vector = msg->normal;
 
-        // if (ground_normal_tf_ready)
-        // {
-        //     try
-        //     {
-        //         tf2::doTransform(n_src, n_imu, ground_normal_tf);
-        //     }
-        //     catch (const tf2::TransformException &ex)
-        //     {
-        //         ROS_WARN_THROTTLE(2.0, "Failed to transform ground normal: %s", ex.what());
-        //         n_imu = n_src;
-        //     }
-        // }
-        // else
-        // {
-        //     n_imu = n_src;
-        // }
-
-        // // Normalize to unit length
-        // float nx = n_imu.vector.x;
-        // float ny = n_imu.vector.y;
-        // float nz = n_imu.vector.z;
-        float nx = n_src.vector.x;
-        float ny = n_src.vector.y;
-        float nz = n_src.vector.z;
+        float nx = n.vector.x;
+        float ny = n.vector.y;
+        float nz = n.vector.z;
         const float n_norm = std::sqrt(nx * nx + ny * ny + nz * nz);
         if (n_norm > 1e-6f)
         {
@@ -718,8 +785,89 @@ static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::
         gn_y = ny;
         gn_z = nz;
         ground_normal_available = true;
-        ROS_INFO_THROTTLE(2.0, "Ground normal in imu_frame: (%.3f, %.3f, %.3f)", gn_x, gn_y, gn_z);
+        ROS_INFO_THROTTLE(2.0, "Ground normal in map_lio: (%.3f, %.3f, %.3f)", gn_x, gn_y, gn_z);
         mtx_gn.unlock();
+    }
+}
+
+// -----------------------------------------------------------------------
+// receive updated ground normal (in IMU frame) for centripetal compensation
+// -----------------------------------------------------------------------
+static void groundNormalCentripetalCallback(const ground_finder_msgs::ScoredNormalStamped::ConstPtr &msg)
+{
+    if (use_normal_centripetal)
+    {
+        geometry_msgs::Vector3Stamped n_src, n_imu;
+        n_src.header = msg->header;
+        n_src.vector = msg->normal;
+
+        // Lazy TF lookup: attempt on first call if not yet loaded
+        static bool tf_lookup_attempted = false;
+        if (!ground_normal_tf_ready && !tf_lookup_attempted)
+        {
+            tf_lookup_attempted = true;
+            try
+            {
+                if (tf_buffer_.canTransform(ground_normal_target_frame, ground_normal_source_frame, ros::Time(0), ros::Duration(0.5)))
+                {
+                    ground_normal_tf = tf_buffer_.lookupTransform(ground_normal_target_frame, ground_normal_source_frame,
+                                                                  ros::Time(0), ros::Duration(0.1));
+                    ground_normal_tf_ready = true;
+                    ROS_INFO("Loaded static TF for ground normal rotation (lazy): %s -> %s",
+                             ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+                }
+                else
+                {
+                    ROS_WARN("TF not available for ground normal rotation (lazy attempt) (%s -> %s). Using incoming normal as-is.",
+                             ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+                }
+            }
+            catch (const tf2::TransformException &ex)
+            {
+                ROS_WARN("Failed to lookup TF for ground normal rotation (lazy attempt) (%s -> %s): %s. Using incoming normal as-is.",
+                         ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str(), ex.what());
+            }
+        }
+
+        // TF transformation from pandar_frame (source) to imu_frame (target)
+        if (ground_normal_tf_ready)
+        {
+            try
+            {
+                tf2::doTransform(n_src, n_imu, ground_normal_tf);
+            }
+            catch (const tf2::TransformException &ex)
+            {
+                ROS_WARN_THROTTLE(2.0, "Failed to transform ground normal (centripetal): %s", ex.what());
+                n_imu = n_src;
+            }
+        }
+        else
+        {
+            n_imu = n_src;
+        }
+
+        float nx = n_imu.vector.x;
+        float ny = n_imu.vector.y;
+        float nz = n_imu.vector.z;
+        const float n_norm = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (n_norm > 1e-6f)
+        {
+            nx /= n_norm;
+            ny /= n_norm;
+            nz /= n_norm;
+        }
+
+        mtx_gn_imu.lock();
+        gn_x_imu_prev = gn_x_imu;
+        gn_y_imu_prev = gn_y_imu;
+        gn_z_imu_prev = gn_z_imu;
+        gn_x_imu = nx;
+        gn_y_imu = ny;
+        gn_z_imu = nz;
+        ground_normal_centripetal_available = true;
+        ROS_INFO_THROTTLE(0.1, "Ground normal (centripetal) in imu_frame: (%.3f, %.3f, %.3f)", gn_x_imu, gn_y_imu, gn_z_imu);
+        mtx_gn_imu.unlock();
     }
 }
 
@@ -803,7 +951,7 @@ int argumentHandler(ros::NodeHandle &nh)
 {
     nh.param<float>("sphere_radius", r, 0.145f);
     if (r <= 0.0f)
-        ROS_WARN("sphere_radius not set (%f) — position estimates will be unreliable!", r);
+        ROS_WARN("sphere_radius not set (%f)!", r);
 
     // Filter gains / covariances
 #if defined(MAHONY)
@@ -889,6 +1037,7 @@ int argumentHandler(ros::NodeHandle &nh)
     win_size = (win_size % 2 == 0) ? win_size + 1 : win_size;
     ROS_WARN("Derivative kernel: window=%d, cutoff=%.1f Hz, sigma=%.4f, dt=%.4f",
              win_size, freq_cut, sigma, imu_data_dt);
+
     // One independent kernel per IMU so their ring-buffer histories never mix
     smooth_deriv_kernel0 = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
     smooth_deriv_kernel1 = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
@@ -898,36 +1047,45 @@ int argumentHandler(ros::NodeHandle &nh)
     // Ground normal parameters
     // -----------------------------------------------------------------------
     nh.param<bool>("use_ground_normal", use_ground_normal, true);
+    nh.param<bool>("use_normal_centripetal", use_normal_centripetal, false); // TODO:still causes weird result so still False by default
 
     if (use_ground_normal)
     {
-        ground_normal_topic = "/global_ground_finder/scored_normal";
+        ground_normal_topic = "/global_ground_finder/smoothed_scored_normal";
         ground_normal_sub = nh.subscribe(ground_normal_topic, 1, groundNormalCallback);
-        ROS_INFO("Using ground normal for imu pose estimation. Subscribing to topic %s", ground_normal_topic.c_str());
-        // Initialize tf2 listener for frame transformations
+        ROS_INFO("Using ground normal for pose estimation. Subscribing to topic %s", ground_normal_topic.c_str());
+    }
+
+    if (use_normal_centripetal)
+    {
+        // Initialize tf2 listener for frame transformations (needed for centripetal compensation)
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(tf_buffer_);
 
-        // try
-        // {
-        //     if (tf_buffer_.canTransform(ground_normal_target_frame, ground_normal_source_frame, ros::Time(0), ros::Duration(2.0)))
-        //     {
-        //         ground_normal_tf = tf_buffer_.lookupTransform(ground_normal_target_frame, ground_normal_source_frame,
-        //                                                       ros::Time(0), ros::Duration(0.1));
-        //         ground_normal_tf_ready = true;
-        //         ROS_INFO("Loaded static TF for ground normal rotation: %s -> %s",
-        //                  ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
-        //     }
-        //     else
-        //     {
-        //         ROS_WARN("TF not available for ground normal rotation (%s -> %s). Using incoming normal as-is.",
-        //                  ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
-        //     }
-        // }
-        // catch (const tf2::TransformException &ex)
-        // {
-        //     ROS_WARN("Failed to lookup TF for ground normal rotation (%s -> %s): %s. Using incoming normal as-is.",
-        //              ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str(), ex.what());
-        // }
+        try
+        {
+            if (tf_buffer_.canTransform(ground_normal_target_frame, ground_normal_source_frame, ros::Time(0), ros::Duration(2.0)))
+            {
+                ground_normal_tf = tf_buffer_.lookupTransform(ground_normal_target_frame, ground_normal_source_frame,
+                                                              ros::Time(0), ros::Duration(0.1));
+                ground_normal_tf_ready = true;
+                ROS_INFO("Loaded static TF for ground normal rotation: %s -> %s",
+                         ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+            }
+            else
+            {
+                ROS_WARN("TF not available for ground normal rotation (%s -> %s). Using incoming normal as-is.",
+                         ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str());
+            }
+        }
+        catch (const tf2::TransformException &ex)
+        {
+            ROS_WARN("Failed to lookup TF for ground normal rotation (%s -> %s): %s. Using incoming normal as-is.",
+                     ground_normal_source_frame.c_str(), ground_normal_target_frame.c_str(), ex.what());
+        }
+
+        std::string ground_normal_centripetal_topic = "/global_ground_finder/scored_normal_pandar";
+        ground_normal_centripetal_sub = nh.subscribe(ground_normal_centripetal_topic, 1, groundNormalCentripetalCallback);
+        ROS_INFO("Using ground normal for centripetal compensation. Subscribing to topic %s", ground_normal_centripetal_topic.c_str());
     }
 
     return 0;
