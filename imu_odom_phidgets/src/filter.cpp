@@ -114,6 +114,7 @@ AttitudeEstimator *estimator_instance = nullptr;
 SmoothedDerivative3D *smooth_deriv_kernel0 = nullptr;
 SmoothedDerivative3D *smooth_deriv_kernel1 = nullptr;
 SmoothedDerivative3D *smooth_deriv_kernel2 = nullptr;
+SmoothedDerivative3D *smooth_deriv_kernelN = nullptr;
 
 // Latest header stamp received from each IMU (seconds).
 // Written by the subscriber callbacks; read by the main loop to compute
@@ -307,20 +308,13 @@ void setValsAndCompensateCentripetal(
         n_imu_prev[2] = gn_z_imu_prev;
         mtx_gn_imu.unlock();
 
+        auto ndot = smooth_deriv_kernelN->filter(gn_x_imu, gn_y_imu, gn_z_imu);
+
         // Compute normal rate-of-change: dn/dt
         float dn_dt[3];
-        if (dt > 0.0f)
-        {
-            dn_dt[0] = (n_imu[0] - n_imu_prev[0]) / dt;
-            dn_dt[1] = (n_imu[1] - n_imu_prev[1]) / dt;
-            dn_dt[2] = (n_imu[2] - n_imu_prev[2]) / dt;
-        }
-        else
-        {
-            dn_dt[0] = 0.0f;
-            dn_dt[1] = 0.0f;
-            dn_dt[2] = 0.0f;
-        }
+        dn_dt[0] = ndot[0];
+        dn_dt[1] = ndot[1];
+        dn_dt[2] = ndot[2];
 
         // ω × r_e
         float gyr[3] = {cur_gx, cur_gy, cur_gz};
@@ -336,9 +330,9 @@ void setValsAndCompensateCentripetal(
         vectorCross(wdot, pos_serial, wdot_cross_r_e);
 
         // R * (ω̇ × n)  sphere radius times normal dependent angular acceleration
-        float wdot_cross_n[3];
-        vectorCross(wdot, n_imu, wdot_cross_n);
-        float R_wdot_cross_n[3] = {r * wdot_cross_n[0], r * wdot_cross_n[1], r * wdot_cross_n[2]};
+        float R_wdot_cross_n[3];
+        float R_wdot[3] = {r * wdot[0], r * wdot[1], r * wdot[2]};
+        vectorCross(R_wdot, n_imu, R_wdot_cross_n);
 
         // R * (ω × dn/dt)  sphere radius times normal-rate coupling
         float gyr_cross_dn_dt[3];
@@ -1033,6 +1027,7 @@ int argumentHandler(ros::NodeHandle &nh)
     nh.param<float>("jasper_lowpass_freq", freq_cut, 10.0f);
     float sigma = 1.0f / (2.0f * M_PI * freq_cut);
     float imu_data_dt = 1.0f / imu_data_rate;
+    float n_data_dt = 1.0f / 20; // 20Hz da Lidar daten in 20hz kommen (TODO: checken)
     int win_size = static_cast<int>(6 * sigma / imu_data_dt);
     win_size = (win_size % 2 == 0) ? win_size + 1 : win_size;
     ROS_WARN("Derivative kernel: window=%d, cutoff=%.1f Hz, sigma=%.4f, dt=%.4f",
@@ -1042,12 +1037,13 @@ int argumentHandler(ros::NodeHandle &nh)
     smooth_deriv_kernel0 = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
     smooth_deriv_kernel1 = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
     smooth_deriv_kernel2 = new SmoothedDerivative3D(win_size, sigma, imu_data_dt);
+    smooth_deriv_kernelN = new SmoothedDerivative3D(win_size, sigma, n_data_dt);
 
     // -----------------------------------------------------------------------
     // Ground normal parameters
     // -----------------------------------------------------------------------
     nh.param<bool>("use_ground_normal", use_ground_normal, true);
-    nh.param<bool>("use_normal_centripetal", use_normal_centripetal, false); // TODO:still causes weird result so still False by default
+    nh.param<bool>("use_normal_centripetal", use_normal_centripetal, true); // TODO:still causes weird result so still False by default
 
     if (use_ground_normal)
     {
