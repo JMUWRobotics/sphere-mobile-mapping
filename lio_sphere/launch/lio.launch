@@ -126,7 +126,7 @@
 
     <arg name="deskewing" value="false"/>                    <!-- true: on, false: off (Set to FALSE if dedicated node is used) -->
     <arg name="min_range" value="1.0"/>                      <!-- lower limit for accepted point distances in m -->
-    <arg name="max_range" value="120.0"/>                    <!-- upper limit for accepted point distances in m -->
+    <arg name="max_range" value="50.0"/>                    <!-- upper limit for accepted point distances in m -->
     
     <!-- Voxel sizes -->
     <arg name="vox_l_map" value="0.25"/>                    <!-- voxel size for point cloud added to map in m -->
@@ -152,7 +152,7 @@
     <arg name="ikd_alpha_del" value="0.3"/>                 <!-- delete criterion for dynamic re-balancing of the ikd-Tree -->
     <arg name="ikd_alpha_bal" value="0.6"/>                 <!-- balance criterion for dynamic re-balancing of the ikd-Tree -->
     <arg name="sliding_map" value="true"/>                  <!-- true: active, false: inactive -->
-    <arg name="sliding_map_L" value="300"/>                 <!-- L: length of the cuboid for the sliding map window -->
+    <arg name="sliding_map_L" value="120"/>                 <!-- L: length of the cuboid for the sliding map window -->
     <arg name="sliding_map_gamma" value="1.2"/>             <!-- gamma: relaxation factor of the sliding map window -->
     
     <arg name="map_init_method" value="OFF"/>              <!-- choose map init method (OFF, COMBINE, SLAM) -->

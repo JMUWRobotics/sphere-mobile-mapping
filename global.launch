@@ -17,12 +17,12 @@
         doc="IMU RIGHT (from camera viewing direction)" />
     
     <!-- Intrinsic calibration (axes misalignment, scale, and bias) -->
-    <arg name="jasper_acc_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
-    <arg name="jasper_acc_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc1.yaml" />
-    <arg name="jasper_acc_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/acc2.yaml" />
-    <arg name="jasper_gyr_calib0" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
-    <arg name="jasper_gyr_calib1" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
-    <arg name="jasper_gyr_calib2" value="/home/deadalus/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
+    <arg name="jasper_acc_calib0" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/acc0.yaml" />
+    <arg name="jasper_acc_calib1" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/acc1.yaml" />
+    <arg name="jasper_acc_calib2" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/acc2.yaml" />
+    <arg name="jasper_gyr_calib0" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/gyr0.yaml" />
+    <arg name="jasper_gyr_calib1" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/gyr1.yaml" />
+    <arg name="jasper_gyr_calib2" value="/home/t2/catkin_ws/src/imu_odom_phidgets/config/gyr2.yaml" />
     
     <!-- ========== ATTITUDE FILTER ARGUMENTS ========== -->
     <!-- Filter parameters for mahony filter -->
@@ -36,6 +36,7 @@
     <arg name="jasper_pub_rate" value="200" />
     <arg name="jasper_imu_rate" value="200" />
     <arg name="jasper_forceflat" value="true" />
+    <arg name="use_normal_centripetal" default="false" />
     
     <!-- Kalman filter attitude estimation parameters -->
     <arg name="sigma_a" value="0.3" />
@@ -71,9 +72,8 @@
     <arg name="imu1_z" value="0.0287838"
         doc="in meters" />
     <arg name="imu2_x" value="-0.07202"
-        doc="in meters" />    
-    
-    <!-- ========== T265 cam ARGUMENTS ========== -->
+        doc="in meters" />    <!-- ========== T265 cam ARGUMENTS ========== -->
+
     <arg name="imu2_y" value="-0.00149266"
         doc="in meters" />
     <arg name="imu2_z" value="0.0325564" /> 
@@ -144,7 +144,7 @@
         doc="lower limit for accepted point distances in m" />
     <arg name="max_range" value="50.0" doc="upper limit for accepted point distances in m" />      
     
-    <arg name="vox_l_map" value="0.01"
+    <arg name="vox_l_map" value="0.075"
         doc="voxel size for point cloud added to map in m" />
     <arg name="vox_l_gicp" value="0.1"
         doc="voxel size for point cloud utilized in GICP in m" />
@@ -188,7 +188,7 @@
         doc="balance criterion for dynamic re-balancing of the ikd-Tree" />
     <arg name="sliding_map" value="true"
         doc="true: active, false: inactive" />
-    <arg name="sliding_map_L" value="120"
+    <arg name="sliding_map_L" value="300"
         doc="L: length of the cuboid for the sliding map window" />
     <arg name="sliding_map_gamma" value="1.2"
         doc="gamma: relaxation factor of the sliding map window" />
@@ -241,7 +241,7 @@
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
-    <arg name="extraction_radius" default="1.0" 
+    <arg name="extraction_radius" default="0.29" 
         doc="Local map extraction radius in meters"/>
     <arg name="use_adaptive_extraction_radius" default="false"
         doc="Use sphere-radius-based adaptive extraction radius"/>
@@ -249,11 +249,11 @@
         doc="Vertical extraction limit in meters"/>
     <arg name="enable_scoring" default="true" 
         doc="Enable scored normal output and fallback logic"/>
-    <arg name="score_threshold" default="0.4" 
+    <arg name="score_threshold" default="0.2" 
         doc="Minimum acceptable score for current normal"/>
-    <arg name="min_score_window" default="0.5" 
+    <arg name="min_score_window" default="0.3" 
         doc="Minimum fallback score from history window"/>
-    <arg name="inlier_scale" default="0.66"
+    <arg name="inlier_scale" default="0.55"
         doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
     <param name="score_threshold" value="0.2" />    <!-- fallback triggers only on poor detection -->
     <arg name="pose_topic" default="/lkf/pose"/>
@@ -309,6 +309,7 @@
     <param name="frame_id_cam" type="string" value="$(arg frame_id_cam)" />
     <param name="imu_rate" type="int" value="$(arg jasper_pub_rate)" />
     <param name="cam_rate" type="int" value="$(arg cam_rate)" />
+    <param name="use_normal_centripetal" type="bool" value="$(arg use_normal_centripetal)" />
   
     <param name="sphere_radius" type="double" value="$(arg sphere_radius)" />
     <param name="large_omega" type="double" value="$(arg large_omega)" />
@@ -320,6 +321,9 @@
     <param name="jasper_serial0" type="int" value="$(arg jasper_serial0)" />
     <param name="jasper_serial1" type="int" value="$(arg jasper_serial1)" />
     <param name="jasper_serial2" type="int" value="$(arg jasper_serial2)" />
+    <param name="use_serial0" type="bool" value="true" />
+    <param name="use_serial1" type="bool" value="true" />
+    <param name="use_serial2" type="bool" value="true" />
     <param name="jasper_acc_calib0" type="string" value="$(arg jasper_acc_calib0)" />
   
     <param name="jasper_acc_calib1" type="string" value="$(arg jasper_acc_calib1)" />
@@ -480,7 +484,8 @@
     </node> -->
 
     <!-- IMU Odometry Filtering Options -->
-    <!-- <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" /> -->
+    <!-- node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" / -->
+    <node pkg="imu_odom_phidgets" type="imuFilter" name="imu_filter_node" output="screen" />
     <!-- <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuUKF" name="imu_jasper_odometry_node" output="screen" /> -->
