@@ -164,22 +164,34 @@ private:
     size_t last_local_cloud_size_;
     double last_roll_;
     double last_pitch_;
+    long long validation_time_us_;
+    // CSV timing logging
+    bool timing_csv_enabled_ = false;
+    std::string timing_csv_path_;
+    bool timing_csv_header_written_ = false;
+    bool timing_csv_initialized_ = false;
+    std::ofstream timing_csv_file_;
+    std::mutex timing_csv_mutex_;
 
     // Params (set via launch)
     PlaneSegm plane_algorithm_;
     bool quiet_;
+    bool debug_; // Enable verbose DBG ROS_INFO traces
     bool enable_scoring_;
-    double extraction_radius_;           // Radius for local extraction [m]
-    double extraction_height_;           // Height limit for local extraction [m]
-    double min_points_for_plane_;        // Minimum points needed for plane fitting
-    double wall_threshold_;              // cos(angle) threshold to reject walls
-    double score_threshold_;             // Minimum score to accept current normal
-    double min_score_window_;            // Minimum score from history window
-    double weight_visibility_;           // Weight for visibility score
-    double weight_inlier_ratio_;         // Weight for inlier ratio score
-    double min_inliers_;                 // Minimum inliers for valid plane
-    double inlier_scale_;                // Normalization scale for inlier ratio
-    int max_iterations_plane_detection_; // Max iterations for RANSAC wall rejection
+    double extraction_radius_;            // Radius for local extraction [m]
+    bool use_adaptive_extraction_radius_; // Enable sphere-radius-based adaptive extraction radius
+    double sphere_radius_;                // Sphere radius used to derive adaptive extraction radii [m]
+    double last_search_radius_;           // Radius used for the most recent local cloud extraction
+    double extraction_height_;            // Height limit for local extraction [m]
+    double min_points_for_plane_;         // Minimum points needed for plane fitting
+    double wall_threshold_;               // cos(angle) threshold to reject walls
+    double score_threshold_;              // Minimum score to accept current normal
+    double min_score_window_;             // Minimum score from history window
+    double weight_visibility_;            // Weight for visibility score
+    double weight_inlier_ratio_;          // Weight for inlier ratio score
+    double min_inliers_;                  // Minimum inliers for valid plane
+    double inlier_scale_;                 // Normalization scale for inlier ratio
+    int max_iterations_plane_detection_;  // Max iterations for RANSAC wall rejection
 
     // Point distribution validation (improved wall rejection)
     bool enable_eigenvalue_validation_;  // Enable combined eigenvalue + eigenvector check (planarity + xy-plane dominance)
@@ -256,6 +268,7 @@ private:
      * \return true if successful, false if insufficient points
      */
     bool extractLocalCloud(const geometry_msgs::PoseStamped &pose,
+                           double search_radius,
                            pcl::PointCloud<PointType>::Ptr &local_cloud);
 
     /** \brief Fit ground plane to local cloud

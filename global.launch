@@ -241,6 +241,8 @@
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
+        <arg name="timing_csv_enabled" default="false" doc="Enable timing CSV logging"/>
+        <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv" doc="Timing CSV file path"/>
     <arg name="extraction_radius" default="0.29" 
         doc="Local map extraction radius in meters"/>
     <arg name="use_adaptive_extraction_radius" default="false"
@@ -443,6 +445,8 @@
       <arg name="smoothing_cutoff_freq" value="$(arg smoothing_cutoff_freq)"/>
       <arg name="update_rate" value="$(arg update_rate)"/>
       <arg name="file" value="$(arg file)"/>
+        <arg name="timing_csv_enabled" value="$(arg timing_csv_enabled)"/>
+        <arg name="timing_csv_file" value="$(arg timing_csv_file)"/>
       <arg name="debug_publish" value="$(arg debug_publish)"/>
       <arg name="enable_eigenvalue_validation" value="$(arg enable_eigenvalue_validation)"/>
       <arg name="eigenvalue_ratio_threshold" value="$(arg eigenvalue_ratio_threshold)"/>

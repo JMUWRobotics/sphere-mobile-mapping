@@ -5,6 +5,7 @@
  */
 
 #include "global_ground_finder.h"
+#include <chrono>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
@@ -21,10 +22,12 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
       count_fail_(0),
       count_valid_planes_(0),
       count_invalid_planes_(0),
+      validation_time_us_(0),
       last_inlier_count_(0),
       last_local_cloud_size_(0),
       last_roll_(0.0),
       last_pitch_(0.0),
+      last_search_radius_(0.0),
       last_snapshot_version_(0)
 {
     // Initialize point cloud and kdtree
@@ -35,23 +38,27 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
 
     // normal computation params
     pnh.param<bool>("quiet", quiet_, false);
+    pnh.param<bool>("debug", debug_, false);
     pnh.param<bool>("enable_scoring", enable_scoring_, true);
-    pnh.param<double>("extraction_radius", extraction_radius_, 3.0);
-    pnh.param<double>("extraction_height", extraction_height_, 0.5);
-    pnh.param<double>("min_points_for_plane", min_points_for_plane_, 10.0);
-    pnh.param<double>("wall_threshold", wall_threshold_, 0.707); // cos(45°)
-    pnh.param<double>("score_threshold", score_threshold_, 0.2);
-    pnh.param<double>("min_score_window", min_score_window_, 0.3);
-    pnh.param<double>("weight_visibility", weight_visibility_, 0.6);
-    pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio_, 0.4);
-    pnh.param<double>("min_inliers", min_inliers_, 20.0);
-    pnh.param<double>("inlier_scale", inlier_scale_, 0.3);
+    pnh.param<double>("sphere_radius", sphere_radius_, 0.145);       // fixed sphere radius [m]
+    pnh.param<double>("extraction_radius", extraction_radius_, 1.0); // default local cloud extraction radius [m]
+    pnh.param<bool>("use_adaptive_extraction_radius", use_adaptive_extraction_radius_, false);
+    pnh.param<double>("extraction_height", extraction_height_, 0.5);        // height limit for local cloud extraction [m]
+    pnh.param<double>("min_points_for_plane", min_points_for_plane_, 50.0); // minimum points required for plane fitting, otherwise fallback to history window
+    pnh.param<double>("wall_threshold", wall_threshold_, 0.707);            // cos(45°)
+    pnh.param<double>("score_threshold", score_threshold_, 0.4);            // minimum score to accept normal, otherwise fallback to history window
+    pnh.param<double>("min_score_window", min_score_window_, 0.5);          // minimum score in history window to consider fallback normal
+    pnh.param<double>("weight_visibility", weight_visibility_, 0.6);        // weight for visibility score in combined scoring
+    pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio_, 0.4);    // weight for inlier ratio score in combined scoring
+    pnh.param<double>("min_inliers", min_inliers_, 50.0);                   // minimum inliers required to compute a normal and score it
+    pnh.param<double>("inlier_scale", inlier_scale_, 0.5);                  // normalization scale for inlier ratio in scoring: higher = stricter threshold for inlier_score=1.0; if inlier ratio higher than inlier_scale then inlier_score=1.0
     pnh.param<int>("max_iterations_plane_detection", max_iterations_plane_detection_, 3);
 
     // Point distribution validation parameters (improved wall rejection)
+    // TODO:adapt max components since they now use much smaller local clouds"!!
     pnh.param<bool>("enable_eigenvalue_validation", enable_eigenvalue_validation_, false);
     pnh.param<double>("eigenvalue_ratio_threshold", eigenvalue_ratio_threshold_, 0.1);    // threshold for λ3/(λ1+λ2) - smaller -> stricter -> rejects more non planar structures
-    pnh.param<double>("max_eigenvector_z_component_", max_eigenvector_z_component_, 0.2); // max z-component of v1, v2 eigenvectors to ensure xy-plane spread
+    pnh.param<double>("max_eigenvector_z_component_", max_eigenvector_z_component_, 0.1); // max z-component of v1, v2 eigenvectors to ensure xy-plane spread -- smaller means stricter
     pnh.param<bool>("enable_plane_angle_validation", enable_plane_angle_validation_, true);
     pnh.param<bool>("enable_z_mean_validation", enable_z_mean_validation_, false);
     pnh.param<double>("max_z_deviation", max_z_deviation_, 0.2); // max deviation from robot Z [m]
@@ -148,8 +155,12 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     initMarker();
 
     ROS_INFO("Global Ground Finder initialized");
-    ROS_INFO("  Extraction radius: %.2f m", extraction_radius_);
-    ROS_INFO("  Extraction height: %.2f m", extraction_height_);
+    ROS_INFO("  Extraction radius: %.3f m", extraction_radius_);
+    ROS_INFO("  Adaptive extraction radius: %s (sphere radius: %.3f m)",
+             use_adaptive_extraction_radius_ ? "enabled" : "disabled",
+             sphere_radius_);
+    ROS_INFO("  Debug traces: %s", debug_ ? "enabled" : "disabled");
+    ROS_INFO("  Extraction height: %.3f m", extraction_height_);
     ROS_INFO("  Enable scoring: %s", enable_scoring_ ? "true" : "false");
     ROS_INFO("  Publish shared map debug: %s on %s",
              publish_shared_map_debug_ ? "true" : "false",
@@ -372,6 +383,48 @@ geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry
 void GlobalGroundFinder::processAtCurrentPose()
 {
     auto start_total = std::chrono::high_resolution_clock::now();
+    long long extraction_time_us = 0;
+    long long plane_fit_time_us = 0;
+    long long post_fit_time_us = 0;
+    long long smoothing_time_us = 0;
+    validation_time_us_ = 0;
+
+    // Lazy-initialize CSV logging parameters and file (read ROS params once)
+    if (!timing_csv_initialized_)
+    {
+        timing_csv_initialized_ = true;
+        bool enabled = false;
+        std::string path;
+        if (!pnh.getParam("timing_csv_enabled", enabled))
+            ros::param::param<bool>("/global_ground_finder/timing_csv_enabled", enabled, true);
+        if (!pnh.getParam("timing_csv_file", path))
+            ros::param::param<std::string>("/global_ground_finder/timing_csv_file", path, std::string(""));
+
+        timing_csv_enabled_ = enabled;
+        timing_csv_path_ = path;
+
+        if (timing_csv_enabled_ && !timing_csv_path_.empty())
+        {
+            std::lock_guard<std::mutex> lock(timing_csv_mutex_);
+            timing_csv_file_.open(timing_csv_path_, std::ios::out | std::ios::app);
+            if (timing_csv_file_.is_open())
+            {
+                timing_csv_file_.seekp(0, std::ios::end);
+                if (timing_csv_file_.tellp() == 0)
+                {
+                    timing_csv_file_ << "timestamp,extraction_ms,plane_fit_ms,validation_ms,post_fit_ms,smoothing_ms,total_ms\n";
+                    timing_csv_file_.flush();
+                    timing_csv_header_written_ = true;
+                }
+                ROS_INFO("Timing CSV logging enabled: %s", timing_csv_path_.c_str());
+            }
+            else
+            {
+                ROS_ERROR("Failed to open timing CSV file: %s", timing_csv_path_.c_str());
+                timing_csv_enabled_ = false;
+            }
+        }
+    }
 
     // Copy for thread safety
     geometry_msgs::PoseStamped pose_copy;
@@ -380,63 +433,154 @@ void GlobalGroundFinder::processAtCurrentPose()
         pose_copy = current_pose_;
     }
 
-    // get local cloud around curr pose
-    pcl::PointCloud<PointType>::Ptr local_cloud(new pcl::PointCloud<PointType>);
-    if (!extractLocalCloud(pose_copy, local_cloud)) // checks for map received and sufficient local points
+    if (debug_)
     {
-        ROS_WARN("Failed to extract local cloud");
-        count_fail_++;
-        return;
+        ROS_INFO("DBG: processAtCurrentPose stamp=%.6f frame=%s pos=[%.3f %.3f %.3f]",
+                 pose_copy.header.stamp.toSec(),
+                 pose_copy.header.frame_id.c_str(),
+                 pose_copy.pose.position.x,
+                 pose_copy.pose.position.y,
+                 pose_copy.pose.position.z);
     }
 
-    last_local_cloud_size_ = local_cloud->points.size();
+    const std::vector<double> fallback_normal = (count_success_ > 0) ? n_ : std::vector<double>{0.0, 0.0, -1.0};
 
-    sensor_msgs::PointCloud2 local_msg;
-    pcl::toROSMsg(*local_cloud, local_msg);
-    local_msg.header.stamp = pose_copy.header.stamp;
-    local_msg.header.frame_id = pose_copy.header.frame_id;
-    pub_local_cloud.publish(local_msg);
-
-    // calc ground plane
-    std::vector<double> normal;
+    std::vector<double> normal = fallback_normal;
     size_t inlier_count = 0;
+    pcl::PointCloud<PointType>::Ptr local_cloud(new pcl::PointCloud<PointType>);
     pcl::PointCloud<PointType>::Ptr inlier_cloud(new pcl::PointCloud<PointType>);
-    if (!fitGroundPlane(local_cloud, normal, inlier_count, inlier_cloud))
+    bool have_plane = false;
+
+    std::vector<double> search_radii;
+    if (use_adaptive_extraction_radius_)
     {
-        ROS_WARN("Failed to fit ground plane");
-        count_fail_++;
-        return;
+        const double base_radius = sphere_radius_ > 0.0 ? sphere_radius_ : extraction_radius_;
+        search_radii = {base_radius / 3.0, base_radius, 2.0 * base_radius};
+    }
+    else
+    {
+        search_radii = {extraction_radius_}; // non-adaptive: use configured extraction_radius (default 1.0 m)
     }
 
-    last_inlier_count_ = inlier_count;
-
-    sensor_msgs::PointCloud2 inliers_msg;
-    pcl::toROSMsg(*inlier_cloud, inliers_msg);
-    inliers_msg.header.stamp = pose_copy.header.stamp;
-    inliers_msg.header.frame_id = pose_copy.header.frame_id;
-    pub_inliers.publish(inliers_msg);
-
-    auto end_total = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count();
-
-    if (!quiet_)
+    for (size_t attempt = 0; attempt < search_radii.size(); ++attempt)
     {
-        ROS_INFO("Ground normal computed in %.2f ms: [%.3f, %.3f, %.3f], inliers: %zu/%zu",
-                 duration / 1000.0, normal[0], normal[1], normal[2],
-                 inlier_count, local_cloud->points.size());
+        const double search_radius = search_radii[attempt];
+        last_search_radius_ = search_radius;
+
+        local_cloud->clear();
+        inlier_cloud->clear();
+
+        auto start_extract = std::chrono::high_resolution_clock::now();
+
+        if (debug_)
+        {
+            ROS_INFO("DBG: extraction attempt %zu/%zu radius=%.3f m",
+                     attempt + 1,
+                     search_radii.size(),
+                     search_radius);
+        }
+
+        const bool extracted = extractLocalCloud(pose_copy, search_radius, local_cloud);
+        auto end_extract = std::chrono::high_resolution_clock::now();
+        extraction_time_us += std::chrono::duration_cast<std::chrono::microseconds>(end_extract - start_extract).count();
+
+        if (!extracted)
+        {
+            ROS_WARN("Failed to extract local cloud with radius %.3f m", search_radius);
+            continue;
+        }
+
+        last_local_cloud_size_ = local_cloud->points.size();
+
+        if (debug_)
+        {
+            ROS_INFO("DBG: extracted local cloud size=%zu (min_points_for_plane=%.0f)",
+                     local_cloud->points.size(), min_points_for_plane_);
+        }
+
+        std::vector<double> candidate_normal;
+        auto start_plane_fit = std::chrono::high_resolution_clock::now();
+        const bool plane_ok = fitGroundPlane(local_cloud, candidate_normal, inlier_count, inlier_cloud);
+        auto end_plane_fit = std::chrono::high_resolution_clock::now();
+        plane_fit_time_us += std::chrono::duration_cast<std::chrono::microseconds>(end_plane_fit - start_plane_fit).count();
+
+        if (!plane_ok)
+        {
+            ROS_WARN("Failed to fit ground plane with radius %.3f m", search_radius);
+            continue;
+        }
+
+        normal = candidate_normal;
+        have_plane = true;
+        if (debug_)
+        {
+            ROS_INFO("DBG: plane fit success radius=%.3f m normal=[%.4f %.4f %.4f] inliers=%zu",
+                     search_radius, normal[0], normal[1], normal[2], inlier_count);
+        }
+        break;
+    }
+
+    auto start_post_fit = std::chrono::high_resolution_clock::now();
+
+    if (!have_plane)
+    {
+        count_fail_++;
+        last_inlier_count_ = 0;
+
+        if (!quiet_)
+        {
+            ROS_WARN("All extraction/plane-fit attempts failed. Publishing fallback normal [%.1f, %.1f, %.1f]",
+                     normal[0], normal[1], normal[2]);
+        }
+        if (debug_)
+        {
+            ROS_INFO("DBG: fallback source=%s fail_count=%d",
+                     (count_success_ > 0) ? "last_valid_normal" : "startup_default_down",
+                     count_fail_);
+        }
+    }
+    else
+    {
+        last_inlier_count_ = inlier_count;
+
+        sensor_msgs::PointCloud2 local_msg;
+        pcl::toROSMsg(*local_cloud, local_msg);
+        local_msg.header.stamp = pose_copy.header.stamp;
+        local_msg.header.frame_id = pose_copy.header.frame_id;
+        pub_local_cloud.publish(local_msg);
+
+        sensor_msgs::PointCloud2 inliers_msg;
+        pcl::toROSMsg(*inlier_cloud, inliers_msg);
+        inliers_msg.header.stamp = pose_copy.header.stamp;
+        inliers_msg.header.frame_id = pose_copy.header.frame_id;
+        pub_inliers.publish(inliers_msg);
     }
 
     double vis_score = 1.0;
     double inlier_score = 1.0;
     double combined_score = 1.0;
 
-    if (enable_scoring_)
+    if (enable_scoring_ && have_plane)
     {
         auto scores = compute_scores(pose_copy, inlier_count, local_cloud->points.size());
         vis_score = scores.first;
         inlier_score = scores.second;
         combined_score = combine_scores(vis_score, inlier_score);
+        if (debug_)
+        {
+            ROS_INFO("DBG: scores vis=%.4f inlier=%.4f combined=%.4f (score_threshold=%.4f)",
+                     vis_score, inlier_score, combined_score, score_threshold_);
+        }
     }
+    else if (!have_plane)
+    {
+        vis_score = 0.0;
+        inlier_score = 0.0;
+        combined_score = 0.0;
+    }
+
+    auto end_post_fit = std::chrono::high_resolution_clock::now();
+    post_fit_time_us += std::chrono::duration_cast<std::chrono::microseconds>(end_post_fit - start_post_fit).count();
 
     ground_finder_msgs::ScoredNormalStamped scored_msg;
     scored_msg.header = pose_copy.header; // use pose timestamp for scored normal TOOD: check which frame. pandar_frame or map_lkf
@@ -448,7 +592,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     scored_msg.combined_score = combined_score;
 
     // Add to sliding window
-    if (enable_scoring_)
+    if (enable_scoring_ && have_plane)
     {
         scored_window_.push_back(scored_msg);
         if (scored_window_.size() > MAX_WINDOW_SIZE)
@@ -459,7 +603,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
     // Check for fallback
     bool using_fallback = false;
-    if (enable_scoring_ && combined_score < score_threshold_)
+    if (enable_scoring_ && have_plane && combined_score < score_threshold_)
     {
         ground_finder_msgs::ScoredNormalStamped fallback_msg;
         std::vector<double> fallback_normal;
@@ -470,10 +614,19 @@ void GlobalGroundFinder::processAtCurrentPose()
             scored_msg = fallback_msg;
             using_fallback = true;
             ROS_WARN("Using fallback normal (score: %.3f)", fallback_msg.combined_score);
+            if (debug_)
+            {
+                ROS_INFO("DBG: score-based fallback applied normal=[%.4f %.4f %.4f]",
+                         normal[0], normal[1], normal[2]);
+            }
         }
         else
         {
             ROS_WARN("No suitable fallback found");
+            if (debug_)
+            {
+                ROS_INFO("DBG: score-based fallback unavailable, keeping current normal");
+            }
         }
     }
 
@@ -532,6 +685,8 @@ void GlobalGroundFinder::processAtCurrentPose()
     }
 
     pub_scored_n_pandar.publish(scored_msg_pandar);
+
+    auto start_smoothing = std::chrono::high_resolution_clock::now();
 
     if (enable_normal_smoothing_)
     {
@@ -607,11 +762,52 @@ void GlobalGroundFinder::processAtCurrentPose()
         pub_smoothed_scored_n_pandar.publish(smoothed_scored_msg_pandar);
     }
 
+    auto end_smoothing = std::chrono::high_resolution_clock::now();
+    smoothing_time_us += std::chrono::duration_cast<std::chrono::microseconds>(end_smoothing - start_smoothing).count();
+
     publish_normal_marker(normal, pose_copy.header.stamp);
 
     // internal state uodating
-    n_ = normal;
-    count_success_++;
+    if (have_plane)
+    {
+        n_ = normal;
+        count_success_++;
+    }
+
+    auto end_total = std::chrono::high_resolution_clock::now();
+    auto total_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count();
+
+    if (!quiet_)
+    {
+        ROS_INFO("Ground normal timing total=%.3f ms extraction=%.3f ms plane_fit=%.3f ms validation=%.3f ms post_fit=%.2f ms smoothing=%.2f ms",
+                 total_time_us / 1000.0,
+                 extraction_time_us / 1000.0,
+                 plane_fit_time_us / 1000.0,
+                 validation_time_us_ / 1000.0,
+                 post_fit_time_us / 1000.0,
+                 smoothing_time_us / 1000.0);
+        ROS_INFO("Ground normal result: [%.3f, %.3f, %.3f], inliers: %zu/%zu",
+                 normal[0], normal[1], normal[2], inlier_count, local_cloud->points.size());
+    }
+
+    // Append CSV row if enabled
+    if (timing_csv_enabled_)
+    {
+        std::lock_guard<std::mutex> lock(timing_csv_mutex_);
+        if (timing_csv_file_.is_open())
+        {
+            double total_ms = static_cast<double>(total_time_us) / 1000.0;
+            double ts = ros::Time::now().toSec();
+            timing_csv_file_ << std::fixed << std::setprecision(4) << ts << ","
+                             << (extraction_time_us / 1000.0) << ","
+                             << (plane_fit_time_us / 1000.0) << ","
+                             << (validation_time_us_ / 1000.0) << ","
+                             << (post_fit_time_us / 1000.0) << ","
+                             << (smoothing_time_us / 1000.0) << ","
+                             << total_ms << "\n";
+            timing_csv_file_.flush();
+        }
+    }
 }
 
 /*  ------------------------------------------
@@ -619,6 +815,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     ------------------------------------------
 */
 bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pose,
+                                           double search_radius,
                                            pcl::PointCloud<PointType>::Ptr &local_cloud)
 {
     PointType query_point; // TOOD:check in which frame i am
@@ -632,7 +829,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
     if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
     {
-        ROS_WARN_THROTTLE(2.0, "Shared snapshot payload type mismatch (%s)", handle.payload_type.c_str());
+        ROS_WARN_THROTTLE(0.5, "Shared snapshot payload type mismatch (%s)", handle.payload_type.c_str());
         return false;
     }
     const auto shared_map = lio_gf_nodelet_manager::SharedIKDTree::castPayload<pcl::PointCloud<PointType>>(handle);
@@ -662,18 +859,22 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         }
     }
 
-    // Search in radius around current pose from local KdTree built from latest snapshot.
+    // Search in radius around current pose from local KdTree
     std::vector<int> indices;
     std::vector<float> distances;
 
-    if (map_received_ && kdtree_->radiusSearch(query_point, extraction_radius_, indices, distances) > 0)
+    if (map_received_ && kdtree_->radiusSearch(query_point, search_radius, indices, distances) > 0)
     {
+        if (debug_)
+        {
+            ROS_INFO("DBG: radiusSearch hit_count=%zu radius=%.3f m", indices.size(), search_radius);
+        }
         if (!pose.header.frame_id.empty())
         {
             const auto handle_check = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
             if (!handle_check.frame_id.empty() && handle_check.frame_id != pose.header.frame_id)
             {
-                ROS_WARN_THROTTLE(1.0,
+                ROS_WARN_THROTTLE(0.5,
                                   "Frame mismatch: pose frame=%s, map frame=%s. Local cloud may be inconsistent.",
                                   pose.header.frame_id.c_str(),
                                   handle_check.frame_id.c_str());
@@ -698,17 +899,36 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         local_cloud->width = local_cloud->points.size();
         local_cloud->height = 1;
         local_cloud->is_dense = true;
-        return local_cloud->points.size() >= min_points_for_plane_;
+        if (local_cloud->points.size() < min_points_for_plane_)
+        {
+            if (debug_)
+            {
+                ROS_WARN("Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
+                         search_radius,
+                         local_cloud->points.size(),
+                         min_points_for_plane_);
+            }
+            return false;
+        }
+        return true;
     }
 
     // Fallback: use latest /map_out cloud when shared tree is not available.
     if (!map_received_ || global_map_->points.size() == 0)
     {
+        if (debug_)
+        {
+            ROS_WARN("Failed to extract local cloud with radius %.3f m: no global map available", search_radius);
+        }
         return false;
     }
 
-    if (kdtree_->radiusSearch(query_point, extraction_radius_, indices, distances) == 0)
+    if (kdtree_->radiusSearch(query_point, search_radius, indices, distances) == 0)
     {
+        if (debug_)
+        {
+            ROS_WARN("Failed to extract local cloud with radius %.3f m: radius search returned no points", search_radius);
+        }
         return false;
     }
 
@@ -733,7 +953,19 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     local_cloud->height = 1; // tells pcl it's "unorganized" so no rows/column structure like camera data
     local_cloud->is_dense = true;
 
-    return local_cloud->points.size() >= min_points_for_plane_;
+    if (local_cloud->points.size() < min_points_for_plane_)
+    {
+        if (debug_)
+        {
+            ROS_WARN("Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
+                     search_radius,
+                     local_cloud->points.size(),
+                     min_points_for_plane_);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &local_cloud,
@@ -1029,7 +1261,8 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
         {
             // Found a plane candidate, check if it's ground
             std::vector<double> test_normal = n;
-            if (validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z)) // no eigenvalues/vecs for RHT since no PCA step, so pass 0.0 and 0.0 for those params
+            const bool valid_ground = validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z); // no eigenvalues/vecs for RHT since no PCA step, so pass 0.0 and 0.0 for those params
+            if (valid_ground)
             {
                 normal = test_normal;
 
@@ -1185,9 +1418,10 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
 
                     // Check if it's ground
                     std::vector<double> test_normal = n;
-                    if (validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z,
-                                             eigen_vals(0), eigen_vals(1), eigen_vals(2),
-                                             eigen_vecs(2, 0), eigen_vecs(2, 1))) // pass z component of 1st and 2nd eigenvectors to check if planes point distribution is majorly in xy plane
+                    const bool valid_ground = validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z,
+                                                                   eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                                                   eigen_vecs(2, 0), eigen_vecs(2, 1)); // pass z component of 1st and 2nd eigenvectors to check if planes point distribution is majorly in xy plane
+                    if (valid_ground)
                     {
                         normal = test_normal;
                         return true;
@@ -1265,6 +1499,24 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 // lamda1 - largest eigenvalue, lambda2 - middle eigenvalue, lambda3 - smallest eigenvalue
 // v1 and v2: corresponding eigenvectors of lambda1 and lambda2 -check their z components to see if they are mostly in xy plane or if they have significant z component (wall/vertical plane)
 {
+    struct ValidationTimer
+    {
+        long long &accumulator;
+        std::chrono::high_resolution_clock::time_point start;
+
+        explicit ValidationTimer(long long &acc)
+            : accumulator(acc), start(std::chrono::high_resolution_clock::now())
+        {
+        }
+
+        ~ValidationTimer()
+        {
+            accumulator += std::chrono::duration_cast<std::chrono::microseconds>(
+                               std::chrono::high_resolution_clock::now() - start)
+                               .count();
+        }
+    } timer(validation_time_us_);
+
     // ROS_INFO("validateGroundNormal: Called with normal=[%.3f, %.3f, %.3f]", normal[0], normal[1], normal[2]);
 
     // Validate normal vector before processing
@@ -1317,6 +1569,10 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
             count_invalid_planes_++;
             return false;
         }
+        else if (debug_)
+        {
+            ROS_INFO("DBG: angle validation passed (|dot|=%.4f threshold=%.4f)", std::abs(dot), wall_threshold_);
+        }
     }
 
     // ###################################################
@@ -1351,6 +1607,11 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
             count_invalid_planes_++;
             return false;
         }
+        if (debug_)
+        {
+            ROS_INFO("DBG: eigen validation passed ratio=%.5f max_dom_z=%.4f",
+                     eigenvalue_ratio, max_dominant_z);
+        }
     }
 
     // ##################################
@@ -1369,6 +1630,11 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
             count_invalid_planes_++;
             return false;
         }
+        else if (debug_)
+        {
+            ROS_INFO("DBG: z-mean validation passed z_mean=%.4f center_z=%.4f max_dev=%.4f",
+                     z_mean, center_frame_z, max_z_deviation_);
+        }
     }
 
     // ######################################
@@ -1386,13 +1652,12 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
         double hull_distance = 0.0;
         geometry_msgs::Point hull_center;
-        geometry_msgs::Point robot_center = center_pose.pose.position;
-        bool hull_valid = validateConvexHullCenter(inlier_cloud, robot_center, max_hull_distance_, hull_distance, hull_center);
+        bool hull_valid = validateConvexHullCenter(inlier_cloud, center_pose.pose.position, max_hull_distance_, hull_distance, hull_center);
+        // bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
 
         // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
         //          hull_valid ? "true" : "false", hull_distance);
 
-        // Always publish hull center for visualization (useful for debugging)
         publishHullCenterMarker(hull_center);
 
         if (!hull_valid)
@@ -1401,6 +1666,11 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
                      hull_distance, max_hull_distance_);
             count_invalid_planes_++;
             return false;
+        }
+        else if (debug_)
+        {
+            ROS_INFO("DBG: hull validation passed distance=%.4f max=%.4f",
+                     hull_distance, max_hull_distance_);
         }
 
         // ROS_INFO("  Hull validation PASSED");
@@ -1415,6 +1685,10 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     }
 
     // Plane passed all validation checks
+    if (debug_)
+    {
+        ROS_INFO("DBG: plane accepted normal=[%.4f %.4f %.4f]", normal[0], normal[1], normal[2]);
+    }
     count_valid_planes_++;
     return true;
 }
@@ -1446,7 +1720,7 @@ std::pair<double, double> GlobalGroundFinder::compute_scores(const geometry_msgs
     if (local_size > 0 && inlier_count >= min_inliers_)
     {
         double inlier_ratio = static_cast<double>(inlier_count) / static_cast<double>(local_size);
-        inlier_score = std::min(std::max(inlier_ratio / inlier_scale_, 0.0), 1.0);
+        inlier_score = std::min(std::max(inlier_ratio / inlier_scale_, 0.0), 1.0); // normalize and cap at 1.0;if ratio higher than inlier_scale then 1.0
     }
 
     return std::make_pair(visibility_score, inlier_score);
@@ -1714,6 +1988,6 @@ void GlobalGroundFinder::log_results(const ros::Time &stamp,
               << subcloud_size << ","
               << std::setprecision(6) << inlier_ratio << ","
               << (using_fallback ? 1 : 0) << ","
-              << std::setprecision(4) << extraction_radius_ << "\n";
+              << std::setprecision(4) << last_search_radius_ << "\n";
     log_file_.flush();
 }
