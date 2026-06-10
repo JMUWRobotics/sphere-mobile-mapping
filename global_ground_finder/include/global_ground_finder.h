@@ -139,6 +139,7 @@ private:
     ros::Publisher pub_n_marker;                 // Visualization marker
     ros::Publisher pub_hull_center;              // Convex hull center point visualization
     ros::Publisher pub_shared_map_debug;         // Debug map reconstructed from shared IKD-tree
+    ros::Publisher pub_cropped_map_debug;        // Debug cropped map around current pose
 
     boost::shared_ptr<pcl::PointCloud<PointType>> global_map_;
     boost::shared_ptr<pcl::KdTreeFLANN<PointType>> kdtree_;
@@ -149,6 +150,9 @@ private:
     bool publish_shared_map_debug_;
     bool debug_publish_;
     std::string shared_map_debug_topic_;
+
+    double crop_radius_; // Radius der CropBox um aktuelle Pose für KD-Tree [m]
+    double crop_height_; // Halbe Höhe der CropBox [m]
 
     geometry_msgs::PoseStamped current_pose_; // latest pose
     bool pose_received_;
@@ -165,6 +169,7 @@ private:
     double last_roll_;
     double last_pitch_;
     long long validation_time_us_;
+
     // CSV timing logging
     bool timing_csv_enabled_ = false;
     std::string timing_csv_path_;

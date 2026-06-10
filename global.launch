@@ -144,7 +144,7 @@
         doc="lower limit for accepted point distances in m" />
     <arg name="max_range" value="50.0" doc="upper limit for accepted point distances in m" />      
     
-    <arg name="vox_l_map" value="0.075"
+    <arg name="vox_l_map" value="0.25"
         doc="voxel size for point cloud added to map in m" />
     <arg name="vox_l_gicp" value="0.1"
         doc="voxel size for point cloud utilized in GICP in m" />

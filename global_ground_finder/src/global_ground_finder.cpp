@@ -12,6 +12,7 @@
 #include <ros/package.h>
 #include <fstream>
 #include <iomanip>
+#include <pcl/filters/crop_box.h>
 
 GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh, PlaneSegm plane_algorithm)
     : nh(nh), pnh(pnh),
@@ -73,6 +74,10 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<double>("update_rate", update_rate_, 20.0);
     have_smoothed_normal_ = false;
 
+    // cropbox params (applied before kdtree is built)
+    pnh.param<double>("crop_radius", crop_radius_, 5.0); // +-5m horizontal
+    pnh.param<double>("crop_height", crop_height_, 1.5); // +-3m vertical
+
     if (use_gaussian_smoothing_)
     {
         float dt = 1.0f / static_cast<float>(update_rate_);
@@ -129,9 +134,12 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
 
     pnh.param<std::string>("trigger_topic", trigger_topic_, "/all_pose_out"); // Estimator trigger from LIO
 
-    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, true); // DISABLED: causes double-free in multi-threaded context
+    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, true);
     pnh.param<bool>("debug_publish", debug_publish_, false);
     pnh.param<std::string>("shared_map_debug_topic", shared_map_debug_topic_, "/global_ground_finder/shared_map_out");
+
+    std::string cropped_map_topic;
+    pnh.param<std::string>("cropped_map_debug_topic", cropped_map_topic, std::string("/global_ground_finder/cropped_map"));
 
     tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
 
@@ -149,6 +157,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pub_n_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
     pub_hull_center = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/hull_center", 1);
     pub_shared_map_debug = nh.advertise<sensor_msgs::PointCloud2>(shared_map_debug_topic_, 1);
+    pub_cropped_map_debug = nh.advertise<sensor_msgs::PointCloud2>(cropped_map_topic, 1);
     pub_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal_pandar", 1);
     pub_smoothed_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal_pandar", 1);
 
@@ -843,19 +852,43 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
                          static_cast<unsigned long>(handle.point_count),
                          shared_map->points.size());
             }
-            global_map_->points = shared_map->points;
-            global_map_->width = shared_map->points.size();
+
+            // CropBox um aktuelle Pose — nur relevante Region in den KD-Tree laden
+            const float cx = static_cast<float>(pose.pose.position.x);
+            const float cy = static_cast<float>(pose.pose.position.y);
+            const float cz = static_cast<float>(pose.pose.position.z);
+
+            pcl::CropBox<PointType> crop;
+            crop.setInputCloud(boost::shared_ptr<const pcl::PointCloud<PointType>>(shared_map.get(), [](const pcl::PointCloud<PointType> *) {}));
+            crop.setMin(Eigen::Vector4f(cx - crop_radius_, cy - crop_radius_, cz - crop_height_, 1.0f));
+            crop.setMax(Eigen::Vector4f(cx + crop_radius_, cy + crop_radius_, cz + crop_height_, 1.0f));
+            crop.filter(*global_map_);
+
+            global_map_->width = global_map_->points.size();
             global_map_->height = 1;
             global_map_->is_dense = true;
             kdtree_->setInputCloud(global_map_);
             map_received_ = true;
             map_timestamp_ = handle.stamp;
             last_snapshot_version_ = handle.version;
-            // ROS_INFO("Updated local KdTree from snapshot version %lu with %zu points (frame=%s, stamp=%.6f)",
-            //          static_cast<unsigned long>(last_snapshot_version_),
-            //          global_map_->points.size(),
-            //          handle.frame_id.c_str(),
-            //          handle.stamp.toSec());
+
+            if (publish_shared_map_debug_)
+            {
+                sensor_msgs::PointCloud2 cropped_msg;
+                pcl::toROSMsg(*global_map_, cropped_msg);
+                cropped_msg.header.frame_id = handle.frame_id;
+                cropped_msg.header.stamp = handle.stamp.isZero() ? pose.header.stamp : handle.stamp;
+                pub_cropped_map_debug.publish(cropped_msg);
+            }
+
+            if (debug_)
+            {
+                ROS_INFO("DBG: CropBox rebuild: %zu/%lu points (crop_radius=%.1f m, version=%lu)",
+                         global_map_->points.size(),
+                         static_cast<unsigned long>(handle.point_count),
+                         crop_radius_,
+                         static_cast<unsigned long>(handle.version));
+            }
         }
     }
 
