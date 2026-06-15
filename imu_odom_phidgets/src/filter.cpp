@@ -636,18 +636,33 @@ void calc_position(float gx, float gy, float gz)
 
     // Cap accel-integrated velocity to 110% of rotation-based velocity
     float trust = 0.1f;
-    if (fabs(vel_x_world) > fabs(vel_x_world_rot))
-        vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
-    if (fabs(vel_y_world) > fabs(vel_y_world_rot))
-        vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
-    if (fabs(vel_z_world) > fabs(vel_z_world_rot))
-        vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
+
+    // if (fabs(vel_x_world) > fabs(vel_x_world_rot))
+    //     vel_x_world = std::min((1 + trust) * vel_x_world_rot, vel_x_world);
+    // if (fabs(vel_y_world) > fabs(vel_y_world_rot))
+    //     vel_y_world = std::min((1 + trust) * vel_y_world_rot, vel_y_world);
+    // if (fabs(vel_z_world) > fabs(vel_z_world_rot))
+    //     vel_z_world = std::min((1 + trust) * vel_z_world_rot, vel_z_world);
+
+    // adjusted velocity capping which accounts for negative velocities
+    float max_vel_x = (1.0f + trust) * fabs(vel_x_world_rot);
+    vel_x_world = std::max(-max_vel_x, std::min(max_vel_x, vel_x_world)); // clamp vel_x_world to [-max_vel_x, max_vel_x]; returns vel_x_world if it is within [-max_vel_x, max_vel_x]
+
+    float max_vel_y = (1.0f + trust) * fabs(vel_y_world_rot);
+    vel_y_world = std::max(-max_vel_y, std::min(max_vel_y, vel_y_world));
+
+    float max_vel_z = (1.0f + trust) * fabs(vel_z_world_rot);
+    vel_z_world = std::max(-max_vel_z, std::min(max_vel_z, vel_z_world));
 
     // Subtract contact-normal component from rolling velocity
-    float vn2 = vel_z_world * vel_z_world; // component along normal
-    vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
-    vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
-    vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
+    // float vn2 = vel_z_world * vel_z_world; // component along normal
+    // vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot - vn2));
+    // vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot - vn2));
+    // vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot - vn2));
+
+    vel_x_world_rot = std::copysign(1.0f, vel_x_world_rot) * sqrtf(std::max(0.0f, vel_x_world_rot * vel_x_world_rot));
+    vel_y_world_rot = std::copysign(1.0f, vel_y_world_rot) * sqrtf(std::max(0.0f, vel_y_world_rot * vel_y_world_rot));
+    vel_z_world_rot = std::copysign(1.0f, vel_z_world_rot) * sqrtf(std::max(0.0f, vel_z_world_rot * vel_z_world_rot));
 
     if (vel_x_world_rot * vel_x_world_rot > 0.001f || vel_y_world_rot * vel_y_world_rot > 0.001f || vel_z_world_rot * vel_z_world_rot > 0.001f)
     {
@@ -726,7 +741,10 @@ void apply_attitude_filter(double stamp_ms, bool reuse_dt)
     gz_filtered = axis[2] * angle;
 
     // Compute position
-    calc_position(gx, gy, gz);
+    if (!reuse_dt)
+    {
+        calc_position(gx, gy, gz);
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -748,6 +766,7 @@ void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
     az *= recipNorm;
     float acc_roll = atan2f(ay, az);
     float acc_pitch = atan2f(-ax, sqrtf(ay * ay + az * az));
+
     quatFromEuler(&q0, &q1, &q2, &q3, acc_roll, acc_pitch, yaw);
     ROS_INFO("Initial: Roll: %f Pitch: %f Yaw: %f", acc_roll * precalc_180_BY_M_PI, acc_pitch * precalc_180_BY_M_PI, yaw * precalc_180_BY_M_PI);
 }
@@ -1043,7 +1062,7 @@ int argumentHandler(ros::NodeHandle &nh)
     // Ground normal parameters
     // -----------------------------------------------------------------------
     nh.param<bool>("use_ground_normal", use_ground_normal, true);
-    nh.param<bool>("use_normal_centripetal", use_normal_centripetal, true); // TODO:still causes weird result so still False by default
+    nh.param<bool>("use_normal_centripetal", use_normal_centripetal, false);
 
     if (use_ground_normal)
     {
@@ -1229,7 +1248,7 @@ int main(int argc, char *argv[])
         else
             combined_stamp_ms = ros::Time::now().toSec() * 1000.0; // fallback
 
-        apply_attitude_filter(combined_stamp_ms);
+        apply_attitude_filter(combined_stamp_ms, /*reuse_dt=*/false);
 
         // ---- Publish main (compensated) estimate ----
         ms_to_ros_stamp(combined_stamp_ms, output_msg.header.stamp);
