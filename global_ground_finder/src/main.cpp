@@ -27,14 +27,14 @@ int main(int argc, char **argv)
     {
         if (quiet)
         {
-            ROS_INFO("Quiet Mode activated! Repetitive messages will be suppressed. Start-up information, errors and warnings will be shown!");
+            ROS_INFO("[GGF] Quiet Mode activated! Repetitive messages will be suppressed. Start-up information, errors and warnings will be shown!");
         }
     }
 
     std::string plane_alg_str;
     if (!pnh.getParam("plane_algorithm", plane_alg_str))
     {
-        ROS_WARN("No plane_algorithm parameter specified, defaulting to 'ransac'");
+        ROS_WARN("[GGF] No plane_algorithm parameter specified, defaulting to 'ransac'");
         plane_alg = RANSAC;
     }
     else
@@ -58,7 +58,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            ROS_ERROR("Invalid Parameter plane_algorithm='%s'! Valid options are: 'pca', 'ransac', 'rht', 'rht2'. Ending Node!", plane_alg_str.c_str());
+            ROS_ERROR("[GGF] Invalid Parameter plane_algorithm='%s'! Valid options are: 'pca', 'ransac', 'rht', 'rht2'. Ending Node!", plane_alg_str.c_str());
             ros::shutdown();
             return 1;
         }
@@ -68,17 +68,17 @@ int main(int argc, char **argv)
     std::string log_filename;
     if (!pnh.getParam("log_file", log_filename))
     {
-        ROS_INFO("No log_file parameter specified. CSV logging disabled.");
+        ROS_INFO("[GGF] No log_file parameter specified. CSV logging disabled.");
     }
     else if (log_filename != "default")
     {
-        ROS_INFO("CSV logging enabled: %s", log_filename.c_str());
+        ROS_INFO("[GGF] CSV logging enabled: %s", log_filename.c_str());
     }
 
     GlobalGroundFinder global_ground_finder(nh, pnh, plane_alg);
 
     ROS_INFO("Global Ground Finder node running...");
-    ROS_INFO("Waiting for pose on /lkf/pose");
+    ROS_INFO("[GGF] Waiting for pose on /all_pose_out");
 
     // Loop
     ros::Rate freq(50);

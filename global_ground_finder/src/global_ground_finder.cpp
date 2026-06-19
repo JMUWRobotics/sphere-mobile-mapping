@@ -75,8 +75,8 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     have_smoothed_normal_ = false;
 
     // cropbox params (applied before kdtree is built)
-    pnh.param<double>("crop_radius", crop_radius_, 5.0); // +-5m horizontal
-    pnh.param<double>("crop_height", crop_height_, 1.5); // +-3m vertical
+    pnh.param<double>("crop_radius", crop_radius_, 2.0); // +-5m horizontal
+    pnh.param<double>("crop_height", crop_height_, 1.0); // +-3m vertical
 
     if (use_gaussian_smoothing_)
     {
@@ -838,7 +838,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
     if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
     {
-        ROS_WARN_THROTTLE(0.5, "Shared snapshot payload type mismatch (%s)", handle.payload_type.c_str());
+        // ROS_WARN_THROTTLE(0.5, "Shared snapshot payload type mismatch (%s)", handle.payload_type.c_str());
         return false;
     }
     const auto shared_map = lio_gf_nodelet_manager::SharedIKDTree::castPayload<pcl::PointCloud<PointType>>(handle);
@@ -859,7 +859,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
             const float cz = static_cast<float>(pose.pose.position.z);
 
             pcl::CropBox<PointType> crop;
-            crop.setInputCloud(boost::shared_ptr<const pcl::PointCloud<PointType>>(shared_map.get(), [](const pcl::PointCloud<PointType> *) {}));
+            crop.setInputCloud(boost::shared_ptr<const pcl::PointCloud<PointType>>(shared_map.get(), [](const pcl::PointCloud<PointType> *) {})); // no op delete at the end (Does nothing but avoids error)
             crop.setMin(Eigen::Vector4f(cx - crop_radius_, cy - crop_radius_, cz - crop_height_, 1.0f));
             crop.setMax(Eigen::Vector4f(cx + crop_radius_, cy + crop_radius_, cz + crop_height_, 1.0f));
             crop.filter(*global_map_);

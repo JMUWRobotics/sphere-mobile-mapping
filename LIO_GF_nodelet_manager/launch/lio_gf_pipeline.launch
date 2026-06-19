@@ -140,9 +140,9 @@
     <!-- Preprocessing -->
     <arg name="deskewing" value="false"
         doc="true: on, false: off (Set to FALSE if dedicated node is used)" />
-    <arg name="min_range" value="0.15"
+    <arg name="min_range" value="1.0"
         doc="lower limit for accepted point distances in m" />
-    <arg name="max_range" value="50.0" doc="upper limit for accepted point distances in m" />      
+    <arg name="max_range" value="120.0" doc="upper limit for accepted point distances in m" />      
     
     <arg name="vox_l_map" value="0.01"
         doc="voxel size for point cloud added to map in m" />

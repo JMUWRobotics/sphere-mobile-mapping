@@ -5,12 +5,21 @@
   <!-- Arguments -->
   <arg name="quiet" default="false" 
        doc="Suppress verbose logging"/>
+
+  <arg name="debug" default="false"
+       doc="Enable DBG ROS_INFO traces for extraction/validation/scoring flow"/>
   
   <arg name="plane_algorithm" default="ransac" 
        doc="Plane fitting algorithm: 'pca', 'ransac', 'rht', or 'rht2'"/>
   
-  <arg name="extraction_radius" default="2.0" 
+  <arg name="sphere_radius" default="0.145"
+       doc="Sphere radius [m] used to derive adaptive extraction radii"/>
+
+  <arg name="extraction_radius" default="1.0" 
        doc="Radius [m] for local map extraction around pose"/>
+
+  <arg name="use_adaptive_extraction_radius" default="false"
+       doc="Use sphere-radius-based adaptive extraction radius (r/3, r, 2r)"/>
   
   <arg name="extraction_height" default="0.5" 
        doc="Height limit [m] for vertical filtering around pose"/>
@@ -48,6 +57,10 @@
 
   <arg name="file" default="default"
        doc="CSV log filename. Use 'default' to disable logging."/>
+  <arg name="timing_csv_enabled" default="false"
+       doc="Enable timing CSV logging (true/false)"/>
+  <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv"
+       doc="Full path to timing CSV file (absolute path)."/>
 
   <arg name="debug_publish" default="false"
        doc="Publish rejected intermediate inlier clouds for debugging"/>
@@ -99,10 +112,13 @@
     
     <!-- Basic parameters -->
     <param name="quiet" type="bool" value="$(arg quiet)"/>
+     <param name="debug" type="bool" value="$(arg debug)"/>
     <param name="plane_algorithm" type="string" value="$(arg plane_algorithm)"/>
     
     <!-- Extraction parameters -->
     <param name="extraction_radius" type="double" value="$(arg extraction_radius)"/>
+     <param name="use_adaptive_extraction_radius" type="bool" value="$(arg use_adaptive_extraction_radius)"/>
+     <param name="sphere_radius" type="double" value="$(arg sphere_radius)"/>
     <param name="extraction_height" type="double" value="$(arg extraction_height)"/>
     <param name="min_points_for_plane" type="double" value="10.0"/>
     
@@ -138,6 +154,9 @@
 
     <!-- File logging -->
     <param name="file" type="string" value="$(arg file)"/>
+     <!-- Timing CSV logging -->
+     <param name="timing_csv_enabled" type="bool" value="$(arg timing_csv_enabled)"/>
+     <param name="timing_csv_file" type="string" value="$(arg timing_csv_file)"/>
           <param name="debug_publish" type="bool" value="$(arg debug_publish)"/>
 
   </node>

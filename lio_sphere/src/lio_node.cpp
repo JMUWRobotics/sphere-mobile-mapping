@@ -595,10 +595,10 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
         map_out.header.stamp,
         map_out.header.frame_id,
         static_cast<uint64_t>(shared_map_snapshot->points.size()));
-    ROS_INFO_STREAM_THROTTLE(1.0,
-                             "SNAPCHK LIO snapshot points=" << shared_map_snapshot->points.size()
-                                                            << " frame=" << map_out.header.frame_id
-                                                            << " stamp=" << map_out.header.stamp.toSec());
+    // ROS_INFO_STREAM_THROTTLE(1.0,
+    //                          "SNAPCHK LIO snapshot points=" << shared_map_snapshot->points.size()
+    //                                                         << " frame=" << map_out.header.frame_id
+    //                                                         << " stamp=" << map_out.header.stamp.toSec());
 }
 
 void LIONode::publishOdometry(const ros::Time &stamp)
