@@ -7,10 +7,10 @@
  * This node:
  *   1. Subscribes to the three calibrated IMU topics published by imu_jasper:
  *        /imu/0/calib   /imu/1/calib   /imu/2/calib
- *   2. For each incoming message applies per-IMU lever-arm / centripetal
+ *   2. For each incoming message applies per IMU centripetal
  *      compensation (needs the extrinsic position vectors from the param server).
  *   3. Averages the compensated measurements across active IMUs.
- *   4. Runs the compile-time-selected attitude estimator
+ *   4. Runs the compile-time selected attitude estimator
  *      (Mahony | AutoGain | QEKF | UKF).
  *   5. Integrates position from filtered rotation speed and accel.
  *   6. Publishes the result as state_estimator_msgs/Estimator on the same
@@ -501,7 +501,7 @@ int combineRAWData(bool use0, bool use1, bool use2)
     /* --- Gyroscope average --- */
     if (firstRead < 4)
     {
-        ROS_INFO("Initialising yaw axis…");
+        ROS_INFO("Initialising yaw axis...");
         ROS_INFO("combineRAWData: startup diagnostics: n=%d, ax0=%f, ay0=%f, az0=%f, ax1=%f, ay1=%f, az1=%f, ax2=%f, ay2=%f, az2=%f",
                  n, ax0, ay0, az0, ax1, ay1, az1, ax2, ay2, az2);
         ROS_INFO("combineRAWData: computed ax/ay/az before init = (%f, %f, %f)", ax, ay, az);
@@ -611,12 +611,12 @@ void calc_position(float gx, float gy, float gz)
     // Debugging: log key values when using dynamic ground normal
     if (use_ground_normal && ground_normal_available)
     {
-        ROS_INFO_THROTTLE(2.0,
-                          "DBG calc_position: r=%.3f q=(%.3f,%.3f,%.3f,%.3f) gn=(%.3f,%.3f,%.3f) normal_world=(%.3f,%.3f,%.3f) rot_f=(%.3f,%.3f,%.3f) vel_rot=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f)",
-                          r, q0, q1, q2, q3, gn_x, gn_y, gn_z, normal_world_x, normal_world_y, normal_world_z,
-                          rot_x_world, rot_y_world, rot_z_world,
-                          vel_x_world_rot, vel_y_world_rot, vel_z_world_rot,
-                          vel_x_world, vel_y_world, vel_z_world);
+        // ROS_INFO_THROTTLE(2.0,
+        //                   "DBG calc_position: r=%.3f q=(%.3f,%.3f,%.3f,%.3f) gn=(%.3f,%.3f,%.3f) normal_world=(%.3f,%.3f,%.3f) rot_f=(%.3f,%.3f,%.3f) vel_rot=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f)",
+        //                   r, q0, q1, q2, q3, gn_x, gn_y, gn_z, normal_world_x, normal_world_y, normal_world_z,
+        //                   rot_x_world, rot_y_world, rot_z_world,
+        //                   vel_x_world_rot, vel_y_world_rot, vel_z_world_rot,
+        //                   vel_x_world, vel_y_world, vel_z_world);
 
         if (!std::isfinite(normal_world_x) || !std::isfinite(normal_world_y) || !std::isfinite(normal_world_z) ||
             !std::isfinite(rot_x_world) || !std::isfinite(rot_y_world) || !std::isfinite(rot_z_world))
@@ -633,7 +633,6 @@ void calc_position(float gx, float gy, float gz)
     float mean_vel_world = sqrtf(vel_x_world_rot * vel_x_world_rot + vel_y_world_rot * vel_y_world_rot + vel_z_world_rot * vel_z_world_rot);
     if (fabs(vel_z_world) > mean_vel_world)
         vel_z_world = std::copysign(1.0f, vel_z_world) * mean_vel_world;
-
     // Cap accel-integrated velocity to 110% of rotation-based velocity
     float trust = 0.1f;
 
@@ -756,7 +755,7 @@ void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
     // Guard against near-zero acceleration
     if (acc_mag_sq < 1e-6f)
     {
-        ROS_WARN("ovrwrtOrientWithAcc: acceleration near zero (mag²=%e), skipping initialization", acc_mag_sq);
+        ROS_WARN("ovrwrtOrientWithAcc: acceleration near zero (mag^2=%e), skipping initialization", acc_mag_sq);
         return;
     }
 
@@ -765,6 +764,7 @@ void ovrwrtOrientWithAcc(float ax, float ay, float az, float yaw)
     ay *= recipNorm;
     az *= recipNorm;
     float acc_roll = atan2f(ay, az);
+
     float acc_pitch = atan2f(-ax, sqrtf(ay * ay + az * az));
 
     quatFromEuler(&q0, &q1, &q2, &q3, acc_roll, acc_pitch, yaw);
@@ -798,7 +798,7 @@ static void groundNormalCallback(const ground_finder_msgs::ScoredNormalStamped::
         gn_y = ny;
         gn_z = nz;
         ground_normal_available = true;
-        ROS_INFO_THROTTLE(2.0, "Ground normal in map_lio: (%.3f, %.3f, %.3f)", gn_x, gn_y, gn_z);
+        // ROS_INFO_THROTTLE(2.0, "Ground normal in map_lio: (%.3f, %.3f, %.3f)", gn_x, gn_y, gn_z);
         mtx_gn.unlock();
     }
 }
@@ -879,7 +879,7 @@ static void groundNormalCentripetalCallback(const ground_finder_msgs::ScoredNorm
         gn_y_imu = ny;
         gn_z_imu = nz;
         ground_normal_centripetal_available = true;
-        ROS_INFO_THROTTLE(0.1, "Ground normal (centripetal) in imu_frame: (%.3f, %.3f, %.3f)", gn_x_imu, gn_y_imu, gn_z_imu);
+        // ROS_INFO_THROTTLE(0.1, "Ground normal (centripetal) in imu_frame: (%.3f, %.3f, %.3f)", gn_x_imu, gn_y_imu, gn_z_imu);
         mtx_gn_imu.unlock();
     }
 }
@@ -893,10 +893,10 @@ static void groundNormalCentripetalCallback(const ground_finder_msgs::ScoredNorm
 // -----------------------------------------------------------------------
 static void imu0Callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    static int call_count = 0;
-    if (++call_count % 100 == 1) // Log every 100 calls
-        ROS_INFO_THROTTLE(5.0, "imu0Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
-                          call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+    // static int call_count = 0;
+    //  if (++call_count % 100 == 1) // Log every 100 calls
+    //      ROS_INFO_THROTTLE(5.0, "imu0Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
+    //                        call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
 
     double acc[3] = {msg->linear_acceleration.x,
                      msg->linear_acceleration.y,
@@ -915,10 +915,10 @@ static void imu0Callback(const sensor_msgs::Imu::ConstPtr &msg)
 
 static void imu1Callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    static int call_count = 0;
-    if (++call_count % 100 == 1)
-        ROS_INFO_THROTTLE(5.0, "imu1Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
-                          call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+    // static int call_count = 0;
+    // if (++call_count % 100 == 1)
+    //     ROS_INFO_THROTTLE(5.0, "imu1Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
+    //                       call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
 
     double acc[3] = {msg->linear_acceleration.x,
                      msg->linear_acceleration.y,
@@ -937,10 +937,10 @@ static void imu1Callback(const sensor_msgs::Imu::ConstPtr &msg)
 
 static void imu2Callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    static int call_count = 0;
-    if (++call_count % 100 == 1)
-        ROS_INFO_THROTTLE(5.0, "imu2Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
-                          call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
+    // static int call_count = 0;
+    // if (++call_count % 100 == 1)
+    //     ROS_INFO_THROTTLE(5.0, "imu2Callback: received message #%d, acc=(%.2f, %.2f, %.2f)",
+    //                       call_count, msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
 
     double acc[3] = {msg->linear_acceleration.x,
                      msg->linear_acceleration.y,
@@ -981,7 +981,7 @@ int argumentHandler(ros::NodeHandle &nh)
     if (autogain > 0)
     {
         alpha = autogain;
-        ROS_INFO("autogain = %f → gain_ = 0, alpha init = %f", autogain, autogain * 0.1f);
+        ROS_INFO("autogain = %f -> gain = 0, alpha init = %f", autogain, autogain * 0.1f);
     }
     gain_min = gain_;
 #endif
@@ -1205,7 +1205,7 @@ int main(int argc, char *argv[])
         }
         lastTime = (n > 0) ? (seed / n * 1000.0) : (ros::Time::now().toSec() * 1000.0);
     }
-    ROS_INFO("IMU data received — filter starting.");
+    ROS_INFO("IMU data received - filter starting.");
 
     /*--------------------------------------------------------------------
                             Main processing loop

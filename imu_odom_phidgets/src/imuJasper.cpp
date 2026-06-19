@@ -139,7 +139,7 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
             initialized0 = true;
             n_imus++;
             ROS_INFO_STREAM("Receiving data from IMU " << spatialNr
-                                                       << " (serial " << serialNr << ") — OK");
+                                                       << " (serial " << serialNr << ") - OK");
         }
         process_phidget_to_calibrated_ros_msg(
             serialNr, spatialNr,
@@ -159,7 +159,7 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
             initialized1 = true;
             n_imus++;
             ROS_INFO_STREAM("Receiving data from IMU " << spatialNr
-                                                       << " (serial " << serialNr << ") — OK");
+                                                       << " (serial " << serialNr << ") - OK");
         }
         process_phidget_to_calibrated_ros_msg(
             serialNr, spatialNr,
@@ -179,7 +179,7 @@ void CCONV onSpatial0_SpatialData(PhidgetSpatialHandle ch, void *ctx,
             initialized2 = true;
             n_imus++;
             ROS_INFO_STREAM("Receiving data from IMU " << spatialNr
-                                                       << " (serial " << serialNr << ") — OK");
+                                                       << " (serial " << serialNr << ") - OK");
         }
         process_phidget_to_calibrated_ros_msg(
             serialNr, spatialNr,
@@ -213,7 +213,7 @@ int argumentHandler(ros::NodeHandle &nh)
     }
     else
     {
-        ROS_WARN("jasper_pub_rate must be 1–500 Hz. Defaulting to %d Hz", DATA_RATE_DEFAULT);
+        ROS_WARN("jasper_pub_rate must be 1-500 Hz. Defaulting to %d Hz", DATA_RATE_DEFAULT);
     }
     nh.param<int>("jasper_imu_rate", imu_data_rate, IMU_DATA_RATE_DEFAULT);
     imu_data_rate = imu_data_rate > 250 ? 250 : imu_data_rate;
@@ -300,7 +300,7 @@ void CCONV detachHandler(PhidgetHandle ch, void *ctx)
 // ---------------------------------------------------------------------------
 int CCONV init()
 {
-    ROS_INFO("Initialising Phidget IMUs…");
+    ROS_INFO("Initialising Phidget IMUs...");
     Phidget_resetLibrary();
 
     PhidgetSpatialHandle spatial0, spatial1, spatial2;
@@ -329,7 +329,7 @@ int CCONV init()
     if (use_serial2)
         Phidget_setOnDetachHandler((PhidgetHandle)spatial2, detachHandler, NULL);
 
-    ROS_INFO("Now Attaching the IMUS! Giving it maximum 3 seconds!");
+    ROS_INFO("Attaching the IMUS! Giving it maximum 3 seconds!");
     // Open your Phidgets and wait for attachment
     ros::Time begin = ros::Time::now();
     if (use_serial0)
@@ -340,7 +340,7 @@ int CCONV init()
         Phidget_openWaitForAttachment((PhidgetHandle)spatial2, 1000);
     if (ros::Time::now().toSec() - begin.toSec() >= 3.0)
     {
-        ROS_WARN("Phidget IMU attachment timeout — data may be compromised.");
+        ROS_WARN("Phidget IMU attachment timeout - data may be compromised.");
     }
     else
     {
@@ -357,7 +357,7 @@ int CCONV init()
         PhidgetSpatial_setDataInterval(spatial2, imu_data_intervall);
 
     // Zero gyroscopes — robot must be stationary
-    ROS_WARN("!!! CALIBRATING GYROSCOPES — DO NOT MOVE IMUs !!!");
+    ROS_WARN("!!! CALIBRATING GYROSCOPES - DO NOT MOVE IMUs !!!");
     ros::Duration(0.5).sleep();
     if (use_serial0)
         PhidgetSpatial_zeroGyro(spatial0);
@@ -431,7 +431,7 @@ int main(int argc, char *argv[])
         loop_rate.sleep();
     }
 
-    ROS_WARN("imu_jasper shutdown — goodbye!");
+    ROS_WARN("imu_jasper shutdown - goodbye!");
     Phidget_resetLibrary();
     ros::shutdown();
     return 0;
