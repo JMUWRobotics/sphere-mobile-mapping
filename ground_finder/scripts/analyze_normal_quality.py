@@ -105,25 +105,24 @@ def plot_analysis(df, output_prefix='analysis', minimal=False):
         print(f"Saved plot to {output_prefix}_plot.png")
         plt.show()
         return
-    
-    # Plot 2: Inlier ratio and visibility score
+
+    # Plot 2: Inlier ratio vs inlier score
     ax = axes[1]
-    ax2 = ax.twinx()
-    ax.plot(time_rel, df['inlier_ratio'].values, 'purple', linewidth = 0.75, alpha=0.6, label='Inlier Ratio')
-    ax2.plot(time_rel, df['pub_vis_score'].values, 'orange', linewidth = 0.75, alpha=0.6, label='Visibility Score')
+    ax.plot(time_rel, df['inlier_ratio'].values, 'purple', linewidth = 0.75, alpha = 0.6, label='Inlier Ratio')
+    ax.plot(time_rel, df['pub_inlier_score'].values, 'darkorange', linewidth = 0.75, alpha = 0.6, label='Inlier Score')
+    ax.plot(time_rel, df['pub_vis_score'].values, 'darkcyan', linewidth = 0.75, alpha = 0.6, label='Visibility Score')
     ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Inlier Ratio', color='purple')
-    ax2.set_ylabel('Visibility Score', color='orange')
-    ax.set_title('Inlier Ratio vs Visibility Score')
-    ax.tick_params(axis='y', labelcolor='purple')
-    ax2.tick_params(axis='y', labelcolor='orange')
+    ax.set_ylabel('Score or Ratio')
+    ax.set_title('Inlier Ratio/Score vs Inlier Score Over Time')
+    ax.legend()
     ax.grid(True, alpha=0.3)
-    
+
+
     # Plot 3: Score breakdown
     ax = axes[2]
-    ax.plot(time_rel, df['curr_vis_score'].values, linewidth = 0.75, alpha=0.6, label='Visibility Score')
-    ax.plot(time_rel, df['curr_inlier_score'].values, linewidth = 0.75, alpha=0.6, label='Inlier Score')
-    ax.plot(time_rel, df['curr_combined_score'].values, 'k-', linewidth = 0.75, alpha=0.8, label='Combined Score')
+    ax.plot(time_rel, df['curr_vis_score'].values,  'darkcyan', linewidth = 0.75, alpha=0.6, label='Visibility Score')
+    ax.plot(time_rel, df['curr_inlier_score'].values, 'darkorange', linewidth = 0.75, alpha=0.6, label='Inlier Score')
+    ax.plot(time_rel, df['curr_combined_score'].values, 'r-', linewidth = 0.75, alpha=0.8, label='Combined Score')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Score')
     ax.set_title('Score Components Over Time')

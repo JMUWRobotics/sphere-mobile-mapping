@@ -152,15 +152,15 @@ private:
     ros::NodeHandle nh;    // Node handle
     ros::Subscriber sub_h; // Subscriber for hesai topic
     ros::Subscriber sub_p; // Subscriber for plane topic
-    ros::Subscriber sub_lkf;
+    ros::Subscriber sub_lio;
     ros::Publisher pub_subcloud; // Publisher of subcloud
     ros::Publisher pub_inliers;
     // ros::Publisher pub_test2;                 // TODO take out!
-    ros::Publisher pub_n;                        // Publisher of normal vector in map_lkf frame
+    ros::Publisher pub_n;                        // Publisher of normal vector in map_lio frame
     ros::Publisher pub_vis_n;                    // Publisher of normal vector marker for rviz
-    ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map_lkf frame
-    ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map_lkf frame
-    ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map_lkf frame
+    ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map_lio frame
+    ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map_lio frame
+    ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map_lio frame
     ros::Publisher pub_scored_n_pandar;          // Publisher of scored normal vector in pandar frame
     ros::Publisher pub_smoothed_scored_n_pandar; // Publisher of smoothed scored normal vector in pandar frame
 
@@ -197,7 +197,7 @@ private:
     /* EMA smoothing parameters */
     bool enable_normal_smoothing = true;           // Enable smoothing of normal vector
     double normal_smoothing_alpha = 0.1;           // Smoothing factor alpha for normal vector smoothing [0,...,1] higher: more responsive, lower: smoother
-    geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map_lkf frame)
+    geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map_lio frame)
     bool have_smoothed_normal = false;             // flag if smoothed vector is initialized
 
     /* Gaussian Kernel Smoothing Parameters */
@@ -208,7 +208,7 @@ private:
 
     // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
-    bool enable_view_score = false;                                                    // Set to true when first LKF pose is received
+    bool enable_view_score = false;                                                    // Set to true when first lio pose is received
     bool enable_scoring = true;                                                        // Enable/disable scoring and fallback mechanism (ROS param)
     double last_visibility_score = 1.0;                                                // most recent viewability score (1.0 = best, 0.0 = worst)
     size_t min_inliers = 20;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
@@ -219,11 +219,11 @@ private:
     double weight_inlier_ratio = 0.4;                                                  // weight for inlier ratio score in combined score calculation
     double score_threshold = 0.2;                                                      // normals with score below this threshold are not used but rather fallback value
     double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
-    geometry_msgs::PoseStampedConstPtr last_lkf_pose;                                  // most recent LKF pose
+    geometry_msgs::PoseStampedConstPtr last_lio_pose;                                  // most recent lio pose
     size_t last_inlier_count = 0;                                                      // #inliers from last plane detection
     size_t last_subcloud_size = 0;                                                     // #points of last filtered subcloud
-    double last_roll = 0.0;                                                            // most recent roll angle from LKF pose (radians)
-    double last_pitch = 0.0;                                                           // most recent pitch angle from LKF pose (radians)
+    double last_roll = 0.0;                                                            // most recent roll angle from lio pose (radians)
+    double last_pitch = 0.0;                                                           // most recent pitch angle from lio pose (radians)
 
     // ---------------------- Init functions  ----------------------
     /** \brief Initalizes values of n_marker for visualization of normal vector in rviz
@@ -293,9 +293,9 @@ private:
      */
     int64_t determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &cur_scan, PlaneSegm type, geometry_msgs::Vector3Stamped &n_msg);
 
-    /** \brief Converts the normal vector n from pandar_frame to the map_lkf frame, while ensuring that n always points into ground.
-     * \param[out] n_msg n_msg The normal vector message transformed into the map_lkf frame
-     * \param[in]  last_iteration True (Default): Last try for plane segmentation and overwrites n to [0,0,-1] in map_lkf frame if wall found;
+    /** \brief Converts the normal vector n from pandar_frame to the map_lio frame, while ensuring that n always points into ground.
+     * \param[out] n_msg n_msg The normal vector message transformed into the map_lio frame
+     * \param[in]  last_iteration True (Default): Last try for plane segmentation and overwrites n to [0,0,-1] in map_lio frame if wall found;
      * False: Does not overwrite n vector;
      * \return True if conversion successfull (most likely representing ground); false otherwise.
      */
@@ -310,8 +310,8 @@ private:
      */
     void scan_callback_count(const std_msgs::EmptyConstPtr &msg);
 
-    /** \brief LKF pose callback function - called each msg @ LKF topic. Used for orientation-dependent ground view score. */
-    void lkf_pose_callback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    /** \brief lio pose callback function - called each msg @ lio topic. Used for orientation-dependent ground view score. */
+    void lio_pose_callback(const geometry_msgs::PoseStamped::ConstPtr &msg);
 
     // ---------------------- Ground Vector Smoothing ----------------
 
@@ -320,7 +320,7 @@ private:
     geometry_msgs::Vector3Stamped gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector);
 
     // ---------------------- Score calculation ----------------------
-    /** \brief compute ground visibility [0.1...1] from latest LKF pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
+    /** \brief compute ground visibility [0.1...1] from latest lio pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
      *  returns {visibility, inlier_ratio} */
     std::pair<double, double> compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inlier_count, size_t subcloud_size);
 
@@ -354,25 +354,25 @@ public:
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
         ros::NodeHandle pnh("~"); // TODO: check if needed (anonymous node handle for private params)
-        pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
-        pnh.param<double>("normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
-        pnh.param<bool>("use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
-        pnh.param<double>("smoothing_cutoff_freq", smoothing_cutoff_freq, smoothing_cutoff_freq);
-        pnh.param<double>("lidar_rate", lidar_rate, lidar_rate);
-        pnh.param<bool>("enable_scoring", enable_scoring, enable_scoring);
-        pnh.param<double>("weight_visibility", weight_visibility, weight_visibility);
-        pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
-        pnh.param<double>("score_threshold", score_threshold, score_threshold);
-        pnh.param<double>("min_score_sliding_window", min_score_sliding_window, min_score_sliding_window);
+        pnh.param<bool>("gf_enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
+        pnh.param<double>("gf_normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
+        pnh.param<bool>("gf_use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
+        pnh.param<double>("gf_smoothing_cutoff_freq", smoothing_cutoff_freq, smoothing_cutoff_freq);
+        pnh.param<double>("gf_lidar_rate", lidar_rate, lidar_rate);
+        pnh.param<bool>("gf_enable_scoring", enable_scoring, enable_scoring);
+        pnh.param<double>("gf_weight_visibility", weight_visibility, weight_visibility);
+        pnh.param<double>("gf_weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
+        pnh.param<double>("gf_score_threshold", score_threshold, score_threshold);
+        pnh.param<double>("gf_min_score_sliding_window", min_score_sliding_window, min_score_sliding_window);
 
-        ROS_INFO("Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
+        ROS_INFO("[GF] Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
                  enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
                  use_gaussian_smoothing ? "true" : "false", smoothing_cutoff_freq, lidar_rate);
 
-        ROS_INFO("Scoring and fallback: %s", enable_scoring ? "ENABLED" : "DISABLED");
+        ROS_INFO("[GF] Scoring and fallback: %s", enable_scoring ? "ENABLED" : "DISABLED");
         if (enable_scoring)
         {
-            ROS_INFO("Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
+            ROS_INFO("[GF] Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
                      score_threshold, min_score_sliding_window);
         }
 
@@ -385,7 +385,7 @@ public:
             win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
             gaussian_kernel.reset(new SmoothedGaussian3D(win_size, sigma, dt)); // create kernel
 
-            ROS_INFO("created gaussian kernel smoothing with \n window size: %d, sigma: %.4f s, dt: %.4f s, cutoff freq: %.4f Hz, lidar_rate: %.4f Hz", win_size, sigma, dt, smoothing_cutoff_freq, lidar_rate);
+            ROS_INFO("[GF] created gaussian kernel smoothing with \n window size: %d, sigma: %.4f s, dt: %.4f s, cutoff freq: %.4f Hz, lidar_rate: %.4f Hz", win_size, sigma, dt, smoothing_cutoff_freq, lidar_rate);
 
             // Export kernel for plotting
             gaussian_kernel->exportKernelToCSV("/tmp/gaussian_kernel.csv");
@@ -394,16 +394,16 @@ public:
         // Initalize n_marker
         initMarker();
 
-        // Wait for first transform (pandar_frame to map_lkf)
+        // Wait for first transform (pandar_frame to map_lio)
         tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
-        ROS_WARN("Waiting for TF Listener!");
+        ROS_WARN("[GF] Waiting for TF Listener!");
         bool tf_listener_fail = true;
         while (tf_listener_fail && ros::ok())
         {
             try
             {
                 tf_listener_fail = false;
-                geometry_msgs::TransformStamped t = tf_buffer.lookupTransform("map_lkf", "pandar_frame", ros::Time(0));
+                geometry_msgs::TransformStamped t = tf_buffer.lookupTransform("map_lio", "pandar_frame", ros::Time(0));
             }
             catch (tf2::TransformException &ex)
             {
@@ -411,7 +411,7 @@ public:
                 ros::Duration(0.1).sleep();
             }
         }
-        ROS_INFO("Received Transformation! Starting subscriber now!\n");
+        ROS_INFO("[GF] Received Transformation! Starting subscriber now!\n");
 
         // Subscribe to Plane counter
         sub_p = nh.subscribe("/plane", 1, &GroundFinder::scan_callback_count, this);
@@ -420,7 +420,7 @@ public:
         sub_h = nh.subscribe("/lidar/points_undistorted", 200, &GroundFinder::scan_callback, this);
         // sub = nh.subscribe("/hesai/pandar", 1, &GroundFinder::scan_callback, this);
 
-        sub_lkf = nh.subscribe("/lkf/pose", 1, &GroundFinder::lkf_pose_callback, this);
+        sub_lio = nh.subscribe("/all_pose_out", 1, &GroundFinder::lio_pose_callback, this);
 
         // Open file stream
         if (write2file)
@@ -428,7 +428,7 @@ public:
             csv.open(path);
             // Write header (times)
             csv << "Downsample[ns],BuildFilTree[ns],SearchFil[ns],DeleteFil[ns],BuildTreeSub[ns],SearchSub[ns],DeleteSub[ns],PreProcTotal[ns],Plane[ns],Total[ns],";
-            // Wirte header (result = n in map_lkf)
+            // Wirte header (result = n in map_lio)
             csv << "nx,ny,nz,planeCount\n";
         }
 
@@ -448,7 +448,7 @@ public:
         }
         scored_normals_log.open(scored_normals_path, std::ios::out | std::ios::trunc);
         scored_normals_log << "timestamp,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable\n";
-        ROS_INFO("Scored normals log: %s", scored_normals_path.c_str());
+        ROS_INFO("[GF] Scored normals log: %s", scored_normals_path.c_str());
     }
 };
 

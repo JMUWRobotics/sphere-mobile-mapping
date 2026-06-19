@@ -30,7 +30,7 @@ int64_t GroundFinder::delete_points(pcl::PointCloud<PointType>::Ptr &cur_scan, p
     auto end_del = std::chrono::high_resolution_clock::now();
     auto duration_del = std::chrono::duration_cast<std::chrono::microseconds>(end_del - start_del).count();
     if (!quiet)
-        ROS_INFO("Delete points from cloud takes: %0.3f ms", float(duration_del) / 1e3);
+        ROS_INFO("[GF] Delete points from cloud takes: %0.3f ms", float(duration_del) / 1e3);
 
     return duration_del;
 }
@@ -45,7 +45,7 @@ int64_t GroundFinder::downsample(pcl::PointCloud<PointType>::Ptr &cur_scan)
     auto end_ds = std::chrono::high_resolution_clock::now();
     auto duration_ds = std::chrono::duration_cast<std::chrono::microseconds>(end_ds - start_ds).count();
     if (!quiet)
-        ROS_INFO("Downsampling cloud takes: %0.6f ms", float(duration_ds) / 1e3);
+        ROS_INFO("[GF] Downsampling cloud takes: %0.6f ms", float(duration_ds) / 1e3);
 
     // Write to file
     if (write2file)
@@ -79,7 +79,7 @@ int64_t GroundFinder::filter_cloud_geo(pcl::PointCloud<PointType>::Ptr &cur_scan
     auto end_loop = std::chrono::high_resolution_clock::now();
     auto duration_loop = std::chrono::duration_cast<std::chrono::microseconds>(end_loop - start_loop).count();
     if (!quiet)
-        ROS_INFO("Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
+        ROS_INFO("[GF] Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
 
     // Delete points from cloud
     auto duration_del = delete_points(cur_scan, del_points, true);
@@ -100,7 +100,7 @@ int64_t GroundFinder::filter_cloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_scan
     auto end_build = std::chrono::high_resolution_clock::now();
     auto duration_build = std::chrono::duration_cast<std::chrono::microseconds>(end_build - start_build).count();
     if (!quiet)
-        ROS_INFO("Building tree takes: %0.3f ms", float(duration_build) / 1e3);
+        ROS_INFO("[GF] Building tree takes: %0.3f ms", float(duration_build) / 1e3);
 
     // Radius search
     PointType origin;
@@ -114,7 +114,7 @@ int64_t GroundFinder::filter_cloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_scan
     auto end_search = std::chrono::high_resolution_clock::now();
     auto duration_search = std::chrono::duration_cast<std::chrono::microseconds>(end_search - start_search).count();
     if (!quiet)
-        ROS_INFO("Radius search takes: %0.3f ms", float(duration_search) / 1e3);
+        ROS_INFO("[GF] Radius search takes: %0.3f ms", float(duration_search) / 1e3);
 
     // Delete points from cloud
     pcl::PointIndices::Ptr del_points(new pcl::PointIndices());
@@ -165,7 +165,7 @@ int64_t GroundFinder::create_subcloud_geo(pcl::PointCloud<PointType>::Ptr &cur_s
     auto end_loop = std::chrono::high_resolution_clock::now();
     auto duration_loop = std::chrono::duration_cast<std::chrono::microseconds>(end_loop - start_loop).count();
     if (!quiet)
-        ROS_INFO("Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
+        ROS_INFO("[GF] Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
 
     // Delete points from cloud
     int64_t duration_del;
@@ -195,7 +195,7 @@ int64_t GroundFinder::create_subcloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_s
     auto end_build = std::chrono::high_resolution_clock::now();
     auto duration_build = std::chrono::duration_cast<std::chrono::microseconds>(end_build - start_build).count();
     if (!quiet)
-        ROS_INFO("Building tree takes: %0.6f ms", float(duration_build) / 1e3);
+        ROS_INFO("[GF] Building tree takes: %0.6f ms", float(duration_build) / 1e3);
 
     // KNN search
     std::vector<int> search_result;
@@ -205,7 +205,7 @@ int64_t GroundFinder::create_subcloud_kdt(pcl::PointCloud<PointType>::Ptr &cur_s
     auto end_search = std::chrono::high_resolution_clock::now();
     auto duration_search = std::chrono::duration_cast<std::chrono::microseconds>(end_search - start_search).count();
     if (!quiet)
-        ROS_INFO("Search kNN takes: %0.6f ms", float(duration_search) / 1e3);
+        ROS_INFO("[GF] Search kNN takes: %0.6f ms", float(duration_search) / 1e3);
 
     // Delete Points from cloud
     pcl::PointIndices::Ptr sub_points(new pcl::PointIndices());
@@ -258,7 +258,7 @@ int64_t GroundFinder::filter_create_subcloud_geo(pcl::PointCloud<PointType>::Ptr
     auto end_loop = std::chrono::high_resolution_clock::now();
     auto duration_loop = std::chrono::duration_cast<std::chrono::microseconds>(end_loop - start_loop).count();
     if (!quiet)
-        ROS_INFO("Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
+        ROS_INFO("[GF] Looping through cloud takes: %0.6f ms", float(duration_loop) / 1e3);
 
     // Delete points from cloud
     int64_t duration_del;
@@ -553,7 +553,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                     inliers->indices.resize(count);
                     // Check if enough points for PCA if not just retry RHT
                     if (!quiet)
-                        ROS_WARN("Inliers num: %ld", inliers->indices.size());
+                        ROS_WARN("[GF] Inliers num: %ld", inliers->indices.size());
                     if (!last_iteration && count < 3)
                         continue;
 
@@ -582,7 +582,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             }
             catch (pcl::InitFailedException)
             {
-                ROS_ERROR("Not enough points for PCA!");
+                ROS_ERROR("[GF] Not enough points for PCA!");
                 convert_n_to_map_frame(n_msg, true);
                 return -1000;
             }
@@ -601,7 +601,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 // If not enough points left to fit plane = stop plane detection
                 if (cur_scan->size() < 3)
                 {
-                    ROS_ERROR("Not enough points after delete in cur_scan! num_points < 3");
+                    ROS_ERROR("[GF] Not enough points after delete in cur_scan! num_points < 3");
                     convert_n_to_map_frame(n_msg, true);
                     return -1000;
                 }
@@ -624,7 +624,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
     if (!quiet)
     {
-        ROS_INFO("Plane Segmentation takes: %0.6f ms", float(duration_plane) / 1e3);
+        ROS_INFO("[GF] Plane Segmentation takes: %0.6f ms", float(duration_plane) / 1e3);
         // ROS_INFO("Normal Vector: nx: %.3f, ny: %.3f, nz: %.3f", n[0], n[1], n[2]);
     }
     return duration_plane;
@@ -636,11 +636,11 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     try
     {
         // Listen to tf tree for transformation
-        t = tf_buffer.lookupTransform("map_lkf", "pandar_frame", ros::Time(0)); // orientierung von mapMoritz nehmen, nicht map_lkf (KF)
+        t = tf_buffer.lookupTransform("map_lio", "pandar_frame", ros::Time(0));
     }
     catch (tf2::TransformException &ex)
     {
-        ROS_ERROR("Failed to listen to tf tree!\n\n");
+        ROS_ERROR("[GF] Failed to listen to tf tree!\n\n");
         return false;
     }
     // Create Vector n in pandar frame
@@ -653,26 +653,26 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
     // Make sure it always points into ground // NOTE: Assumption = abs(slope of ground plane) < 45°
     std::vector<double> down = {0.0, 0.0, -1.0};
-    std::vector<double> n_map_lkf = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-    double dot_prod = dot_product(down, n_map_lkf);
+    std::vector<double> n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+    double dot_prod = dot_product(down, n_map_lio);
 
     // Check if n represents wall
     if (fabs(dot_prod) < wall_thresh)
     {
-        // Update normal vector to [0,0,-1] in map_lkf frame for next iteration geometrical subcloud
+        // Update normal vector to [0,0,-1] in map_lio frame for next iteration geometrical subcloud
         if (last_iteration && subcloud == GEOMETRICAL)
         {
             try
             {
                 // Listen to tf tree for transformation
-                t = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
+                t = tf_buffer.lookupTransform("pandar_frame", "map_lio", ros::Time(0));
             }
             catch (tf2::TransformException &ex)
             {
-                ROS_ERROR("Failed to listen to tf tree!\n\n");
+                ROS_ERROR("[GF] Failed to listen to tf tree!\n\n");
                 return false;
             }
-            // Create "down" Vector n in map_lkf frame
+            // Create "down" Vector n in map_lio frame
             geometry_msgs::Vector3Stamped n_map;
             n_map.vector.x = 0.0;
             n_map.vector.y = 0.0;
@@ -683,7 +683,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
             n[1] = n_pandar.vector.y;
             n[2] = n_pandar.vector.z;
             if (!quiet)
-                ROS_ERROR("Resetting n!");
+                ROS_ERROR("[GF] Resetting n!");
         }
         return false;
     }
@@ -702,10 +702,10 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     // If successfully found plane then caluculate and print inclination
     if (!quiet)
     {
-        n_map_lkf = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-        dot_prod = dot_product(down, n_map_lkf);
+        n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+        dot_prod = dot_product(down, n_map_lio);
         double inclination = acos(dot_prod) * 180 / M_PI;
-        ROS_INFO("Inclination of the plane: %.5f", inclination);
+        ROS_INFO("[GF] Inclination of the plane: %.5f", inclination);
     }
 
     return true;
@@ -713,6 +713,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
 void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
+    ROS_WARN("[GF] entered scan callback");
     // Convert PointCloud2 (sensor msg) to PointCloud (pcl)
     pcl::PointCloud<PointType>::Ptr cur_scan(new pcl::PointCloud<PointType>);
     pcl::fromROSMsg(*msg, *cur_scan);
@@ -768,7 +769,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         duration_total = duration_filter + duration_subcloud;
     }
     if (!quiet)
-        ROS_WARN("Total preprocessing time: %0.6f ms", float(duration_total) / 1e3);
+        ROS_WARN("[GF] Total preprocessing time: %0.6f ms", float(duration_total) / 1e3);
     if (write2file)
         csv << duration_total << ",";
 
@@ -784,9 +785,9 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // ---------------------- Plane segmentation ----------------------
 
     geometry_msgs::Vector3Stamped n_msg;
-    n_msg.header.frame_id = "map_lkf";
+    n_msg.header.frame_id = "map_lio";
     n_msg.header.stamp = msg->header.stamp;
-    // Determine normal vector of ground in map_lkf frame incl. ensuring it represents ground and points into ground
+    // Determine normal vector of ground in map_lio frame incl. ensuring it represents ground and points into ground
     auto duration_plane = determine_n_ground_plane(cur_scan, plane_alg, n_msg);
     // Write to file
     if (write2file)
@@ -794,7 +795,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     if (duration_plane < 0)
     {
-        ROS_ERROR("Plane segmentation fault!\n");
+        ROS_ERROR("[GF] Plane segmentation fault!\n");
         count_fail++;
         // Write to file
         if (write2file)
@@ -817,7 +818,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (enable_scoring)
     {
         // compute curr score
-        auto [vis_score_computed, inlier_score_computed] = compute_plane_scores(last_lkf_pose, last_inlier_count, last_subcloud_size);
+        auto [vis_score_computed, inlier_score_computed] = compute_plane_scores(last_lio_pose, last_inlier_count, last_subcloud_size);
         vis_score = vis_score_computed;
         inlier_score = inlier_score_computed;
         combined_score = combine_scores(vis_score, inlier_score);
@@ -832,8 +833,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
             scored_normals_sliding_window.pop_front();
         }
 
-        ROS_INFO_THROTTLE(1.0, "Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu",
-                          combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
+        // ROS_INFO_THROTTLE(1.0, "[GF] Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu", combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
     }
     else
     {
@@ -849,7 +849,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     if (enable_scoring && combined_score < score_threshold)
     {
-        ROS_WARN("Current score (%.3f) below threshold (%.3f), searching history...",
+        ROS_WARN("[GF] Current score (%.3f) below threshold (%.3f), searching history...",
                  combined_score, score_threshold);
 
         // Find best candidate in sliding window using max_element with custom comparator (lambda function)
@@ -874,13 +874,13 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
             scored_msg.inlier_score = fallback->inlier_score;
             scored_msg.combined_score = fallback->combined_score;
 
-            ROS_WARN("Using best historical normal (score=%.5f, age=%.1f ms)",
+            ROS_WARN("[GF] Using best historical normal (score=%.5f, age=%.1f ms)",
                      final_score,
                      (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
         }
         else
         {
-            ROS_WARN("No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            ROS_WARN("[GF] No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
             fallback_unavailable = true;
         }
     }
@@ -920,7 +920,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // Total time
     duration_total += duration_plane;
     if (!quiet)
-        ROS_WARN("Total time: %0.6f ms; fails: %d\n", float(duration_total) / 1e3, count_fail);
+        ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n", float(duration_total) / 1e3, count_fail);
     // Write to file
     if (write2file)
         csv << duration_total << "," << n_msg.vector.x << "," << n_msg.vector.y << "," << n_msg.vector.z << ",";
@@ -946,21 +946,21 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     scored_msg_pandar.inlier_score = scored_msg.inlier_score;
     scored_msg_pandar.combined_score = scored_msg.combined_score;
 
-    geometry_msgs::TransformStamped t_map_lkf_to_pandar;
+    geometry_msgs::TransformStamped t_map_lio_to_pandar;
     try
     {
-        t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
-        geometry_msgs::Vector3Stamped normal_map_lkf;
-        normal_map_lkf.header = scored_msg.header;
-        normal_map_lkf.vector = scored_msg.normal;
+        t_map_lio_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lio", ros::Time(0));
+        geometry_msgs::Vector3Stamped normal_map_lio;
+        normal_map_lio.header = scored_msg.header;
+        normal_map_lio.vector = scored_msg.normal;
 
         geometry_msgs::Vector3Stamped normal_pandar;
-        tf2::doTransform(normal_map_lkf, normal_pandar, t_map_lkf_to_pandar);
+        tf2::doTransform(normal_map_lio, normal_pandar, t_map_lio_to_pandar);
         scored_msg_pandar.normal = normal_pandar.vector; // now holds scored normal in pandar frame
     }
     catch (tf2::TransformException &ex)
     {
-        ROS_WARN("Transforming scored normal to pandar_frame failed: %s", ex.what());
+        ROS_WARN("[GF] Transforming scored normal to pandar_frame failed: %s", ex.what());
 
         // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
         scored_msg_pandar.normal.x = n[0];
@@ -970,19 +970,22 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     pub_scored_n_pandar.publish(scored_msg_pandar);
 
-    if (!enable_scoring)
+    if (!quiet)
     {
-        ROS_INFO("Published scored normal: SCORING DISABLED (score=1.0)");
-    }
-    else if (using_fallback)
-    {
-        ROS_INFO("Published scored normal [map_lkf]: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
-                 scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
-    }
-    else
-    {
-        ROS_INFO("Published scored normal [map_lkf]: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
-                 scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+        if (!enable_scoring)
+        {
+            ROS_INFO("[GF] Published scored normal: SCORING DISABLED (score=1.0)");
+        }
+        else if (using_fallback)
+        {
+            ROS_INFO("[GF] Published scored normal [map_lio]: FALLBACK (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                     scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+        }
+        else
+        {
+            ROS_INFO("[GF] Published scored normal [map_lio]: CURRENT (combined=%.3f, vis=%.3f, inlier=%.3f)",
+                     scored_msg.combined_score, scored_msg.visibility_score, scored_msg.inlier_score);
+        }
     }
 
     // Publish smoothed normal vectors (same timestamp)
@@ -1035,21 +1038,21 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         smoothed_scored_msg_pandar.inlier_score = smoothed_scored_msg.inlier_score;
         smoothed_scored_msg_pandar.combined_score = smoothed_scored_msg.combined_score;
 
-        geometry_msgs::TransformStamped t_map_lkf_to_pandar;
+        geometry_msgs::TransformStamped t_map_lio_to_pandar;
         try
         {
-            t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0));
-            geometry_msgs::Vector3Stamped normal_map_lkf;
-            normal_map_lkf.header = smoothed_scored_msg.header;
-            normal_map_lkf.vector = smoothed_scored_msg.normal;
+            t_map_lio_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lio", ros::Time(0));
+            geometry_msgs::Vector3Stamped normal_map_lio;
+            normal_map_lio.header = smoothed_scored_msg.header;
+            normal_map_lio.vector = smoothed_scored_msg.normal;
 
             geometry_msgs::Vector3Stamped normal_pandar;
-            tf2::doTransform(normal_map_lkf, normal_pandar, t_map_lkf_to_pandar);
+            tf2::doTransform(normal_map_lio, normal_pandar, t_map_lio_to_pandar);
             smoothed_scored_msg_pandar.normal = normal_pandar.vector; // now holds smoothed & scored normal in pandar frame
         }
         catch (tf2::TransformException &ex)
         {
-            ROS_WARN("Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
+            ROS_WARN("[GF] Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
             // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
             smoothed_scored_msg_pandar.normal.x = n[0];
             smoothed_scored_msg_pandar.normal.y = n[1];
@@ -1075,15 +1078,16 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
 void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
 {
-    // if(!quiet){
-    ROS_WARN("MSG on 'plane' received -> Indicatiing new plane! Increasing counter.");
-    // }
+    if (!quiet)
+    {
+        ROS_WARN("[GF] MSG on 'plane' received -> Indicatiing new plane! Increasing counter.");
+    }
     plane_counter++;
 }
 
-void GroundFinder::lkf_pose_callback(const geometry_msgs::PoseStampedConstPtr &msg)
+void GroundFinder::lio_pose_callback(const geometry_msgs::PoseStampedConstPtr &msg)
 {
-    last_lkf_pose = msg;
+    last_lio_pose = msg;
 
     if (!enable_view_score)
         enable_view_score = true;
@@ -1215,7 +1219,7 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     double visibility_score = 1.0;
     if (enable_view_score == false || !msg.get())
     {
-        ROS_WARN_THROTTLE(2.0, "No LKF pose received, using default visibility_score=1.0 (full visibility)");
+        ROS_WARN_THROTTLE(2.0, "[GF] No lio pose received, using default visibility_score=1.0 (full visibility)");
     }
     else
     {
@@ -1223,21 +1227,21 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
         // Robot Pose in local (pandar) frame used for score
         // ----
 
-        //  Get transformation from map_lkf to pandar_frame
-        geometry_msgs::TransformStamped t_map_lkf_to_pandar;
+        //  Get transformation from map_lio to pandar_frame
+        geometry_msgs::TransformStamped t_map_lio_to_pandar;
         try
         {
-            t_map_lkf_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lkf", ros::Time(0)); // (target_frame, src_frame,...)
+            t_map_lio_to_pandar = tf_buffer.lookupTransform("pandar_frame", "map_lio", ros::Time(0)); // (target_frame, src_frame,...)
         }
         catch (tf2::TransformException &ex)
         {
-            ROS_ERROR("Failed to get transform from map_lkf to pandar_frame: %s", ex.what());
+            ROS_ERROR("[GF] Failed to get transform from map_lio to pandar_frame: %s", ex.what());
             return std::make_pair(1.0, 0.0);
         }
 
-        // Debug: Extract original angles in map_lkf frame
+        // Debug: Extract original angles in map_lio frame
         tf2::Quaternion q_temp;
-        tf2::fromMsg(t_map_lkf_to_pandar.transform.rotation, q_temp);
+        tf2::fromMsg(t_map_lio_to_pandar.transform.rotation, q_temp);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
         tf2::Matrix3x3(q_temp).getRPY(roll, pitch, yaw);
 
@@ -1263,7 +1267,7 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs
     if (inliers_count >= min_inliers && inlier_ratio > 0.0)
         inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
 
-    // ROS_INFO_THROTTLE(5.0, "Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f (inliers=%zu, min_inliers=%zu, inlier_scale=%.3f)",
+    // ROS_INFO_THROTTLE(5.0, "[GF] Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f (inliers=%zu, min_inliers=%zu, inlier_scale=%.3f)",
     //                   visibility_score, inlier_ratio, inlier_normalized, inliers_count, min_inliers, inlier_scale);
     return std::make_pair(visibility_score, inlier_normalized);
 }

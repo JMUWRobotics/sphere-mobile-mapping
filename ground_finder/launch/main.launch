@@ -1,34 +1,34 @@
 <launch>
   <!-- list of arguments that can be given as inputs of the launch file -->
-  <arg name="quiet"     default="false" />
-  <arg name="filter"    default="geo" />
-  <arg name="subcloud"  default="geo" />
-  <arg name="plane"     default="ran" />
-  <arg name="file"      default="default" />
-  <arg name="enable_normal_smoothing" default="true" />
-  <arg name="normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
-  <arg name="smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
-  <arg name="use_gaussian_smoothing" default="true" />
-  <arg name="enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+  <arg name="gf_quiet"     default="false" />
+  <arg name="gf_filter"    default="geo" />
+  <arg name="gf_subcloud"  default="geo" />
+  <arg name="gf_plane"     default="ran" />
+  <arg name="gf_file"      default="default" />
+  <arg name="gf_enable_normal_smoothing" default="true" />
+  <arg name="gf_normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+  <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+  <arg name="gf_use_gaussian_smoothing" default="true" />
+  <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
 
   <!-- C++ Executables /-->
   <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
     <!-- Parameters -->
     <!-- param name="use_sim_time" value="true" type=""/ -->
-    <param name="quiet" value="$(arg quiet)" type="bool"/>
-    <param name="filter" value="$(arg filter)" type="string"/>
-    <param name="subcloud" value="$(arg subcloud)" type="string"/>
-    <param name="plane" value="$(arg plane)" type="string"/>
-    <param name="file" value="$(arg file)" type="string"/>
-    <param name="enable_normal_smoothing" type="bool" value="$(arg enable_normal_smoothing)" />
-    <param name="normal_smoothing_alpha" type="double" value="$(arg normal_smoothing_alpha)" />
-    <param name="smoothing_cutoff_freq" type="double" value="$(arg smoothing_cutoff_freq)" />
-    <param name="use_gaussian_smoothing" type="bool" value="$(arg use_gaussian_smoothing)" />
-    <param name="weight_visibility" type="double" value="0.6" />
-    <param name="weight_inlier_ratio" type="double" value="0.4" />
-    <param name="score_threshold" value="0.2" type="double" />
-    <param name="min_score_sliding_window" value="0.3" type="double "/>
-    <param name="enable_scoring" value="$(arg enable_scoring)" type="bool"/>
+    <param name="gf_quiet" value="$(arg gf_quiet)" type="bool"/>
+    <param name="gf_filter" value="$(arg gf_filter)" type="string"/>
+    <param name="gf_subcloud" value="$(arg gf_subcloud)" type="string"/>
+    <param name="gf_plane" value="$(arg gf_plane)" type="string"/>
+    <param name="gf_file" value="$(arg gf_file)" type="string"/>
+    <param name="gf_enable_normal_smoothing" type="bool" value="$(arg gf_enable_normal_smoothing)" />
+    <param name="gf_normal_smoothing_alpha" type="double" value="$(arg gf_normal_smoothing_alpha)" />
+    <param name="gf_smoothing_cutoff_freq" type="double" value="$(arg gf_smoothing_cutoff_freq)" />
+    <param name="gf_use_gaussian_smoothing" type="bool" value="$(arg gf_use_gaussian_smoothing)" />
+    <param name="gf_weight_visibility" type="double" value="0.6" />
+    <param name="gf_weight_inlier_ratio" type="double" value="0.4" />
+    <param name="gf_score_threshold" value="0.2" type="double" />
+    <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
+    <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
   </node>
 
 </launch>

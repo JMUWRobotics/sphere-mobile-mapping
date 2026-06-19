@@ -22,29 +22,29 @@ int main(int argc, char **argv)
 
     // Quiet param
     bool quiet;
-    if (!nh.getParam("/ground_finder_node/quiet", quiet))
+    if (!nh.getParam("/ground_finder_node/gf_quiet", quiet))
     {
-        ROS_ERROR("Parameter failure... Ending Node!");
+        ROS_ERROR("[GF] Parameter failure... Ending Node!");
         ros::shutdown();
     }
     else
     {
         if (quiet)
         {
-            ROS_INFO("Quiet Mode activated! No receiving data or repetetive messages will be shown. Start-up information, errors and warnings will be shown!!");
+            ROS_INFO("[GF] Quiet Mode activated! No receiving data or repetetive messages will be shown. Start-up information, errors and warnings will be shown!!");
         }
     }
 
     // Filter param (valid: "none", "geo" or "kdt")
     std::string filtering_str;
-    if (!nh.getParam("/ground_finder_node/filter", filtering_str))
+    if (!nh.getParam("/ground_finder_node/gf_filter", filtering_str))
     {
-        ROS_ERROR("Parameter failure... Ending Node!");
+        ROS_ERROR("[GF] Parameter failure... Ending Node!");
         ros::shutdown();
     }
     else
     {
-        ROS_WARN("Approach used for filtering: %s", filtering_str.c_str());
+        ROS_WARN("[GF] Approach used for filtering: %s", filtering_str.c_str());
         if (!strcmp(filtering_str.c_str(), "none"))
         {
             filtering = NONE;
@@ -59,21 +59,21 @@ int main(int argc, char **argv)
         }
         else
         {
-            ROS_ERROR("Invalid Parameter filter! Valid options are: 'none', 'geo' or 'kdt'. Ending Node!");
+            ROS_ERROR("[GF] Invalid Parameter filter! Valid options are: 'none', 'geo' or 'kdt'. Ending Node!");
             ros::shutdown();
         }
     }
 
     // Subcloud param (valid: "geo" or "kdt")
     std::string subcloud_str;
-    if (!nh.getParam("/ground_finder_node/subcloud", subcloud_str))
+    if (!nh.getParam("/ground_finder_node/gf_subcloud", subcloud_str))
     {
-        ROS_ERROR("Parameter failure... Ending Node!");
+        ROS_ERROR("[GF] Parameter failure... Ending Node!");
         ros::shutdown();
     }
     else
     {
-        ROS_WARN("Approach used for subcloud: %s", subcloud_str.c_str());
+        ROS_WARN("[GF] Approach used for subcloud: %s", subcloud_str.c_str());
         if (!strcmp(subcloud_str.c_str(), "geo"))
         {
             subcloud = GEOMETRICAL;
@@ -84,21 +84,21 @@ int main(int argc, char **argv)
         }
         else
         {
-            ROS_ERROR("Invalid Parameter subcloud! Valid options are: 'geo' or 'kdt'. Ending Node!");
+            ROS_ERROR("[GF] Invalid Parameter subcloud! Valid options are: 'geo' or 'kdt'. Ending Node!");
             ros::shutdown();
         }
     }
 
     // Plane segmentation param (valid: "lsf", "pca", "ran" or "rht")
     std::string plane_alg_str;
-    if (!nh.getParam("/ground_finder_node/plane", plane_alg_str))
+    if (!nh.getParam("/ground_finder_node/gf_plane", plane_alg_str))
     {
-        ROS_ERROR("Parameter failure... Ending Node!");
+        ROS_ERROR("[GF] Parameter failure... Ending Node!");
         ros::shutdown();
     }
     else
     {
-        ROS_WARN("Using plane segmentation alg.: %s", plane_alg_str.c_str());
+        ROS_WARN("[GF] Using plane segmentation alg.: %s", plane_alg_str.c_str());
         if (!strcmp(plane_alg_str.c_str(), "lsf"))
         {
             plane_alg = LSF;
@@ -121,7 +121,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            ROS_ERROR("Invalid Parameter type! Valid options are: 'lsf', 'pca', 'ran' or 'rht'. Ending Node!");
+            ROS_ERROR("[GF] Invalid Parameter type! Valid options are: 'lsf', 'pca', 'ran' or 'rht'. Ending Node!");
             ros::shutdown();
         }
     }
@@ -130,9 +130,9 @@ int main(int argc, char **argv)
     std::string filename;
     std::string path = "";
     bool write2file = false;
-    if (!nh.getParam("/ground_finder_node/file", filename))
+    if (!nh.getParam("/ground_finder_node/gf_file", filename))
     {
-        ROS_ERROR("Parameter failure... Ending Node!");
+        ROS_ERROR("[GF] Parameter failure... Ending Node!");
         ros::shutdown();
     }
     else
@@ -183,11 +183,11 @@ int main(int argc, char **argv)
                 path = "/home/t2/catkin_ws/src/ground_finder/data/rht2/" + filename;
                 break;
             }
-            ROS_WARN("Writing to file: %s\n", path.c_str());
+            ROS_WARN("[GF] Writing to file: %s\n", path.c_str());
         }
         else
         {
-            ROS_INFO("No file name specified. Not writing to csv file!");
+            ROS_INFO("[GF] No file name specified. Not writing to csv file!");
         }
     }
 
