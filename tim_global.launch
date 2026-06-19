@@ -72,8 +72,7 @@
     <arg name="imu1_z" value="0.0287838"
         doc="in meters" />
     <arg name="imu2_x" value="-0.07202"
-        doc="in meters" />    <!-- ========== T265 cam ARGUMENTS ========== -->
-
+        doc="in meters" />   
     <arg name="imu2_y" value="-0.00149266"
         doc="in meters" />
     <arg name="imu2_z" value="0.0325564" /> 
@@ -117,7 +116,7 @@
     <arg name="timestamp_type" default="realtime"/>
     <arg name="data_type" default=""/>
     <arg name="namespace" default="hesai"/>
-    <!--arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/-->
+    <arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/>
     <arg name="multicast_ip"  default=""/>
     <arg name="coordinate_correction_flag"  default="false"/>
     <arg name="manager" default="pandar_nodelet_manager" />
@@ -234,6 +233,19 @@
     <arg name="rviz" default="true" 
         doc="Start RViz from lio.launch if enabled there"/>
 
+    <!-- Ground Finder Arguments -->
+    <arg name="gf_quiet"     default="false" />
+    <arg name="gf_filter"    default="geo" />
+    <arg name="gf_subcloud"  default="geo" />
+    <arg name="gf_plane"     default="ran" />
+    <arg name="gf_file"      default="default" />
+    <arg name="gf_enable_normal_smoothing" default="true" />
+    <arg name="gf_normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+    <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+    <arg name="gf_use_gaussian_smoothing" default="true" />
+    <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+
+
     <!-- Global Ground Finder Arguments -->
     <arg name="quiet" default="false" 
         doc="Suppress repetitive global_ground_finder logs"/>
@@ -304,7 +316,7 @@
     <!-- ========== PARAMS ========== -->
     <!-- ============================ -->
 
-<param name="topic_publish" type="string" value="$(arg topic_publish)" />
+    <param name="topic_publish" type="string" value="$(arg topic_publish)" />
     <param name="topic_pose_imu" type="string" value="$(arg topic_pose_imu)" />
     <param name="topic_pose_cam" type="string" value="$(arg topic_pose_cam)" />
     <param name="frame_id_imu" type="string" value="$(arg frame_id_imu)" />
@@ -366,6 +378,74 @@
     <param name="offset_y" type="double" value="$(arg offset_y)" />
     <param name="offset_z" type="double" value="$(arg offset_z)" />
     <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
+
+
+
+
+
+    <!-- Camera to center extrinsics -->
+    <param name="offset_x" type="double" value="$(arg offset_x)" />
+    <param name="offset_y" type="double" value="$(arg offset_y)" />
+    <param name="offset_z" type="double" value="$(arg offset_z)" />
+    <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
+
+<!-- ROSPARAM DEFINITIONS FINISHED -->
+<!-- LAUNCH ALL THE NODES -->
+    
+    <!-- Laser Self-Motion Distortion Correction (DEDICATED NODE DUE TO PAUL HEINISCH) -->
+    <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
+      <remap from="points_in" to="$(arg points_in)"/>
+      <remap from="imu_in" to="$(arg imu_in)" />
+      <remap from="points_out" to="$(arg points_out)" />
+      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
+    </node>
+
+
+<!-- start LIDAR HESAI nodelet manager -->
+    <!-- <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" /> -->
+    <node pkg="nodelet" type="nodelet" name="$(arg manager)" ns="$(arg namespace)" args="manager" output="screen" />
+    <node pkg="nodelet" type="nodelet" name="$(arg manager)_cloud" ns="$(arg namespace)" args="load pandar_pointcloud/CloudNodelet $(arg manager)" output="screen">
+        <param name="pcap_file" type="string" value="$(arg pcap_file)"/>
+        <param name="server_ip" type="string" value="$(arg server_ip)"/>
+        <param name="lidar_recv_port"  type="int" value="$(arg lidar_recv_port)"/>
+        <param name="gps_port"  type="int" value="$(arg gps_port)"/>
+        <param name="start_angle"  type="double" value="$(arg start_angle)"/>
+        <param name="lidar_type"  type="string" value="$(arg lidar_type)"/>
+        <param name="frame_id"  type="string" value="$(arg frame_id)"/>
+        <param name="pcldata_type"  type="int" value="$(arg pcldata_type)"/>
+        <param name="publish_type"  type="string" value="$(arg publish_type)"/>
+        <param name="timestamp_type"  type="string" value="$(arg timestamp_type)"/>
+        <param name="data_type"  type="string" value="$(arg data_type)"/>
+        <param name="lidar_correction_file"  type="string" value="$(arg lidar_correction_file)"/>
+        <param name="multicast_ip"  type="string" value="$(arg multicast_ip)"/>
+        <param name="coordinate_correction_flag"  type="bool" value="$(arg coordinate_correction_flag)"/>
+        <param name="fixed_frame"  type="string" value="$(arg fixed_frame)"/>
+        <param name="target_frame"  type="string" value="$(arg target_frame)"/>
+    </node>
+
+
+
+
+<!-- Ground Finder nodes & parameters -->
+
+ <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
+    <!-- Parameters -->
+    <!-- param name="use_sim_time" value="true" type=""/ -->
+    <param name="gf_quiet" value="$(arg gf_quiet)" type="bool"/>
+    <param name="gf_filter" value="$(arg gf_filter)" type="string"/>
+    <param name="gf_subcloud" value="$(arg gf_subcloud)" type="string"/>
+    <param name="gf_plane" value="$(arg gf_plane)" type="string"/>
+    <param name="gf_file" value="$(arg gf_file)" type="string"/>
+    <param name="gf_enable_normal_smoothing" type="bool" value="$(arg gf_enable_normal_smoothing)" />
+    <param name="gf_normal_smoothing_alpha" type="double" value="$(arg gf_normal_smoothing_alpha)" />
+    <param name="gf_smoothing_cutoff_freq" type="double" value="$(arg gf_smoothing_cutoff_freq)" />
+    <param name="gf_use_gaussian_smoothing" type="bool" value="$(arg gf_use_gaussian_smoothing)" />
+    <param name="gf_weight_visibility" type="double" value="0.6" />
+    <param name="gf_weight_inlier_ratio" type="double" value="0.4" />
+    <param name="gf_score_threshold" value="0.2" type="double" />
+    <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
+    <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
+  </node>
 
     <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen"/>
     <!-- <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen" launch-prefix="gdb -ex run -+-args"/> -->
@@ -466,16 +546,16 @@
          These ensure transforms are immediately available when LIO starts processing. -->
     <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
     <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
-    <!-- <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" /> -->
+    <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" />
     
     <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
     <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
-    <!-- <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" /> -->
+    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />
     
     <!-- Defines the transform between CAM and Center -->
-    <!-- <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
+    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
-    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" /> -->
+    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />
 
     <!-- ========== AUXILIARY NODES (NOT USED CURRENTLY BUT COMMENTED OUT FOR REFERENCE) ========== -->
     
@@ -488,7 +568,7 @@
     </node> -->
 
     <!-- IMU Odometry Filtering Options -->
-    <!-- node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" / -->
+    <node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" />
     <node pkg="imu_odom_phidgets" type="imuFilter" name="imu_filter_node" output="screen" />
     <!-- <node pkg="imu_odom_phidgets" type="imuMahony" name="imu_jasper_odometry_node" output="screen" /> -->
     <!-- <node pkg="imu_odom_phidgets" type="imuQEKF" name="imu_jasper_odometry_node" output="screen" /> -->
@@ -500,10 +580,11 @@
 
     <!-- Delta Pose Filtering and Visualization -->
     <!-- <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/> -->
-    <!-- <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/> -->
+    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
     <!-- <node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /> -->
 
 
 
 </launch>
+
 
