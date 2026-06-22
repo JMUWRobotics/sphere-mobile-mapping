@@ -3,6 +3,7 @@
 Plot the pose path from /posePub_merged topic
 """
 import sys
+import os
 import rosbag
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -63,23 +64,23 @@ def plot_paths(bag_files, title="Pose Paths"):
         
         # 3D plot
         ax3d.plot(x, y, z, color=color, label=label, linewidth=2)
-        ax3d.scatter(x[0], y[0], z[0], color=color, s=100, marker='o', edgecolors='black', linewidths=2)  # start
-        ax3d.scatter(x[-1], y[-1], z[-1], color=color, s=100, marker='s', edgecolors='black', linewidths=2)  # end
+        ax3d.scatter(x[0], y[0], z[0], color='g', s=100, marker='o', edgecolors='black', linewidths=2)  # start
+        ax3d.scatter(x[-1], y[-1], z[-1], color='r', s=100, marker='s', edgecolors='black', linewidths=2)  # end
         
         # 2D XY plot
         ax_xy.plot(x, y, color=color, label=label, linewidth=2)
-        ax_xy.scatter(x[0], y[0], color=color, s=100, marker='o', edgecolors='black', linewidths=2)
-        ax_xy.scatter(x[-1], y[-1], color=color, s=100, marker='s', edgecolors='black', linewidths=2)
+        ax_xy.scatter(x[0], y[0], color='g', s=100, marker='o', edgecolors='black', linewidths=2)
+        ax_xy.scatter(x[-1], y[-1], color='r', s=100, marker='s', edgecolors='black', linewidths=2)
         
         # XZ plot
         ax_xz.plot(x, z, color=color, label=label, linewidth=2)
-        ax_xz.scatter(x[0], z[0], color=color, s=100, marker='o', edgecolors='black', linewidths=2)
-        ax_xz.scatter(x[-1], z[-1], color=color, s=100, marker='s', edgecolors='black', linewidths=2)
+        ax_xz.scatter(x[0], z[0], color='g', s=100, marker='o', edgecolors='black', linewidths=2)
+        ax_xz.scatter(x[-1], z[-1], color='r', s=100, marker='s', edgecolors='black', linewidths=2)
         
         # YZ plot
         ax_yz.plot(y, z, color=color, label=label, linewidth=2)
-        ax_yz.scatter(y[0], z[0], color=color, s=100, marker='o', edgecolors='black', linewidths=2)
-        ax_yz.scatter(y[-1], z[-1], color=color, s=100, marker='s', edgecolors='black', linewidths=2)
+        ax_yz.scatter(y[0], z[0], color='g', s=100, marker='o', edgecolors='black', linewidths=2)
+        ax_yz.scatter(y[-1], z[-1], color='r', s=100, marker='s', edgecolors='black', linewidths=2)
         
         # Calculate statistics
         distance = np.sqrt(np.sum(np.diff(x)**2 + np.diff(y)**2 + np.diff(z)**2))
@@ -126,6 +127,13 @@ def plot_paths(bag_files, title="Pose Paths"):
     
     fig.suptitle(title, fontsize=16, fontweight='bold')
     plt.tight_layout()
+    
+    # Save fig in the same directory as script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = title.replace(" vs ", "_vs_").replace(" ", "_") + ".png"
+    filepath = os.path.join(script_dir, filename)
+    plt.savefig(filepath, dpi=150, bbox_inches='tight')
+    print(f"\nFigure saved to: {filepath}")
     
     print("\n" + "="*80)
     print(f"Path Stats for {title}")
