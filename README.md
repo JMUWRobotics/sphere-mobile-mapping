@@ -18,14 +18,14 @@ Dependencies are:
 
 - libpcap-dev
 - libyaml-cpp-dev
-- python-catkin-tools
+- python3-catkin-tools
 
 Install them all with apt package manager:
 ```
-$ sudo apt install libpcap-dev libyaml-cpp-dev python-catkin-tools
+$ sudo apt install libpcap-dev libyaml-cpp-dev python3-catkin-tools
 ```
 
-### Intel RealSense T265 
+### Intel RealSense T265 (OPTIONAL!)
 
 The T265 camera ROS wrapper is included as a catkin package in this repository in the folder [vio\_tracking\_t265](https://github.com/JMUWRobotics/sphere-mobile-mapping/tree/main/vio_tracking_t265).
 Dependencies are:
@@ -61,18 +61,17 @@ Preferably ROS Melodic or ROS Noetic (if available). ROS2 is currently not suppo
 
 Go inside your catkin workspace. If you don't already have one:
 ```
-$ mkdir -p ~/catkin_ws/src
-$ cd ~/catkin_ws/src
+$ mkdir -p ~/catkin_ws
+$ cd ~/catkin_ws
 ```
 
 Then clone this repository:
 ```
-$ git clone https://github.com/JMUWRobotics/sphere-mobile-mapping.git
+$ git clone https://github.com/JMUWRobotics/sphere-mobile-mapping.git src
 ```
 
 Build the packages:
 ```
-$ cd ..
 $ catkin_make
 ```
 
