@@ -116,7 +116,7 @@
     <arg name="timestamp_type" default="realtime"/>
     <arg name="data_type" default=""/>
     <arg name="namespace" default="hesai"/>
-    <arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/>
+    <!-- arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/ -->
     <arg name="multicast_ip"  default=""/>
     <arg name="coordinate_correction_flag"  default="false"/>
     <arg name="manager" default="pandar_nodelet_manager" />
@@ -416,7 +416,7 @@
         <param name="publish_type"  type="string" value="$(arg publish_type)"/>
         <param name="timestamp_type"  type="string" value="$(arg timestamp_type)"/>
         <param name="data_type"  type="string" value="$(arg data_type)"/>
-        <param name="lidar_correction_file"  type="string" value="$(arg lidar_correction_file)"/>
+        <!-- param name="lidar_correction_file"  type="string" value="$(arg lidar_correction_file)"/ -->
         <param name="multicast_ip"  type="string" value="$(arg multicast_ip)"/>
         <param name="coordinate_correction_flag"  type="bool" value="$(arg coordinate_correction_flag)"/>
         <param name="fixed_frame"  type="string" value="$(arg fixed_frame)"/>

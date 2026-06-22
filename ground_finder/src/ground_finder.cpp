@@ -1085,7 +1085,7 @@ void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
     plane_counter++;
 }
 
-void GroundFinder::lio_pose_callback(const geometry_msgs::PoseStampedConstPtr &msg)
+void GroundFinder::lio_pose_callback(const state_estimator_msgs::EstimatorConstPtr &msg)
 {
     last_lio_pose = msg;
 
@@ -1211,7 +1211,7 @@ geometry_msgs::Vector3Stamped GroundFinder::gaussian_smoothing(const geometry_ms
 
 // ---------- Score computation ----------------
 // returns <visibility_score, inlier_normalized>
-std::pair<double, double> GroundFinder::compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inliers_count, size_t subcloud_size)
+std::pair<double, double> GroundFinder::compute_plane_scores(const state_estimator_msgs::EstimatorConstPtr &msg, size_t inliers_count, size_t subcloud_size)
 {
 
     // --------------visibility_score----------------

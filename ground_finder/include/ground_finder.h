@@ -37,6 +37,7 @@
 #include <memory>
 
 #include <ground_finder_msgs/ScoredNormalStamped.h>
+#include <state_estimator_msgs/Estimator.h>
 
 // Preprocessing types
 enum Preprocessing
@@ -219,7 +220,7 @@ private:
     double weight_inlier_ratio = 0.4;                                                  // weight for inlier ratio score in combined score calculation
     double score_threshold = 0.2;                                                      // normals with score below this threshold are not used but rather fallback value
     double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
-    geometry_msgs::PoseStampedConstPtr last_lio_pose;                                  // most recent lio pose
+    state_estimator_msgs::EstimatorConstPtr last_lio_pose;                             // most recent lio pose
     size_t last_inlier_count = 0;                                                      // #inliers from last plane detection
     size_t last_subcloud_size = 0;                                                     // #points of last filtered subcloud
     double last_roll = 0.0;                                                            // most recent roll angle from lio pose (radians)
@@ -311,7 +312,7 @@ private:
     void scan_callback_count(const std_msgs::EmptyConstPtr &msg);
 
     /** \brief lio pose callback function - called each msg @ lio topic. Used for orientation-dependent ground view score. */
-    void lio_pose_callback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+    void lio_pose_callback(const state_estimator_msgs::EstimatorConstPtr &msg);
 
     // ---------------------- Ground Vector Smoothing ----------------
 
@@ -322,7 +323,7 @@ private:
     // ---------------------- Score calculation ----------------------
     /** \brief compute ground visibility [0.1...1] from latest lio pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
      *  returns {visibility, inlier_ratio} */
-    std::pair<double, double> compute_plane_scores(const geometry_msgs::PoseStampedConstPtr &msg, size_t inlier_count, size_t subcloud_size);
+    std::pair<double, double> compute_plane_scores(const state_estimator_msgs::EstimatorConstPtr &msg, size_t inlier_count, size_t subcloud_size);
 
     /**  \brief combine 2 scores into 1 final score */
     double combine_scores(double visibility_score, double inlier_score);
@@ -407,6 +408,7 @@ public:
             }
             catch (tf2::TransformException &ex)
             {
+                ROS_WARN("[GF] tf lookup failing... reason: %s", ex.what());
                 tf_listener_fail = true;
                 ros::Duration(0.1).sleep();
             }

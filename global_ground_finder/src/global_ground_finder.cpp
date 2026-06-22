@@ -284,15 +284,34 @@ void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorCo
 
     if (publish_shared_map_debug_)
     {
-        publishSharedMapDebug(latest_pose.header.stamp); // causes seg fault
+        auto start_debug = std::chrono::high_resolution_clock::now();
+        publishSharedMapDebug(latest_pose.header.stamp);
+        auto end_debug = std::chrono::high_resolution_clock::now();
+        auto debug_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_debug - start_debug).count();
+        if (debug_time_us > 100000) // Log if > 100ms
+        {
+            ROS_WARN("publishSharedMapDebug took %.3f ms", debug_time_us / 1000.0);
+        }
     }
 
     // process on scan cadence while avoiding callback pile-up
+    auto start_lock = std::chrono::high_resolution_clock::now();
     std::unique_lock<std::mutex> lock(processing_mutex_, std::try_to_lock);
+    auto end_lock = std::chrono::high_resolution_clock::now();
+
     // ROS_INFO("owning lock: %s", lock.owns_lock() ? "true" : "false");
     if (lock.owns_lock())
     {
         processAtCurrentPose();
+    }
+    else
+    {
+        static int skip_count = 0;
+        skip_count++;
+        if (skip_count % 10 == 0)
+        {
+            ROS_WARN("try_to_lock failed, skipping processAtCurrentPose (skip count: %d)", skip_count);
+        }
     }
 }
 
@@ -375,8 +394,8 @@ geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry
         geometry_msgs::TransformStamped t = tf_buffer.lookupTransform(pose_frame.header.frame_id, "center", ros::Time(0));
 
         center_pose.pose.position.x = t.transform.translation.x;
-        center_pose.pose.position.y = t.transform.translation.x;
-        center_pose.pose.position.z = t.transform.translation.x;
+        center_pose.pose.position.y = t.transform.translation.y;
+        center_pose.pose.position.z = t.transform.translation.z;
         center_pose.pose.orientation = t.transform.rotation;
 
         return center_pose;
@@ -786,6 +805,8 @@ void GlobalGroundFinder::processAtCurrentPose()
     auto end_total = std::chrono::high_resolution_clock::now();
     auto total_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count();
 
+    auto start_publish = std::chrono::high_resolution_clock::now();
+
     if (!quiet_)
     {
         ROS_INFO("Ground normal timing total=%.3f ms extraction=%.3f ms plane_fit=%.3f ms validation=%.3f ms post_fit=%.2f ms smoothing=%.2f ms",
@@ -799,7 +820,11 @@ void GlobalGroundFinder::processAtCurrentPose()
                  normal[0], normal[1], normal[2], inlier_count, local_cloud->points.size());
     }
 
+    auto end_publish = std::chrono::high_resolution_clock::now();
+    auto publish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_publish - start_publish).count();
+
     // Append CSV row if enabled
+    auto start_csv = std::chrono::high_resolution_clock::now();
     if (timing_csv_enabled_)
     {
         std::lock_guard<std::mutex> lock(timing_csv_mutex_);
@@ -816,6 +841,15 @@ void GlobalGroundFinder::processAtCurrentPose()
                              << total_ms << "\n";
             timing_csv_file_.flush();
         }
+    }
+    auto end_csv = std::chrono::high_resolution_clock::now();
+    auto csv_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_csv - start_csv).count();
+
+    if (!quiet_)
+    {
+        ROS_INFO("Post-processing timing: logging=%.3f ms csv=%.3f ms",
+                 publish_time_us / 1000.0,
+                 csv_time_us / 1000.0);
     }
 }
 
@@ -1230,7 +1264,6 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
                     inlier_set.insert(idx);
                 }
             }
-
             for (size_t i = 0; i < cloud_work->points.size(); ++i)
             {
                 if (inlier_set.find(i) == inlier_set.end())
@@ -1292,33 +1325,35 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
 
         if (rho != -1)
         {
-            // Found a plane candidate, check if it's ground
+            // Found a plane candidate, extract inliers first
             std::vector<double> test_normal = n;
+
+            // Extract inlier points before validation
+            inlier_count = 0;
+            if (!inlier_cloud)
+            {
+                inlier_cloud.reset(new pcl::PointCloud<PointType>);
+            }
+            inlier_cloud->clear();
+            inlier_cloud->points.reserve(cloud_work->points.size());
+            for (size_t i = 0; i < cloud_work->points.size(); ++i)
+            {
+                const PointType &p = cloud_work->points[i];
+                double distance = std::abs(p.x * test_normal[0] + p.y * test_normal[1] + p.z * test_normal[2] - rho);
+                if (distance <= 0.05) // 5cm threshold
+                {
+                    inlier_count++;
+                    inlier_cloud->points.push_back(p);
+                }
+            }
+            inlier_cloud->width = inlier_cloud->points.size();
+            inlier_cloud->height = 1;
+            inlier_cloud->is_dense = true;
+
             const bool valid_ground = validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z); // no eigenvalues/vecs for RHT since no PCA step, so pass 0.0 and 0.0 for those params
             if (valid_ground)
             {
                 normal = test_normal;
-
-                // Count inliers
-                inlier_count = 0;
-                if (!inlier_cloud)
-                {
-                    inlier_cloud.reset(new pcl::PointCloud<PointType>);
-                }
-                inlier_cloud->clear();
-                for (size_t i = 0; i < cloud_work->points.size(); ++i)
-                {
-                    const PointType &p = cloud_work->points[i];
-                    double distance = std::abs(p.x * normal[0] + p.y * normal[1] + p.z * normal[2] - rho);
-                    if (distance <= 0.05) // 5cm threshold
-                    {
-                        inlier_count++;
-                        inlier_cloud->points.push_back(p);
-                    }
-                }
-                inlier_cloud->width = inlier_cloud->points.size();
-                inlier_cloud->height = 1;
-                inlier_cloud->is_dense = true;
                 return true;
             }
             else if (last_iteration)
@@ -1583,7 +1618,11 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     normalize_vector(normal);
 
     // Lookup robot center pose (center_frame) expressed in current pose frame
-    geometry_msgs::PoseStamped center_pose = getRobotCenterPose(current_pose_);
+    geometry_msgs::PoseStamped center_pose;
+    {
+        std::lock_guard<std::mutex> lock(pose_mutex_);
+        center_pose = getRobotCenterPose(current_pose_);
+    }
 
     // Check against down vector [0, 0, -1]
     std::vector<double> down = {0.0, 0.0, -1.0};
