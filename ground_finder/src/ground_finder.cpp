@@ -713,7 +713,10 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
 void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
-    ROS_WARN("[GF] entered scan callback");
+    if (!quiet)
+    {
+        ROS_WARN("[GF] entered scan callback");
+    }
     // Convert PointCloud2 (sensor msg) to PointCloud (pcl)
     pcl::PointCloud<PointType>::Ptr cur_scan(new pcl::PointCloud<PointType>);
     pcl::fromROSMsg(*msg, *cur_scan);
@@ -849,8 +852,11 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     if (enable_scoring && combined_score < score_threshold)
     {
-        ROS_WARN("[GF] Current score (%.3f) below threshold (%.3f), searching history...",
-                 combined_score, score_threshold);
+        if (!quiet)
+        {
+            ROS_WARN("[GF] Current score (%.3f) below threshold (%.3f), searching history...",
+                     combined_score, score_threshold);
+        }
 
         // Find best candidate in sliding window using max_element with custom comparator (lambda function)
         auto fallback = std::max_element(scored_normals_sliding_window.begin(),
@@ -874,13 +880,19 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
             scored_msg.inlier_score = fallback->inlier_score;
             scored_msg.combined_score = fallback->combined_score;
 
-            ROS_WARN("[GF] Using best historical normal (score=%.5f, age=%.1f ms)",
-                     final_score,
-                     (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
+            if (!quiet)
+            {
+                ROS_WARN("[GF] Using best historical normal (score=%.5f, age=%.1f ms)",
+                         final_score,
+                         (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
+            }
         }
         else
         {
-            ROS_WARN("[GF] No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            if (!quiet)
+            {
+                ROS_WARN("[GF] No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            }
             fallback_unavailable = true;
         }
     }
