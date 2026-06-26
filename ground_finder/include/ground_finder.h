@@ -382,7 +382,7 @@ public:
         {
             double sigma = (sqrt(2.0 * log(2))) / (2.0 * M_PI * smoothing_cutoff_freq); // 1.0 / (2.0 * M_PI * smoothing_cutoff_freq); // 1/(1/s) = s // maybe change to (ln(2) / (2 * M_PI * cutoff_freq)) to get -3dB cutoff point?
             double dt = 1.0 / lidar_rate;                                               // lidar rate = 20 // 1 / (1/s) = s
-            int win_size = 6 * sigma / dt;                                              // unitless -- 19 for cutoff_freq of 1 Hz -- 39 FOR 0.5 Hz
+            int win_size = 6.0f * sigma / dt;                                           // unitless -- 19 for cutoff_freq of 1 Hz -- 39 FOR 0.5 Hz
             win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
             gaussian_kernel.reset(new SmoothedGaussian3D(win_size, sigma, dt)); // create kernel
 

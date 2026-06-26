@@ -85,7 +85,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
         size_t win_size = 6.0f * sigma / dt;
         win_size = win_size % 2 == 0 ? win_size + 1 : win_size;
         gaussian_kernel_.reset(new SmoothedGaussian3D(win_size, sigma, dt));
-        ROS_INFO("created gaussian kernel smoothing with \n window size: %ld, sigma: %.4f s, dt: %.4f s, cutoff freq: %.4f Hz, update_rate: %.4f Hz", win_size, sigma, dt, smoothing_cutoff_freq_, update_rate_);
+        ROS_INFO("[GGF] created gaussian kernel smoothing with \n window size: %ld, sigma: %.4f s, dt: %.4f s, cutoff freq: %.4f Hz, update_rate: %.4f Hz", win_size, sigma, dt, smoothing_cutoff_freq_, update_rate_);
     }
 
     std::string filename;
@@ -119,22 +119,22 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
         {
             log_file_ << "timestamp,nx,ny,nz,qx,qy,qz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
             log_file_.flush();
-            ROS_INFO("Logging to file: %s", log_file_path_.c_str());
+            ROS_INFO("[GGF] Logging to file: %s", log_file_path_.c_str());
         }
         else
         {
-            ROS_ERROR("Failed to open log file: %s", log_file_path_.c_str());
+            ROS_ERROR("[GGF] Failed to open log file: %s", log_file_path_.c_str());
             write2file = false;
         }
     }
     else
     {
-        ROS_INFO("File logging disabled (use 'file' parameter to enable)");
+        ROS_INFO("[GGF] File logging disabled (use 'file' parameter to enable)");
     }
 
     pnh.param<std::string>("trigger_topic", trigger_topic_, "/all_pose_out"); // Estimator trigger from LIO
 
-    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, true);
+    pnh.param<bool>("publish_shared_map_debug", publish_shared_map_debug_, false);
     pnh.param<bool>("debug_publish", debug_publish_, false);
     pnh.param<std::string>("shared_map_debug_topic", shared_map_debug_topic_, "/global_ground_finder/shared_map_out");
 
@@ -163,30 +163,30 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
 
     initMarker();
 
-    ROS_INFO("Global Ground Finder initialized");
-    ROS_INFO("  Extraction radius: %.3f m", extraction_radius_);
-    ROS_INFO("  Adaptive extraction radius: %s (sphere radius: %.3f m)",
+    ROS_INFO("[GGF] Global Ground Finder initialized");
+    ROS_INFO("  [GGF] Extraction radius: %.3f m", extraction_radius_);
+    ROS_INFO("  [GGF] Adaptive extraction radius: %s (sphere radius: %.3f m)",
              use_adaptive_extraction_radius_ ? "enabled" : "disabled",
              sphere_radius_);
-    ROS_INFO("  Debug traces: %s", debug_ ? "enabled" : "disabled");
-    ROS_INFO("  Extraction height: %.3f m", extraction_height_);
-    ROS_INFO("  Enable scoring: %s", enable_scoring_ ? "true" : "false");
-    ROS_INFO("  Publish shared map debug: %s on %s",
+    ROS_INFO("  [GGF] Debug traces: %s", debug_ ? "enabled" : "disabled");
+    ROS_INFO("  [GGF] Extraction height: %.3f m", extraction_height_);
+    ROS_INFO("  [GGF] Enable scoring: %s", enable_scoring_ ? "true" : "false");
+    ROS_INFO("  [GGF] Publish shared map debug: %s on %s",
              publish_shared_map_debug_ ? "true" : "false",
              shared_map_debug_topic_.c_str());
-    ROS_INFO("  Enable smoothing: %s (%s)",
+    ROS_INFO("  [GGF] Enable smoothing: %s (%s)",
              enable_normal_smoothing_ ? "true" : "false",
              use_gaussian_smoothing_ ? "Gaussian" : "EMA");
-    ROS_INFO("  Eigenvalue validation: %s (threshold: %.4f)",
+    ROS_INFO("  [GGF] Eigenvalue validation: %s (threshold: %.4f)",
              enable_eigenvalue_validation_ ? "enabled" : "disabled",
              eigenvalue_ratio_threshold_);
-    ROS_INFO("  Plane angle validation: %s (threshold: %.1f deg)",
+    ROS_INFO("  [GGF] Plane angle validation: %s (threshold: %.1f deg)",
              enable_plane_angle_validation_ ? "enabled" : "disabled",
              std::acos(wall_threshold_) * 180.0 / M_PI);
-    ROS_INFO("  Z-mean validation: %s (max deviation: %.2f m)",
+    ROS_INFO("  [GGF] Z-mean validation: %s (max deviation: %.2f m)",
              enable_z_mean_validation_ ? "enabled" : "disabled",
              max_z_deviation_);
-    ROS_INFO("  Convex hull validation: %s (max distance: %.2f m)",
+    ROS_INFO("  [GGF] Convex hull validation: %s (max distance: %.2f m)",
              enable_convex_hull_validation_ ? "enabled" : "disabled",
              max_hull_distance_);
 }
@@ -196,11 +196,11 @@ GlobalGroundFinder::~GlobalGroundFinder()
     if (log_file_.is_open())
     {
         log_file_.close();
-        ROS_INFO("Closed log file: %s", log_file_path_.c_str());
+        ROS_INFO("[GGF] Closed log file: %s", log_file_path_.c_str());
     }
-    ROS_INFO("Global Ground Finder shutting down");
-    ROS_INFO("  Success: %d, Failures: %d", count_success_, count_fail_);
-    ROS_INFO("  Valid planes: %d, Invalid planes: %d", count_valid_planes_, count_invalid_planes_);
+    ROS_INFO("[GGF] Global Ground Finder shutting down");
+    ROS_INFO("  [GGF] Success: %d, Failures: %d", count_success_, count_fail_);
+    ROS_INFO("  [GGF] Valid planes: %d, Invalid planes: %d", count_valid_planes_, count_invalid_planes_);
 }
 
 void GlobalGroundFinder::initMarker()
@@ -290,7 +290,7 @@ void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorCo
         auto debug_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_debug - start_debug).count();
         if (debug_time_us > 100000) // Log if > 100ms
         {
-            ROS_WARN("publishSharedMapDebug took %.3f ms", debug_time_us / 1000.0);
+            ROS_WARN("[GGF] publishSharedMapDebug took %.3f ms", debug_time_us / 1000.0);
         }
     }
 
@@ -310,7 +310,7 @@ void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorCo
         skip_count++;
         if (skip_count % 10 == 0)
         {
-            ROS_WARN("try_to_lock failed, skipping processAtCurrentPose (skip count: %d)", skip_count);
+            ROS_WARN("[GGF] try_to_lock pose failed, skipping processAtCurrentPose (skip count: %d)", skip_count);
         }
     }
 }
@@ -321,14 +321,14 @@ void GlobalGroundFinder::publishSharedMapDebug(const ros::Time &trigger_stamp)
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
     if (!handle.payload_type.empty() && handle.payload_type != typeid(pcl::PointCloud<PointType>).name())
     {
-        ROS_WARN_THROTTLE(2.0, "Cannot publish shared debug map: payload type mismatch (%s)", handle.payload_type.c_str());
+        ROS_WARN_THROTTLE(1.0, "[GGF] Cannot publish shared debug map: payload type mismatch (%s)", handle.payload_type.c_str());
         return;
     }
     const auto shared_map = lio_gf_nodelet_manager::SharedIKDTree::castPayload<pcl::PointCloud<PointType>>(handle);
 
     if (!shared_map || shared_map->points.empty())
     {
-        ROS_WARN_THROTTLE(2.0, "Cannot publish shared debug map: snapshot is missing or empty");
+        ROS_WARN_THROTTLE(1.0, "[GGF] Cannot publish shared debug map: snapshot is missing or empty");
         return;
     }
 
@@ -402,7 +402,7 @@ geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry
     }
     catch (tf2::TransformException &ex)
     {
-        ROS_WARN_THROTTLE(1.0, "Failed to lookup center_frame transform: %s. Falling back to provided pose.", ex.what());
+        ROS_WARN_THROTTLE(1.0, "[GGF] Failed to lookup center_frame transform: %s. Falling back to provided pose.", ex.what());
         center_pose.pose = pose_frame.pose;
         return center_pose;
     }
@@ -444,11 +444,11 @@ void GlobalGroundFinder::processAtCurrentPose()
                     timing_csv_file_.flush();
                     timing_csv_header_written_ = true;
                 }
-                ROS_INFO("Timing CSV logging enabled: %s", timing_csv_path_.c_str());
+                ROS_INFO("[GGF] Timing CSV logging enabled: %s", timing_csv_path_.c_str());
             }
             else
             {
-                ROS_ERROR("Failed to open timing CSV file: %s", timing_csv_path_.c_str());
+                ROS_ERROR("[GGF] Failed to open timing CSV file: %s", timing_csv_path_.c_str());
                 timing_csv_enabled_ = false;
             }
         }
@@ -463,7 +463,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
     if (debug_)
     {
-        ROS_INFO("DBG: processAtCurrentPose stamp=%.6f frame=%s pos=[%.3f %.3f %.3f]",
+        ROS_INFO("[GGF] processAtCurrentPose stamp=%.6f frame=%s pos=[%.3f %.3f %.3f]",
                  pose_copy.header.stamp.toSec(),
                  pose_copy.header.frame_id.c_str(),
                  pose_copy.pose.position.x,
@@ -502,7 +502,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         if (debug_)
         {
-            ROS_INFO("DBG: extraction attempt %zu/%zu radius=%.3f m",
+            ROS_INFO("[GGF] extraction attempt %zu/%zu radius=%.3f m",
                      attempt + 1,
                      search_radii.size(),
                      search_radius);
@@ -514,7 +514,10 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         if (!extracted)
         {
-            ROS_WARN("Failed to extract local cloud with radius %.3f m", search_radius);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Failed to extract local cloud with radius %.3f m", search_radius);
+            }
             continue;
         }
 
@@ -522,7 +525,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         if (debug_)
         {
-            ROS_INFO("DBG: extracted local cloud size=%zu (min_points_for_plane=%.0f)",
+            ROS_INFO("[GGF] extracted local cloud size=%zu (min_points_for_plane=%.0f)",
                      local_cloud->points.size(), min_points_for_plane_);
         }
 
@@ -534,7 +537,10 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         if (!plane_ok)
         {
-            ROS_WARN("Failed to fit ground plane with radius %.3f m", search_radius);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Failed to fit ground plane with radius %.3f m", search_radius);
+            }
             continue;
         }
 
@@ -542,7 +548,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         have_plane = true;
         if (debug_)
         {
-            ROS_INFO("DBG: plane fit success radius=%.3f m normal=[%.4f %.4f %.4f] inliers=%zu",
+            ROS_INFO("[GGF] plane fit success radius=%.3f m normal=[%.4f %.4f %.4f] inliers=%zu",
                      search_radius, normal[0], normal[1], normal[2], inlier_count);
         }
         break;
@@ -557,12 +563,12 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         if (!quiet_)
         {
-            ROS_WARN("All extraction/plane-fit attempts failed. Publishing fallback normal [%.1f, %.1f, %.1f]",
+            ROS_WARN("[GGF] All extraction/plane-fit attempts failed. Publishing fallback normal [%.1f, %.1f, %.1f]",
                      normal[0], normal[1], normal[2]);
         }
         if (debug_)
         {
-            ROS_INFO("DBG: fallback source=%s fail_count=%d",
+            ROS_INFO("[GGF] fallback source=%s fail_count=%d",
                      (count_success_ > 0) ? "last_valid_normal" : "startup_default_down",
                      count_fail_);
         }
@@ -596,7 +602,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         combined_score = combine_scores(vis_score, inlier_score);
         if (debug_)
         {
-            ROS_INFO("DBG: scores vis=%.4f inlier=%.4f combined=%.4f (score_threshold=%.4f)",
+            ROS_INFO("[GGF] scores vis=%.4f inlier=%.4f combined=%.4f (score_threshold=%.4f)",
                      vis_score, inlier_score, combined_score, score_threshold_);
         }
     }
@@ -611,7 +617,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     post_fit_time_us += std::chrono::duration_cast<std::chrono::microseconds>(end_post_fit - start_post_fit).count();
 
     ground_finder_msgs::ScoredNormalStamped scored_msg;
-    scored_msg.header = pose_copy.header; // use pose timestamp for scored normal TOOD: check which frame. pandar_frame or map_lkf
+    scored_msg.header = pose_copy.header; // use pose timestamp for scored normal
     scored_msg.normal.x = normal[0];
     scored_msg.normal.y = normal[1];
     scored_msg.normal.z = normal[2];
@@ -641,19 +647,25 @@ void GlobalGroundFinder::processAtCurrentPose()
             normal = fallback_normal;
             scored_msg = fallback_msg;
             using_fallback = true;
-            ROS_WARN("Using fallback normal (score: %.3f)", fallback_msg.combined_score);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Using fallback normal (score: %.3f)", fallback_msg.combined_score);
+            }
             if (debug_)
             {
-                ROS_INFO("DBG: score-based fallback applied normal=[%.4f %.4f %.4f]",
+                ROS_INFO("[GGF] score-based fallback applied normal=[%.4f %.4f %.4f]",
                          normal[0], normal[1], normal[2]);
             }
         }
         else
         {
-            ROS_WARN("No suitable fallback found");
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] No suitable fallback found");
+            }
             if (debug_)
             {
-                ROS_INFO("DBG: score-based fallback unavailable, keeping current normal");
+                ROS_INFO("[GGF] score-based fallback unavailable, keeping current normal");
             }
         }
     }
@@ -704,7 +716,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     }
     catch (tf2::TransformException &ex)
     {
-        ROS_WARN("Transforming scored normal to pandar_frame failed: %s", ex.what());
+        ROS_WARN("[GGF] Transforming scored normal to pandar_frame failed: %s", ex.what());
 
         // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
         scored_msg_pandar.normal.x = n_[0];
@@ -781,7 +793,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         }
         catch (tf2::TransformException &ex)
         {
-            ROS_WARN("Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
+            ROS_WARN("[GGF] Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
             // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
             smoothed_scored_msg_pandar.normal.x = n_[0];
             smoothed_scored_msg_pandar.normal.y = n_[1];
@@ -809,14 +821,14 @@ void GlobalGroundFinder::processAtCurrentPose()
 
     if (!quiet_)
     {
-        ROS_INFO("Ground normal timing total=%.3f ms extraction=%.3f ms plane_fit=%.3f ms validation=%.3f ms post_fit=%.2f ms smoothing=%.2f ms",
+        ROS_INFO("[GGF] Ground normal timing total=%.3f ms extraction=%.3f ms plane_fit=%.3f ms validation=%.3f ms post_fit=%.2f ms smoothing=%.2f ms",
                  total_time_us / 1000.0,
                  extraction_time_us / 1000.0,
                  plane_fit_time_us / 1000.0,
                  validation_time_us_ / 1000.0,
                  post_fit_time_us / 1000.0,
                  smoothing_time_us / 1000.0);
-        ROS_INFO("Ground normal result: [%.3f, %.3f, %.3f], inliers: %zu/%zu",
+        ROS_INFO("[GGF] Ground normal result: [%.3f, %.3f, %.3f], inliers: %zu/%zu",
                  normal[0], normal[1], normal[2], inlier_count, local_cloud->points.size());
     }
 
@@ -847,7 +859,7 @@ void GlobalGroundFinder::processAtCurrentPose()
 
     if (!quiet_)
     {
-        ROS_INFO("Post-processing timing: logging=%.3f ms csv=%.3f ms",
+        ROS_INFO("[GGF] Post-processing timing: logging=%.3f ms csv=%.3f ms",
                  publish_time_us / 1000.0,
                  csv_time_us / 1000.0);
     }
@@ -882,7 +894,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         {
             if (handle.point_count != 0 && handle.point_count != shared_map->points.size())
             {
-                ROS_WARN("SNAPCHK GF metadata mismatch: handle.point_count=%lu shared_map_size=%zu",
+                ROS_WARN("[GGF] SNAPCHK GGF metadata mismatch: handle.point_count=%lu shared_map_size=%zu",
                          static_cast<unsigned long>(handle.point_count),
                          shared_map->points.size());
             }
@@ -917,7 +929,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
 
             if (debug_)
             {
-                ROS_INFO("DBG: CropBox rebuild: %zu/%lu points (crop_radius=%.1f m, version=%lu)",
+                ROS_INFO("[GGF] CropBox rebuild: %zu/%lu points (crop_radius=%.1f m, version=%lu)",
                          global_map_->points.size(),
                          static_cast<unsigned long>(handle.point_count),
                          crop_radius_,
@@ -934,15 +946,15 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     {
         if (debug_)
         {
-            ROS_INFO("DBG: radiusSearch hit_count=%zu radius=%.3f m", indices.size(), search_radius);
+            ROS_INFO("[GGF] radiusSearch hit_count=%zu radius=%.3f m", indices.size(), search_radius);
         }
         if (!pose.header.frame_id.empty())
         {
             const auto handle_check = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
             if (!handle_check.frame_id.empty() && handle_check.frame_id != pose.header.frame_id)
             {
-                ROS_WARN_THROTTLE(0.5,
-                                  "Frame mismatch: pose frame=%s, map frame=%s. Local cloud may be inconsistent.",
+                ROS_WARN_THROTTLE(1.0,
+                                  "[GGF] Frame mismatch: pose frame=%s, map frame=%s. Local cloud may be inconsistent.",
                                   pose.header.frame_id.c_str(),
                                   handle_check.frame_id.c_str());
             }
@@ -970,7 +982,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         {
             if (debug_)
             {
-                ROS_WARN("Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
+                ROS_WARN("[GGF] Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
                          search_radius,
                          local_cloud->points.size(),
                          min_points_for_plane_);
@@ -985,7 +997,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     {
         if (debug_)
         {
-            ROS_WARN("Failed to extract local cloud with radius %.3f m: no global map available", search_radius);
+            ROS_WARN("[GGF] Failed to extract local cloud with radius %.3f m: no global map available", search_radius);
         }
         return false;
     }
@@ -994,7 +1006,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     {
         if (debug_)
         {
-            ROS_WARN("Failed to extract local cloud with radius %.3f m: radius search returned no points", search_radius);
+            ROS_WARN("[GGF] Failed to extract local cloud with radius %.3f m: radius search returned no points", search_radius);
         }
         return false;
     }
@@ -1024,7 +1036,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     {
         if (debug_)
         {
-            ROS_WARN("Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
+            ROS_WARN("[GGF] Failed to extract local cloud with radius %.3f m: only %zu points after height filter, need at least %.0f",
                      search_radius,
                      local_cloud->points.size(),
                      min_points_for_plane_);
@@ -1042,9 +1054,12 @@ bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &l
 {
     if (!local_cloud || local_cloud->points.size() < 3)
     {
-        ROS_ERROR("Invalid cloud for plane fitting: nullptr=%s, size=%zu",
-                  !local_cloud ? "true" : "false",
-                  local_cloud ? local_cloud->points.size() : 0);
+        if (!quiet_)
+        {
+            ROS_ERROR("[GGF] Invalid cloud for plane fitting: nullptr=%s, size=%zu",
+                      !local_cloud ? "true" : "false",
+                      local_cloud ? local_cloud->points.size() : 0);
+        }
         return false;
     }
 
@@ -1076,7 +1091,10 @@ bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &l
 
     if (!success)
     {
-        ROS_WARN("Plane fitting failed with algorithm=%d", plane_algorithm_);
+        if (!quiet_)
+        {
+            ROS_WARN("[GGF] Plane fitting failed with algorithm=%d", plane_algorithm_);
+        }
         return false;
     }
 
@@ -1085,7 +1103,7 @@ bool GlobalGroundFinder::fitGroundPlane(const pcl::PointCloud<PointType>::Ptr &l
         std::isnan(normal[0]) || std::isnan(normal[1]) || std::isnan(normal[2]) ||
         (std::abs(normal[0]) < 1e-9 && std::abs(normal[1]) < 1e-9 && std::abs(normal[2]) < 1e-9))
     {
-        ROS_ERROR("Invalid normal computed: [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
+        ROS_ERROR("[GGF] Invalid normal computed: [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
         return false;
     }
 
@@ -1098,7 +1116,7 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
 {
     if (!cloud || cloud->points.size() < 3)
     {
-        ROS_ERROR("PCA: Invalid cloud: nullptr=%s, size=%zu",
+        ROS_ERROR("[GGF] PCA: Invalid cloud: nullptr=%s, size=%zu",
                   !cloud ? "true" : "false",
                   cloud ? cloud->points.size() : 0);
         return false;
@@ -1118,7 +1136,7 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
             {
                 if (std::isnan(eigen_vecs(i, j)) || std::isinf(eigen_vecs(i, j)))
                 {
-                    ROS_ERROR("PCA: Invalid eigen vector at [%d,%d]: %f", i, j, eigen_vecs(i, j));
+                    ROS_ERROR("[GGF] PCA: Invalid eigen vector at [%d,%d]: %f", i, j, eigen_vecs(i, j));
                     return false;
                 }
             }
@@ -1137,7 +1155,7 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
         }
         *inlier_cloud = *cloud;
 
-        ROS_DEBUG("PCA: Computed normal [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
+        // ROS_DEBUG("[GGF] PCA: Computed normal [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
 
         // Validate ground plane (not wall / ceiling, good point distribution, reasonable Z values)
         return validateGroundNormal(normal, inlier_cloud, current_pose_.pose.position.z,
@@ -1146,12 +1164,12 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
     }
     catch (const std::exception &e)
     {
-        ROS_ERROR("PCA failed with exception: %s", e.what());
+        ROS_ERROR("[GGF] PCA failed with exception: %s", e.what());
         return false;
     }
     catch (...)
     {
-        ROS_ERROR("PCA failed with unknown exception");
+        ROS_ERROR("[GGF] PCA failed with unknown exception");
         return false;
     }
 }
@@ -1284,7 +1302,7 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
         }
         catch (...)
         {
-            ROS_ERROR("exception in fitPlaneRANSAC");
+            ROS_ERROR("[GGF] exception in fitPlaneRANSAC");
             return false;
         }
     }
@@ -1590,7 +1608,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     // Validate normal vector before processing
     if (normal.size() != 3)
     {
-        ROS_ERROR("Normal vector has wrong size: %zu (expected 3)", normal.size());
+        ROS_ERROR("[GGF] Normal vector has wrong size: %zu (expected 3)", normal.size());
         count_invalid_planes_++;
         return false;
     }
@@ -1600,7 +1618,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     {
         if (std::isnan(normal[i]) || std::isinf(normal[i]))
         {
-            ROS_ERROR("Normal contains invalid value at index %d: %f", i, normal[i]);
+            ROS_ERROR("[GGF] Normal contains invalid value at index %d: %f", i, normal[i]);
             count_invalid_planes_++;
             return false;
         }
@@ -1610,7 +1628,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     double norm_sq = normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2];
     if (norm_sq < 1e-12) // Avoid division by near-zero
     {
-        ROS_ERROR("Normal vector is nearly zero: norm_sq=%.2e", norm_sq);
+        ROS_ERROR("[GGF] Normal vector is nearly zero: norm_sq=%.2e", norm_sq);
         count_invalid_planes_++;
         return false;
     }
@@ -1637,13 +1655,16 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     {
         if (std::abs(dot) < wall_threshold_)
         {
-            ROS_WARN("Rejecting plane: too vertical (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Rejecting plane: too vertical (dot=%.3f, threshold=%.3f)", dot, wall_threshold_);
+            }
             count_invalid_planes_++;
             return false;
         }
         else if (debug_)
         {
-            ROS_INFO("DBG: angle validation passed (|dot|=%.4f threshold=%.4f)", std::abs(dot), wall_threshold_);
+            ROS_INFO("[GGF] angle validation passed (|dot|=%.4f threshold=%.4f)", std::abs(dot), wall_threshold_);
         }
     }
 
@@ -1666,22 +1687,28 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
         if (!eigenvalue_valid)
         {
-            ROS_WARN("Rejecting plane: eigenvalue ratio too high (ratio=%.4f, threshold=%.4f)",
-                     eigenvalue_ratio, eigenvalue_ratio_threshold_);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Rejecting plane: eigenvalue ratio too high (ratio=%.4f, threshold=%.4f)",
+                         eigenvalue_ratio, eigenvalue_ratio_threshold_);
+            }
             count_invalid_planes_++;
             return false;
         }
 
         if (!eigenvector_valid)
         {
-            ROS_WARN("Rejecting plane: dominant eigenvectors not in xy-plane (max_z=%.3f, threshold=%.3f)",
-                     max_dominant_z, max_eigenvector_z_component_);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Rejecting plane: dominant eigenvectors not in xy-plane (max_z=%.3f, threshold=%.3f)",
+                         max_dominant_z, max_eigenvector_z_component_);
+            }
             count_invalid_planes_++;
             return false;
         }
         if (debug_)
         {
-            ROS_INFO("DBG: eigen validation passed ratio=%.5f max_dom_z=%.4f",
+            ROS_INFO("[GGF] Eigen validation passed ratio=%.5f max_dom_z=%.4f",
                      eigenvalue_ratio, max_dominant_z);
         }
     }
@@ -1697,14 +1724,17 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
         double z_mean = 0.0;
         if (!validateZMeanDeviation(inlier_cloud, center_frame_z, max_z_deviation_, z_mean))
         {
-            ROS_WARN("Rejecting plane: Z-mean too far from robot-center Z-component (z_mean=%.3f, center_z=%.3f, max_dev=%.3f)",
-                     z_mean, center_frame_z, max_z_deviation_);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Rejecting plane: Z-mean too far from robot-center Z-component (z_mean=%.3f, center_z=%.3f, max_dev=%.3f)",
+                         z_mean, center_frame_z, max_z_deviation_);
+            }
             count_invalid_planes_++;
             return false;
         }
         else if (debug_)
         {
-            ROS_INFO("DBG: z-mean validation passed z_mean=%.4f center_z=%.4f max_dev=%.4f",
+            ROS_INFO("[GGF] z-mean validation passed z_mean=%.4f center_z=%.4f max_dev=%.4f",
                      z_mean, center_frame_z, max_z_deviation_);
         }
     }
@@ -1734,14 +1764,17 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
         if (!hull_valid)
         {
-            ROS_WARN("Rejecting plane: Convex hull center too far from robot (distance=%.3f m, max=%.3f m)",
-                     hull_distance, max_hull_distance_);
+            if (!quiet_)
+            {
+                ROS_WARN("[GGF] Rejecting plane: Convex hull center too far from robot (distance=%.3f m, max=%.3f m)",
+                         hull_distance, max_hull_distance_);
+            }
             count_invalid_planes_++;
             return false;
         }
         else if (debug_)
         {
-            ROS_INFO("DBG: hull validation passed distance=%.4f max=%.4f",
+            ROS_INFO("[GGF] hull validation passed distance=%.4f max=%.4f",
                      hull_distance, max_hull_distance_);
         }
 
@@ -1759,7 +1792,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     // Plane passed all validation checks
     if (debug_)
     {
-        ROS_INFO("DBG: plane accepted normal=[%.4f %.4f %.4f]", normal[0], normal[1], normal[2]);
+        ROS_INFO("[GGF] plane accepted normal=[%.4f %.4f %.4f]", normal[0], normal[1], normal[2]);
     }
     count_valid_planes_++;
     return true;
@@ -1861,7 +1894,10 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
 
 void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hull_center)
 {
-    ROS_INFO("publishHullCenterMarker: Publishing hull center at [%.3f, %.3f, %.3f]", hull_center.x, hull_center.y, hull_center.z);
+    if (!quiet_)
+    {
+        ROS_INFO("[GGF] publishHullCenterMarker: Publishing hull center at [%.3f, %.3f, %.3f]", hull_center.x, hull_center.y, hull_center.z);
+    }
 
     visualization_msgs::Marker hull_marker;
     hull_marker.header.stamp = ros::Time::now();
