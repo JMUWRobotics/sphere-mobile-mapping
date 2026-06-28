@@ -10,6 +10,8 @@
   <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
   <arg name="gf_use_gaussian_smoothing" default="true" />
   <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+  <arg name="gf_timing_csv_enabled" default="true" />
+  <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
 
   <!-- C++ Executables /-->
   <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
@@ -29,6 +31,8 @@
     <param name="gf_score_threshold" value="0.2" type="double" />
     <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
     <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
+    <param name="gf_timing_csv_enabled" value="$(arg gf_timing_csv_enabled)" type="bool"/>
+    <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
   </node>
 
 </launch>
