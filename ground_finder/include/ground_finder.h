@@ -34,7 +34,9 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <atomic>
+#include <mutex>
 #include <memory>
+#include <ctime>
 
 #include <ground_finder_msgs/ScoredNormalStamped.h>
 #include <state_estimator_msgs/Estimator.h>
@@ -181,6 +183,12 @@ private:
     std::ofstream csv;                // File stream
     std::ofstream scored_normals_log; // File stream for scored normals log
     bool write2file;
+
+    // Timing CSV logging (separate from gf_file profiling CSV)
+    bool timing_csv_enabled_ = false;
+    std::string timing_csv_path_;
+    std::ofstream timing_csv_file_;
+    std::mutex timing_csv_mutex_;
 
     /* Output regulation */
     bool quiet;
@@ -365,6 +373,12 @@ public:
         pnh.param<double>("gf_weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
         pnh.param<double>("gf_score_threshold", score_threshold, score_threshold);
         pnh.param<double>("gf_min_score_sliding_window", min_score_sliding_window, min_score_sliding_window);
+        pnh.param<bool>("gf_timing_csv_enabled", timing_csv_enabled_, true);
+        pnh.param<std::string>("gf_timing_csv_file", timing_csv_path_, std::string(""));
+        if (timing_csv_path_.empty())
+        {
+            timing_csv_path_ = ros::package::getPath("ground_finder") + "/data/timings.csv";
+        }
 
         ROS_INFO("[GF] Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
                  enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
@@ -375,6 +389,67 @@ public:
         {
             ROS_INFO("[GF] Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
                      score_threshold, min_score_sliding_window);
+        }
+
+        if (timing_csv_enabled_ && !timing_csv_path_.empty())
+        {
+            std::string algo_name = "RANSAC";
+            switch (plane_alg)
+            {
+            case LSF:
+                algo_name = "LSF";
+                break;
+            case PCA:
+                algo_name = "PCA";
+                break;
+            case RANSAC:
+                algo_name = "RANSAC";
+                break;
+            case RHT:
+                algo_name = "RHT";
+                break;
+            case RHT2:
+                algo_name = "RHT2";
+                break;
+            }
+
+            std::time_t now = std::time(nullptr);
+            std::tm now_tm;
+            localtime_r(&now, &now_tm);
+
+            char timestamp[32];
+            std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", &now_tm);
+
+            const std::string suffix = std::string("_") + algo_name + "_" + timestamp;
+            const std::size_t slash_pos = timing_csv_path_.find_last_of('/');
+            const std::size_t dot_pos = timing_csv_path_.find_last_of('.');
+
+            if (dot_pos != std::string::npos &&
+                (slash_pos == std::string::npos || dot_pos > slash_pos))
+            {
+                timing_csv_path_.insert(dot_pos, suffix);
+            }
+            else
+            {
+                timing_csv_path_ += suffix + ".csv";
+            }
+
+            timing_csv_file_.open(timing_csv_path_, std::ios::out | std::ios::app);
+            if (timing_csv_file_.is_open())
+            {
+                timing_csv_file_.seekp(0, std::ios::end);
+                if (timing_csv_file_.tellp() == 0)
+                {
+                    timing_csv_file_ << "timestamp,preprocessing_ms,plane_ms,total_ms,success\n";
+                    timing_csv_file_.flush();
+                }
+                ROS_INFO("[GF] Timing CSV logging enabled: %s", timing_csv_path_.c_str());
+            }
+            else
+            {
+                ROS_ERROR("[GF] Failed to open timing CSV file: %s", timing_csv_path_.c_str());
+                timing_csv_enabled_ = false;
+            }
         }
 
         // Initialize Gaussian Kernel Smoothing if enabled
@@ -408,7 +483,10 @@ public:
             }
             catch (tf2::TransformException &ex)
             {
-                ROS_WARN("[GF] tf lookup failing... reason: %s", ex.what());
+                if (!quiet)
+                {
+                    ROS_WARN("[GF] tf lookup failing... reason: %s", ex.what());
+                }
                 tf_listener_fail = true;
                 ros::Duration(0.1).sleep();
             }

@@ -721,6 +721,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     pcl::PointCloud<PointType>::Ptr cur_scan(new pcl::PointCloud<PointType>);
     pcl::fromROSMsg(*msg, *cur_scan);
 
+    auto start_total = std::chrono::high_resolution_clock::now();
     // Total duration [ns]
     int64_t duration_total = 0;
 
@@ -786,12 +787,36 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     last_subcloud_size = sub_cloud_msg.data.size(); // TODO: double check
 
     // ---------------------- Plane segmentation ----------------------
+    const int64_t duration_preprocessing = duration_total;
 
     geometry_msgs::Vector3Stamped n_msg;
     n_msg.header.frame_id = "map_lio";
     n_msg.header.stamp = msg->header.stamp;
     // Determine normal vector of ground in map_lio frame incl. ensuring it represents ground and points into ground
     auto duration_plane = determine_n_ground_plane(cur_scan, plane_alg, n_msg);
+
+    if (timing_csv_enabled_)
+    {
+        const bool plane_success = duration_plane >= 0;
+        int64_t duration_total_timing = duration_preprocessing;
+        if (plane_success)
+        {
+            duration_total_timing += duration_plane;
+        }
+
+        std::lock_guard<std::mutex> lock(timing_csv_mutex_);
+        if (timing_csv_file_.is_open())
+        {
+            timing_csv_file_ << std::fixed << std::setprecision(6)
+                             << msg->header.stamp.toSec() << ","
+                             << (static_cast<double>(duration_preprocessing) / 1000.0) << ","
+                             << (static_cast<double>(duration_plane) / 1000.0) << ","
+                             << (static_cast<double>(duration_total_timing) / 1000.0) << ","
+                             << (plane_success ? 1 : 0) << "\n";
+            timing_csv_file_.flush();
+        }
+    }
+
     // Write to file
     if (write2file)
         csv << duration_plane << ",";
@@ -928,17 +953,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     /*
     Raw Normal Vector
     */
-
-    // Total time
-    duration_total += duration_plane;
-    if (!quiet)
-        ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n", float(duration_total) / 1e3, count_fail);
-    // Write to file
-    if (write2file)
-        csv << duration_total << "," << n_msg.vector.x << "," << n_msg.vector.y << "," << n_msg.vector.z << ",";
-    // Plane counter
-    if (write2file)
-        csv << plane_counter << "\n";
 
     // Publish raw normal vector
     pub_n.publish(n_msg);
@@ -1086,6 +1100,26 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     n_marker.points = {start, end};
     // Publish n_marker
     pub_vis_n.publish(n_marker);
+
+    // Total time
+    duration_total += duration_plane;
+    if (!quiet)
+        ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n", float(duration_total) / 1e3, count_fail);
+    // Write to file
+    if (write2file)
+        csv << duration_total << "," << n_msg.vector.x << "," << n_msg.vector.y << "," << n_msg.vector.z << ",";
+    auto end_total = std::chrono::high_resolution_clock::now();
+    ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n",
+             std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count() / 1000.0, count_fail);
+    // Plane counter
+    if (write2file)
+        csv << plane_counter << "\n";
+
+    auto total_time_us = std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count();
+    if (!quiet)
+        ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n", float(total_time_us) / 1e3, count_fail);
+    if (write2file)
+        csv << total_time_us << "," << n_msg.vector.x << "," << n_msg.vector.y << "," << n_msg.vector.z << "," << plane_counter << "\n";
 }
 
 void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
