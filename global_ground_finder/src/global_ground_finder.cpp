@@ -12,6 +12,7 @@
 #include <ros/package.h>
 #include <fstream>
 #include <iomanip>
+#include <ctime>
 #include <pcl/filters/crop_box.h>
 
 GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh, PlaneSegm plane_algorithm)
@@ -430,6 +431,47 @@ void GlobalGroundFinder::processAtCurrentPose()
 
         timing_csv_enabled_ = enabled;
         timing_csv_path_ = path;
+
+        if (timing_csv_enabled_ && !timing_csv_path_.empty())
+        {
+            std::string algo_name = "RANSAC";
+            switch (plane_algorithm_)
+            {
+            case PCA:
+                algo_name = "PCA";
+                break;
+            case RANSAC:
+                algo_name = "RANSAC";
+                break;
+            case RHT:
+                algo_name = "RHT";
+                break;
+            case RHT2:
+                algo_name = "RHT2";
+                break;
+            }
+
+            std::time_t now = std::time(nullptr);
+            std::tm now_tm;
+            localtime_r(&now, &now_tm);
+
+            char timestamp[32];
+            std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", &now_tm);
+
+            const std::string suffix = std::string("_") + algo_name + "_" + timestamp;
+            const std::size_t slash_pos = timing_csv_path_.find_last_of("/");
+            const std::size_t dot_pos = timing_csv_path_.find_last_of('.');
+
+            if (dot_pos != std::string::npos &&
+                (slash_pos == std::string::npos || dot_pos > slash_pos))
+            {
+                timing_csv_path_.insert(dot_pos, suffix);
+            }
+            else
+            {
+                timing_csv_path_ += suffix + ".csv";
+            }
+        }
 
         if (timing_csv_enabled_ && !timing_csv_path_.empty())
         {
@@ -1194,7 +1236,7 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             pcl::SampleConsensusModelPlane<PointType>::Ptr model(
                 new pcl::SampleConsensusModelPlane<PointType>(cloud_work));
             pcl::RandomSampleConsensus<PointType> ransac(model);
-            ransac.setDistanceThreshold(0.05); // 5cm threshold
+            ransac.setDistanceThreshold(0.01); // 1 cm threshold
             ransac.computeModel();
 
             std::vector<int> inliers;
