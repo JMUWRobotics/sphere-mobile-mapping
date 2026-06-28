@@ -57,7 +57,7 @@
 
   <arg name="file" default="default"
        doc="CSV log filename. Use 'default' to disable logging."/>
-  <arg name="timing_csv_enabled" default="false"
+  <arg name="timing_csv_enabled" default="true"
        doc="Enable timing CSV logging (true/false)"/>
   <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv"
        doc="Full path to timing CSV file (absolute path)."/>
