@@ -234,6 +234,22 @@
     <arg name="rviz" default="true" 
         doc="Start RViz from lio.launch if enabled there"/>
 
+
+    <!-- Ground Finder Arguments -->
+    <arg name="gf_quiet"     default="false" />
+    <arg name="gf_filter"    default="geo" />
+    <arg name="gf_subcloud"  default="geo" />
+    <arg name="gf_plane"     default="ran" />
+    <arg name="gf_file"      default="default" />
+    <arg name="gf_enable_normal_smoothing" default="true" />
+    <arg name="gf_normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+    <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+    <arg name="gf_use_gaussian_smoothing" default="true" />
+    <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+    <arg name="gf_timing_csv_enabled" default="true" />
+    <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
+
+
     <!-- Global Ground Finder Arguments -->
     <arg name="quiet" default="false" 
         doc="Suppress repetitive global_ground_finder logs"/>
@@ -241,7 +257,7 @@
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
-    <arg name="timing_csv_enabled" default="false" doc="Enable timing CSV logging"/>
+    <arg name="timing_csv_enabled" default="true" doc="Enable timing CSV logging"/>
     <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv" doc="Timing CSV file path"/>
     <arg name="extraction_radius" default="1.0" 
         doc="Local map extraction radius in meters"/>
@@ -367,7 +383,36 @@
     <param name="offset_z" type="double" value="$(arg offset_z)" />
     <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
 
-    <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen"/>
+
+
+<!-- Ground Finder nodes & parameters -->
+
+ <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
+    <!-- Parameters -->
+    <!-- param name="use_sim_time" value="true" type=""/ -->
+    <param name="gf_quiet" value="$(arg gf_quiet)" type="bool"/>
+    <param name="gf_filter" value="$(arg gf_filter)" type="string"/>
+    <param name="gf_subcloud" value="$(arg gf_subcloud)" type="string"/>
+    <param name="gf_plane" value="$(arg gf_plane)" type="string"/>
+    <param name="gf_file" value="$(arg gf_file)" type="string"/>
+    <param name="gf_enable_normal_smoothing" type="bool" value="$(arg gf_enable_normal_smoothing)" />
+    <param name="gf_normal_smoothing_alpha" type="double" value="$(arg gf_normal_smoothing_alpha)" />
+    <param name="gf_smoothing_cutoff_freq" type="double" value="$(arg gf_smoothing_cutoff_freq)" />
+    <param name="gf_use_gaussian_smoothing" type="bool" value="$(arg gf_use_gaussian_smoothing)" />
+    <param name="gf_weight_visibility" type="double" value="0.6" />
+    <param name="gf_weight_inlier_ratio" type="double" value="0.4" />
+    <param name="gf_score_threshold" value="0.2" type="double" />
+    <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
+    <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
+    <param name="gf_timing_csv_enabled" value="$(arg gf_timing_csv_enabled)" type="bool"/>
+    <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
+  </node>
+
+
+
+<!-- GGF, LIO nodelet manager & parameters -->
+
+   <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen"/>
     <!-- <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen" launch-prefix="gdb -ex run -+-args"/> -->
     <!-- LIO Sphere Nodelet - Direct Load with Complete Parameter Set -->
     <!-- Override frame names to match bag/system configuration -->
@@ -506,4 +551,3 @@
 
 
 </launch>
-
