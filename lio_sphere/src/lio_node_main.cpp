@@ -11,7 +11,7 @@ int main(int argc, char **argv)
     ros::NodeHandle pnh("~");
 
     LIONode node(nh, pnh);
-    ros::AsyncSpinner spinner(2);
+    ros::AsyncSpinner spinner(8);
     spinner.start();
     ros::waitForShutdown();
     return 0;
