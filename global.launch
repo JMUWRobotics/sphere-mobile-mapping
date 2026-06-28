@@ -246,6 +246,23 @@
     <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
     <arg name="gf_use_gaussian_smoothing" default="true" />
     <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+    <arg name="gf_wall_threshold" default="0.707" />
+    <arg name="gf_enable_eigenvalue_validation" default="false"
+        doc="Enable eigenvalue ratio and eigenvector z-component checks"/>
+    <arg name="gf_enable_plane_angle_validation" default="true"
+        doc="Enable angle-based wall rejection"/>
+    <arg name="gf_enable_z_mean_validation" default="false"
+        doc="Enable Z-mean deviation check"/>
+    <arg name="gf_enable_convex_hull_validation" default="false"
+        doc="Enable convex hull center distance check"/>
+    <arg name="gf_eigenvalue_ratio_threshold" default="0.1"
+        doc="Threshold for λ3/(λ1+λ2) planarity check"/>
+    <arg name="gf_max_eigenvector_z_component" default="0.1"
+        doc="Max z-component of dominant eigenvectors (v1, v2) -- use 0.2 if environment has slope"/>
+    <arg name="gf_max_hull_distance" default="1.0"
+        doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
+    <arg name="gf_max_z_deviation" default="0.2"
+        doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max is twice this)."/>
     <arg name="gf_timing_csv_enabled" default="true" />
     <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
 
@@ -404,6 +421,15 @@
     <param name="gf_score_threshold" value="0.2" type="double" />
     <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
     <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
+    <param name="gf_enable_eigenvalue_validation" type="bool" value="$(arg gf_enable_eigenvalue_validation)" />
+    <param name="gf_enable_plane_angle_validation" type="bool" value="$(arg gf_enable_plane_angle_validation)" />
+    <param name="gf_wall_threshold" type="double" value="$(arg gf_wall_threshold)" />
+    <param name="gf_enable_z_mean_validation" type="bool" value="$(arg gf_enable_z_mean_validation)" />
+    <param name="gf_enable_convex_hull_validation" type="bool" value="$(arg gf_enable_convex_hull_validation)" />
+    <param name="gf_eigenvalue_ratio_threshold" type="double" value="$(arg gf_eigenvalue_ratio_threshold)" />
+    <param name="gf_max_eigenvector_z_component" type="double" value="$(arg gf_max_eigenvector_z_component)" />
+    <param name="gf_max_hull_distance" type="double" value="$(arg gf_max_hull_distance)" />
+    <param name="gf_max_z_deviation" type="double" value="$(arg gf_max_z_deviation)" />
     <param name="gf_timing_csv_enabled" value="$(arg gf_timing_csv_enabled)" type="bool"/>
     <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
   </node>

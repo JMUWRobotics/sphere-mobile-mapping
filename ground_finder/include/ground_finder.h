@@ -198,7 +198,6 @@ private:
     const float radius_filter = 0.35;  // radius sphere + noise + hands = 0.35 m (from rviz) used for filtering
     const float radius_subcloud = 2.0; // radius used for geometrical subcloud
     const float height_subcloud = 0.2; // height used for geometrical subcloud
-    const float wall_thresh = 0.707;   // Threshold used to determine when we recognized a wall; cos(max_angle 70) = wall_threshold
     const float ds_size = 0.10;        // leaf size used for downsampling after filtering
     const int k = 150;                 // k used for kNN for kd tree subcloud //TODO: 150 = for ransac; 50 = better for rht
     const int max_iterations_plane_detection = 3;
@@ -228,11 +227,23 @@ private:
     double weight_inlier_ratio = 0.4;                                                  // weight for inlier ratio score in combined score calculation
     double score_threshold = 0.2;                                                      // normals with score below this threshold are not used but rather fallback value
     double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
-    state_estimator_msgs::EstimatorConstPtr last_lio_pose;                             // most recent lio pose
-    size_t last_inlier_count = 0;                                                      // #inliers from last plane detection
-    size_t last_subcloud_size = 0;                                                     // #points of last filtered subcloud
-    double last_roll = 0.0;                                                            // most recent roll angle from lio pose (radians)
-    double last_pitch = 0.0;                                                           // most recent pitch angle from lio pose (radians)
+
+    // Validation parameters (GGF-style)
+    bool enable_eigenvalue_validation = false;  // Enable combined eigenvalue + eigenvector check
+    double eigenvalue_ratio_threshold = 0.1;    // Threshold for λ3/(λ1+λ2)
+    double max_eigenvector_z_component = 0.1;   // Max z-component of dominant eigenvectors
+    bool enable_plane_angle_validation = true;  // Enable angle-based wall rejection
+    double wall_threshold = 0.707;              // Threshold for |dot(normal,down)|; cos(45°)=0.707
+    bool enable_z_mean_validation = false;      // Enable Z-mean deviation check
+    double max_z_deviation = 0.2;               // Max deviation from robot Z [m]
+    bool enable_convex_hull_validation = false; // Enable convex hull center distance check
+    double max_hull_distance = 1.0;             // Max 3D distance from robot to hull center [m]
+
+    state_estimator_msgs::EstimatorConstPtr last_lio_pose; // most recent lio pose
+    size_t last_inlier_count = 0;                          // #inliers from last plane detection
+    size_t last_subcloud_size = 0;                         // #points of last filtered subcloud
+    double last_roll = 0.0;                                // most recent roll angle from lio pose (radians)
+    double last_pitch = 0.0;                               // most recent pitch angle from lio pose (radians)
 
     // ---------------------- Init functions  ----------------------
     /** \brief Initalizes values of n_marker for visualization of normal vector in rviz
@@ -304,11 +315,29 @@ private:
 
     /** \brief Converts the normal vector n from pandar_frame to the map_lio frame, while ensuring that n always points into ground.
      * \param[out] n_msg n_msg The normal vector message transformed into the map_lio frame
-     * \param[in]  last_iteration True (Default): Last try for plane segmentation and overwrites n to [0,0,-1] in map_lio frame if wall found;
-     * False: Does not overwrite n vector;
      * \return True if conversion successfull (most likely representing ground); false otherwise.
      */
     bool convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, const bool &last_iteration = true);
+
+    /** \brief Validate that the current plane represents ground
+     * \param[in,out] normal Normal vector to check
+     * \param[in] inlier_cloud Point cloud used for validation checks
+     * \param[in] robot_z Robot-center Z coordinate
+     * \param[in] lambda1 Largest eigenvalue from PCA
+     * \param[in] lambda2 Middle eigenvalue from PCA
+     * \param[in] lambda3 Smallest eigenvalue from PCA
+     * \param[in] v1_z Z-component of eigenvector for lambda1
+     * \param[in] v2_z Z-component of eigenvector for lambda2
+     * \return true if valid ground plane, false otherwise
+     */
+    bool validateGroundNormal(std::vector<double> &normal,
+                              const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
+                              double robot_z,
+                              float lambda1 = 0.0f,
+                              float lambda2 = 0.0f,
+                              float lambda3 = 0.0f,
+                              float v1_z = 0.0f,
+                              float v2_z = 0.0f);
 
     // ---------------------- Callback functions ----------------------
     /** \brief Scan callback function - called for each msg @ hesai pandar topic. Filters + creates subcoud then findes normal vector of ground plane.
@@ -373,6 +402,15 @@ public:
         pnh.param<double>("gf_weight_inlier_ratio", weight_inlier_ratio, weight_inlier_ratio);
         pnh.param<double>("gf_score_threshold", score_threshold, score_threshold);
         pnh.param<double>("gf_min_score_sliding_window", min_score_sliding_window, min_score_sliding_window);
+        pnh.param<bool>("gf_enable_eigenvalue_validation", enable_eigenvalue_validation, enable_eigenvalue_validation);
+        pnh.param<double>("gf_eigenvalue_ratio_threshold", eigenvalue_ratio_threshold, eigenvalue_ratio_threshold);
+        pnh.param<double>("gf_max_eigenvector_z_component", max_eigenvector_z_component, max_eigenvector_z_component);
+        pnh.param<bool>("gf_enable_plane_angle_validation", enable_plane_angle_validation, enable_plane_angle_validation);
+        pnh.param<double>("gf_wall_threshold", wall_threshold, wall_threshold);
+        pnh.param<bool>("gf_enable_z_mean_validation", enable_z_mean_validation, enable_z_mean_validation);
+        pnh.param<double>("gf_max_z_deviation", max_z_deviation, max_z_deviation);
+        pnh.param<bool>("gf_enable_convex_hull_validation", enable_convex_hull_validation, enable_convex_hull_validation);
+        pnh.param<double>("gf_max_hull_distance", max_hull_distance, max_hull_distance);
         pnh.param<bool>("gf_timing_csv_enabled", timing_csv_enabled_, true);
         pnh.param<std::string>("gf_timing_csv_file", timing_csv_path_, std::string(""));
         if (timing_csv_path_.empty())
@@ -390,6 +428,14 @@ public:
             ROS_INFO("[GF] Score thresholds: current_threshold=%.3f, min_score_sliding_window=%.3f",
                      score_threshold, min_score_sliding_window);
         }
+
+        ROS_INFO("[GF] Validation: angle=%s eigen=%s z_mean=%s hull=%s",
+                 enable_plane_angle_validation ? "enabled" : "disabled",
+                 enable_eigenvalue_validation ? "enabled" : "disabled",
+                 enable_z_mean_validation ? "enabled" : "disabled",
+                 enable_convex_hull_validation ? "enabled" : "disabled");
+        ROS_INFO("[GF] Validation thresholds: wall=%.3f eigen_ratio=%.3f max_dom_z=%.3f max_z_dev=%.3f max_hull_dist=%.3f",
+                 wall_threshold, eigenvalue_ratio_threshold, max_eigenvector_z_component, max_z_deviation, max_hull_distance);
 
         if (timing_csv_enabled_ && !timing_csv_path_.empty())
         {
@@ -485,7 +531,7 @@ public:
             {
                 if (!quiet)
                 {
-                    ROS_WARN("[GF] tf lookup failing... reason: %s", ex.what());
+                    ROS_WARN_THROTTLE(1.0, "[GF] tf lookup failing... reason: %s", ex.what());
                 }
                 tf_listener_fail = true;
                 ros::Duration(0.1).sleep();

@@ -11,6 +11,9 @@
 #include <cmath>
 #include <vector>
 #include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
+#include <pcl/surface/convex_hull.h>
+#include <geometry_msgs/Point.h>
 
 using PointType = pcl::PointXYZ;
 
@@ -47,6 +50,36 @@ void normalize_vector(std::vector<double> &v);
  * \return The polar coordinates as a vector (phi, theta, rho)
  */
 std::vector<double> convert2polar(std::vector<double> cartesian_vector);
+
+/** rief Validates point distribution from PCA eigenvalues (ground plane check)
+ * Ground planes should have 2 large eigenvalues (XY spread) and 1 small (Z thickness).
+ * Walls have more uniform eigenvalue distribution.
+ *
+eturn true if distribution suggests ground plane, false if likely a wall
+ */
+bool validatePointDistributionFromEigenvalues(float lambda1, float lambda2, float lambda3,
+                                              double eigenvalue_ratio_threshold,
+                                              double &eigenvalue_ratio);
+
+/** rief Validates Z-coordinate mean relative to robot pose (ground plane check)
+ */
+bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
+                            double robot_z,
+                            double max_z_deviation,
+                            double &z_mean);
+
+/** rief Calculates the convex hull of a point cloud and returns its center point
+ */
+bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                             geometry_msgs::Point &hull_center);
+
+/** rief Validates convex hull center relative to robot pose
+ */
+bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                              const geometry_msgs::Point &robot_pose,
+                              double max_hull_distance,
+                              double &hull_distance,
+                              geometry_msgs::Point &hull_center);
 
 // void calculate_mean(const std::vector<std::vector<double>> &list_vectors, std::vector<double> &mean);
 

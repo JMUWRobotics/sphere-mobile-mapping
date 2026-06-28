@@ -295,8 +295,18 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         n[0] = params[0];
         n[1] = params[1];
         n[2] = params[2];
+        pcl::PointCloud<PointType>::Ptr validation_cloud(new pcl::PointCloud<PointType>);
+        pcl::copyPointCloud(*cur_scan, *validation_cloud);
         if (!convert_n_to_map_frame(n_msg))
             return -1000;
+
+        std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+        double robot_z = last_lio_pose ? last_lio_pose->pose.pose.position.z : 0.0;
+        if (!validateGroundNormal(validation_normal, validation_cloud, robot_z))
+            return -1000;
+        n_msg.vector.x = validation_normal[0];
+        n_msg.vector.y = validation_normal[1];
+        n_msg.vector.z = validation_normal[2];
 
         // publish points used for normal computation
         sensor_msgs::PointCloud2 sub_cloud_msg;
@@ -316,12 +326,25 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         auto start_plane = std::chrono::high_resolution_clock::now();
         pca.setInputCloud(cur_scan);
         Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
+        Eigen::Vector3f eigen_vals = pca.getEigenValues();
         // Set new normal vector
         n[0] = eigen_vecs.coeff(0, 2);
         n[1] = eigen_vecs.coeff(1, 2);
         n[2] = eigen_vecs.coeff(2, 2);
+        pcl::PointCloud<PointType>::Ptr validation_cloud(new pcl::PointCloud<PointType>);
+        pcl::copyPointCloud(*cur_scan, *validation_cloud);
         if (!convert_n_to_map_frame(n_msg))
             return -1000;
+
+        std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+        double robot_z = last_lio_pose ? last_lio_pose->pose.pose.position.z : 0.0;
+        if (!validateGroundNormal(validation_normal, validation_cloud, robot_z,
+                                  eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                  eigen_vecs(2, 0), eigen_vecs(2, 1)))
+            return -1000;
+        n_msg.vector.x = validation_normal[0];
+        n_msg.vector.y = validation_normal[1];
+        n_msg.vector.z = validation_normal[2];
 
         // publish points used for normal computation
         sensor_msgs::PointCloud2 sub_cloud_msg;
@@ -342,9 +365,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         double dist_thresh = 0.01;
         std::vector<int> inliers;
         pcl::PointIndices::Ptr inliers_ptr(new pcl::PointIndices());
-        // pcl::PointCloud<PointType>::Ptr tmp(new pcl::PointCloud<PointType>);
-        // float curv;
-        // Eigen::Vector4f params;
+        pcl::PointCloud<PointType>::Ptr accepted_inliers(new pcl::PointCloud<PointType>);
 
         auto start_plane = std::chrono::high_resolution_clock::now();
         for (int i = 0; i < max_iterations_plane_detection; i++)
@@ -357,6 +378,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             // NOTE: Propability (def:0.99) - basically no effect on speed and insignificant one on accuracy (worse at propability < 0.5)!
             // PCA for normal vector calculation
             pcl::PCA<PointType> pca;
+
             try
             {
                 ransac.computeModel();
@@ -372,13 +394,8 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
                 /* PCA */
                 inliers_ptr->indices = inliers;
-                pca.setInputCloud(cur_scan);
-                pca.setIndices(inliers_ptr);
-                Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
-                // Set new normal vector
-                n[0] = eigen_vecs.coeff(0, 2);
-                n[1] = eigen_vecs.coeff(1, 2);
-                n[2] = eigen_vecs.coeff(2, 2);
+                accepted_inliers.reset(new pcl::PointCloud<PointType>);
+                pcl::copyPointCloud(*cur_scan, inliers_ptr->indices, *accepted_inliers);
             }
             catch (pcl::InitFailedException)
             {
@@ -386,34 +403,73 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             }
 
             bool last_iteration = (i == max_iterations_plane_detection - 1);
-            // Check if ground plane found
-            if (convert_n_to_map_frame(n_msg, last_iteration))
-                break;
-            // Check if last try failed (found wall @ max iterations)
-            else if (last_iteration)
-                return -1000;
 
-            // If not remove all points from cloud and re-do RANSAC alg
-            delete_points(cur_scan, inliers_ptr, true);
-            inliers = {};
-            inliers_ptr->indices = {};
-            // If not enough points left to fit plane = stop plane detection
-            if (cur_scan->size() < 3)
-                return -1000;
+            if (!accepted_inliers || accepted_inliers->points.size() < 3)
+            {
+                if (last_iteration)
+                    return -1000;
+
+                delete_points(cur_scan, inliers_ptr, true);
+                inliers = {};
+                inliers_ptr->indices = {};
+                if (cur_scan->size() < 3)
+                    return -1000;
+                continue;
+            }
+
+            pca.setInputCloud(accepted_inliers);
+            Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
+            Eigen::Vector3f eigen_vals = pca.getEigenValues();
+
+            // Set new normal vector
+            n[0] = eigen_vecs.coeff(0, 2);
+            n[1] = eigen_vecs.coeff(1, 2);
+            n[2] = eigen_vecs.coeff(2, 2);
+
+            // Check if ground plane found
+            if (!convert_n_to_map_frame(n_msg, last_iteration))
+            {
+                if (last_iteration)
+                    return -1000;
+                break;
+            }
+
+            std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+            double robot_z = last_lio_pose ? last_lio_pose->pose.pose.position.z : 0.0;
+            if (!validateGroundNormal(validation_normal, accepted_inliers, robot_z,
+                                      eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                      eigen_vecs(2, 0), eigen_vecs(2, 1)))
+            {
+                if (last_iteration)
+                    return -1000;
+
+                delete_points(cur_scan, inliers_ptr, true);
+                inliers = {};
+                inliers_ptr->indices = {};
+                if (cur_scan->size() < 3)
+                    return -1000;
+                continue;
+            }
+
+            n_msg.vector.x = validation_normal[0];
+            n_msg.vector.y = validation_normal[1];
+            n_msg.vector.z = validation_normal[2];
+
+            last_inlier_count = accepted_inliers ? accepted_inliers->size() : 0;
+            break;
         }
 
         auto end_plane = std::chrono::high_resolution_clock::now();
         duration_plane = std::chrono::duration_cast<std::chrono::microseconds>(end_plane - start_plane).count();
 
-        sensor_msgs::PointCloud2 sub_cloud_msg; // should contain inliers here ??
-        pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *final); // copy inliers to final
-        pcl::toROSMsg(*final, sub_cloud_msg);   // copy points from final to sub_cloud_msg
-        sub_cloud_msg.header.stamp = n_msg.header.stamp;
-        sub_cloud_msg.header.frame_id = "pandar_frame";
-        pub_inliers.publish(sub_cloud_msg);
-
-        last_inlier_count = inliers.size(); // oder inliers_ptr->indices.size()?
+        if (accepted_inliers && !accepted_inliers->points.empty())
+        {
+            sensor_msgs::PointCloud2 sub_cloud_msg;
+            pcl::toROSMsg(*accepted_inliers, sub_cloud_msg);
+            sub_cloud_msg.header.stamp = n_msg.header.stamp;
+            sub_cloud_msg.header.frame_id = "pandar_frame";
+            pub_inliers.publish(sub_cloud_msg);
+        }
 
         break;
     }
@@ -437,6 +493,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
         pcl::PointIndices::Ptr inliers(new pcl::PointIndices()); // storing inliers for visualization
         inliers->indices.resize(cur_scan->points.size());
+        pcl::PointCloud<PointType>::Ptr accepted_inliers(new pcl::PointCloud<PointType>);
 
         auto start_plane = std::chrono::high_resolution_clock::now();
         for (int i = 0; i < max_iterations_plane_detection; i++)
@@ -445,11 +502,8 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             double rho = hough.RHT(n); // NOTE: eigenvector = already normalized :)
 
             bool last_iteration = (i == max_iterations_plane_detection - 1);
-            // Check if ground plane found
-            if (convert_n_to_map_frame(n_msg, last_iteration) && rho != -1)
-                break;
-            // Check if last try failed (found wall or no plane detected with rht @ max iterations)
-            else if (last_iteration)
+            // Transform normal into map frame before validation
+            if (!convert_n_to_map_frame(n_msg, last_iteration))
                 return -1000;
 
             // Check if try failed
@@ -478,22 +532,48 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 inliers->indices.resize(inlier_count);
                 del_points->indices.resize(del_count);
 
-                last_inlier_count = inlier_count;
+                accepted_inliers.reset(new pcl::PointCloud<PointType>);
+                pcl::copyPointCloud(*cur_scan, inliers->indices, *accepted_inliers);
+
+                pcl::PCA<PointType> pca;
+                pca.setInputCloud(accepted_inliers);
+                Eigen::Matrix3f eigen_vecs = pca.getEigenVectors();
+                Eigen::Vector3f eigen_vals = pca.getEigenValues();
+
+                if (!convert_n_to_map_frame(n_msg, last_iteration))
+                {
+                    return -1000;
+                }
+
+                std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+                double robot_z = last_lio_pose ? last_lio_pose->pose.pose.position.z : 0.0;
+                if (!validateGroundNormal(validation_normal, accepted_inliers, robot_z,
+                                          eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                          eigen_vecs(2, 0), eigen_vecs(2, 1)))
+                {
+                    if (last_iteration)
+                        return -1000;
+
+                    delete_points(cur_scan, inliers, true);
+                    if (cur_scan->size() < 3)
+                        return -1000;
+                    continue;
+                }
+
+                n_msg.vector.x = validation_normal[0];
+                n_msg.vector.y = validation_normal[1];
+                n_msg.vector.z = validation_normal[2];
+
+                last_inlier_count = accepted_inliers->size();
 
                 // publish points used for normal computation (should be inliers here)
                 sensor_msgs::PointCloud2 sub_cloud_msg;
-                pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-                pcl::copyPointCloud(*cur_scan, inliers->indices, *final);
-                pcl::toROSMsg(*final, sub_cloud_msg);
+                pcl::toROSMsg(*accepted_inliers, sub_cloud_msg);
                 sub_cloud_msg.header.stamp = n_msg.header.stamp;
                 sub_cloud_msg.header.frame_id = "pandar_frame";
                 pub_inliers.publish(sub_cloud_msg);
-                delete_points(cur_scan, inliers, true);
 
-                // delete_points(cur_scan, del_points, true);
-                //  If not enough points left to fit plane = stop plane detection
-                if (cur_scan->size() < 3)
-                    return -1000;
+                break;
 
                 // TODO comment out!
                 // Publish new subcloud for next try
@@ -533,6 +613,9 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
             inliers->indices.resize(cur_scan->points.size());
             int count = 0;
+            pcl::PointCloud<PointType>::Ptr accepted_inliers(new pcl::PointCloud<PointType>);
+            Eigen::Matrix3f eigen_vecs;
+            Eigen::Vector3f eigen_vals;
 
             try
             {
@@ -561,19 +644,14 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                     pcl::PCA<PointType> pca;
                     pca.setInputCloud(cur_scan);
                     pca.setIndices(inliers);
+                    eigen_vecs = pca.getEigenVectors();
+                    eigen_vals = pca.getEigenValues();
+
+                    accepted_inliers.reset(new pcl::PointCloud<PointType>);
+                    pcl::copyPointCloud(*cur_scan, inliers->indices, *accepted_inliers);
 
                     last_inlier_count = inliers->indices.size(); // TODO: double check
 
-                    // Publish detected inliers
-                    sensor_msgs::PointCloud2 sub_cloud_msg;
-                    pcl::PointCloud<PointType>::Ptr final(new pcl::PointCloud<PointType>);
-                    pcl::copyPointCloud(*cur_scan, inliers->indices, *final); // copy inlier points (filtered by indices) from curr_scan to final
-                    pcl::toROSMsg(*final, sub_cloud_msg);                     // copy points from final to subcloud_msg
-                    sub_cloud_msg.header.stamp = n_msg.header.stamp;
-                    sub_cloud_msg.header.frame_id = "pandar_frame";
-                    pub_inliers.publish(sub_cloud_msg);
-
-                    Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // NOTE: eigenvector = already normalized :)
                     // Set new normal vector
                     n[0] = eigen_vecs.coeff(0, 2);
                     n[1] = eigen_vecs.coeff(1, 2);
@@ -587,12 +665,43 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 return -1000;
             }
 
-            // Check if ground plane found
-            if (convert_n_to_map_frame(n_msg, last_iteration) && rho != -1)
-                break;
-            // Check if last try failed (found wall or no polane detected with rht @ max iterations)
-            else if (last_iteration)
+            // Transform normal into map frame before validation
+            if (!convert_n_to_map_frame(n_msg, last_iteration))
                 return -1000;
+
+            std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
+            double robot_z = last_lio_pose ? last_lio_pose->pose.pose.position.z : 0.0;
+            if (rho != -1)
+            {
+                if (!validateGroundNormal(validation_normal, accepted_inliers, robot_z,
+                                          eigen_vals(0), eigen_vals(1), eigen_vals(2),
+                                          eigen_vecs(2, 0), eigen_vecs(2, 1)))
+                {
+                    if (last_iteration)
+                        return -1000;
+
+                    delete_points(cur_scan, inliers, true);
+                    if (cur_scan->size() < 3)
+                    {
+                        ROS_ERROR("[GF] Not enough points after delete in cur_scan! num_points < 3");
+                        convert_n_to_map_frame(n_msg, true);
+                        return -1000;
+                    }
+                    continue;
+                }
+
+                n_msg.vector.x = validation_normal[0];
+                n_msg.vector.y = validation_normal[1];
+                n_msg.vector.z = validation_normal[2];
+
+                sensor_msgs::PointCloud2 sub_cloud_msg;
+                pcl::toROSMsg(*accepted_inliers, sub_cloud_msg);
+                sub_cloud_msg.header.stamp = n_msg.header.stamp;
+                sub_cloud_msg.header.frame_id = "pandar_frame";
+                pub_inliers.publish(sub_cloud_msg);
+
+                break;
+            }
 
             // If not remove those points from cloud and re-do RHT alg
             if (rho != -1)
@@ -632,6 +741,8 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 
 bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, const bool &last_iteration)
 {
+    (void)last_iteration;
+
     geometry_msgs::TransformStamped t;
     try
     {
@@ -651,20 +762,30 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
     tf2::doTransform(n_pandar, n_msg, t);
 
-    // Make sure it always points into ground // NOTE: Assumption = abs(slope of ground plane) < 45°
+    // Make sure it always points into ground
     std::vector<double> down = {0.0, 0.0, -1.0};
     std::vector<double> n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
     double dot_prod = dot_product(down, n_map_lio);
 
-    // Check if n represents wall
-    if (fabs(dot_prod) < wall_thresh)
+    if (!quiet)
     {
-        // Update normal vector to [0,0,-1] in map_lio frame for next iteration geometrical subcloud
+        double inclination = std::acos(std::max(-1.0, std::min(1.0, dot_prod))) * 180.0 / M_PI;
+        ROS_INFO("[GF][frame] pandar->map_lio normal=(%.5f, %.5f, %.5f) dot_down=%.5f inclination=%.5f deg",
+                 n_msg.vector.x, n_msg.vector.y, n_msg.vector.z, dot_prod, inclination);
+    }
+
+    if (enable_plane_angle_validation && std::abs(dot_prod) < wall_threshold)
+    {
+        if (!quiet)
+        {
+            ROS_WARN("[GF][angle] rejected as wall: |dot_down|=%.5f < wall_threshold=%.5f",
+                     std::abs(dot_prod), wall_threshold);
+        }
+
         if (last_iteration && subcloud == GEOMETRICAL)
         {
             try
             {
-                // Listen to tf tree for transformation
                 t = tf_buffer.lookupTransform("pandar_frame", "map_lio", ros::Time(0));
             }
             catch (tf2::TransformException &ex)
@@ -672,7 +793,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
                 ROS_ERROR("[GF] Failed to listen to tf tree!\n\n");
                 return false;
             }
-            // Create "down" Vector n in map_lio frame
+
             geometry_msgs::Vector3Stamped n_map;
             n_map.vector.x = 0.0;
             n_map.vector.y = 0.0;
@@ -682,13 +803,15 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
             n[0] = n_pandar.vector.x;
             n[1] = n_pandar.vector.y;
             n[2] = n_pandar.vector.z;
+
             if (!quiet)
                 ROS_ERROR("[GF] Resetting n!");
         }
+
         return false;
     }
 
-    // The dot product = positive if the angle between both vectors is smaller than 90 degrees, and negative otherwise.
+    // Flip normal to point downward if needed
     if (dot_prod < 0)
     {
         n[0] = -n[0];
@@ -699,13 +822,134 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
         n_msg.vector.z = -n_msg.vector.z;
     }
 
-    // If successfully found plane then caluculate and print inclination
     if (!quiet)
     {
         n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
         dot_prod = dot_product(down, n_map_lio);
         double inclination = acos(dot_prod) * 180 / M_PI;
         ROS_INFO("[GF] Inclination of the plane: %.5f", inclination);
+    }
+
+    return true;
+}
+
+bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
+                                        const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
+                                        double robot_z,
+                                        float lambda1,
+                                        float lambda2,
+                                        float lambda3,
+                                        float v1_z,
+                                        float v2_z)
+{
+    if (normal.size() != 3)
+    {
+        return false;
+    }
+
+    for (double value : normal)
+    {
+        if (std::isnan(value) || std::isinf(value))
+        {
+            return false;
+        }
+    }
+
+    double norm_sq = normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2];
+    if (norm_sq < 1e-12)
+    {
+        return false;
+    }
+
+    normalize_vector(normal);
+
+    std::vector<double> down = {0.0, 0.0, -1.0};
+    double dot = dot_product(normal, down);
+
+    if (enable_eigenvalue_validation && lambda1 > 0.0f && lambda2 > 0.0f && lambda3 > 0.0f &&
+        v1_z != 0.0f && v2_z != 0.0f)
+    {
+        double eigenvalue_ratio = 0.0;
+        bool eigenvalue_valid = validatePointDistributionFromEigenvalues(lambda1, lambda2, lambda3,
+                                                                         eigenvalue_ratio_threshold,
+                                                                         eigenvalue_ratio);
+        float max_dominant_z = std::max(std::abs(v1_z), std::abs(v2_z));
+        bool eigenvector_valid = max_dominant_z < max_eigenvector_z_component;
+
+        if (!quiet)
+        {
+            ROS_INFO("[GF][validate][eigen] lambda=(%.5f, %.5f, %.5f) ratio=%.5f threshold=%.5f dominant_z=%.5f threshold=%.5f result=%s",
+                     lambda1, lambda2, lambda3,
+                     eigenvalue_ratio,
+                     eigenvalue_ratio_threshold,
+                     max_dominant_z,
+                     max_eigenvector_z_component,
+                     (eigenvalue_valid && eigenvector_valid) ? "pass" : "fail");
+        }
+
+        if (!eigenvalue_valid || !eigenvector_valid)
+        {
+            if (!quiet)
+            {
+                ROS_WARN("[GF][validate][eigen] rejected: eigenvalue_valid=%s eigenvector_valid=%s",
+                         eigenvalue_valid ? "true" : "false",
+                         eigenvector_valid ? "true" : "false");
+            }
+            return false;
+        }
+    }
+
+    if (enable_z_mean_validation && inlier_cloud && !inlier_cloud->points.empty())
+    {
+        double z_mean = 0.0;
+        if (!validateZMeanDeviation(inlier_cloud, robot_z, max_z_deviation, z_mean))
+        {
+            if (!quiet)
+            {
+                ROS_WARN("[GF][validate][z_mean] rejected: z_mean=%.5f robot_z=%.5f max_z_deviation=%.5f",
+                         z_mean, robot_z, max_z_deviation);
+            }
+            return false;
+        }
+
+        if (!quiet)
+        {
+            ROS_INFO("[GF][validate][z_mean] pass: z_mean=%.5f robot_z=%.5f max_z_deviation=%.5f",
+                     z_mean, robot_z, max_z_deviation);
+        }
+    }
+
+    if (enable_convex_hull_validation && inlier_cloud && !inlier_cloud->points.empty())
+    {
+        geometry_msgs::Point hull_center;
+        double hull_distance = 0.0;
+        geometry_msgs::Point robot_pose;
+        robot_pose.x = 0.0;
+        robot_pose.y = 0.0;
+        robot_pose.z = robot_z;
+
+        if (!validateConvexHullCenter(inlier_cloud, robot_pose, max_hull_distance, hull_distance, hull_center))
+        {
+            if (!quiet)
+            {
+                ROS_WARN("[GF][validate][hull] rejected: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
+                         hull_center.x, hull_center.y, hull_center.z,
+                         hull_distance, max_hull_distance);
+            }
+            return false;
+        }
+
+        if (!quiet)
+        {
+            ROS_INFO("[GF][validate][hull] pass: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
+                     hull_center.x, hull_center.y, hull_center.z,
+                     hull_distance, max_hull_distance);
+        }
+    }
+
+    if (!quiet)
+    {
+        ROS_INFO("[GF][validate] accepted plane");
     }
 
     return true;
