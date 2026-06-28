@@ -244,6 +244,8 @@
     <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
     <arg name="gf_use_gaussian_smoothing" default="true" />
     <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
+    <arg name="gf_timing_csv_enabled" default="true" />
+    <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
 
 
     <!-- Global Ground Finder Arguments -->
@@ -253,8 +255,8 @@
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
-        <arg name="timing_csv_enabled" default="false" doc="Enable timing CSV logging"/>
-        <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv" doc="Timing CSV file path"/>
+    <arg name="timing_csv_enabled" default="true" doc="Enable timing CSV logging"/>
+    <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv" doc="Timing CSV file path"/>
     <arg name="extraction_radius" default="1.0" 
         doc="Local map extraction radius in meters"/>
     <arg name="use_adaptive_extraction_radius" default="false"
@@ -445,6 +447,8 @@
     <param name="gf_score_threshold" value="0.2" type="double" />
     <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
     <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
+    <param name="gf_timing_csv_enabled" value="$(arg gf_timing_csv_enabled)" type="bool"/>
+    <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
   </node>
 
     <node pkg="nodelet" type="nodelet" name="$(arg lio_gf_manager)" args="manager" output="screen"/>
