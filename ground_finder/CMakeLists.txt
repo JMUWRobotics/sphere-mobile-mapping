@@ -7,6 +7,7 @@ add_compile_options(-std=c++17)
 ## Find catkin macros and libraries
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  roslib
   std_msgs
   geometry_msgs
   pcl_conversions
@@ -21,6 +22,7 @@ catkin_package(
 #  LIBRARIES ground_finder
   CATKIN_DEPENDS
     roscpp
+    roslib
     std_msgs
     geometry_msgs
     pcl_conversions 
