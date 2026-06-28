@@ -33,8 +33,8 @@ def extract_poses(bag_file, topic="/posePub_merged"):
     
     return np.array(x_data), np.array(y_data), np.array(z_data), np.array(timestamps)
 
-def plot_paths(bag_files, title="Pose Paths"):
-    """Plot pose paths from one or more bag files."""
+def plot_paths(bag_files, title="Pose Paths", topic="/posePub_merged"):
+    """Plot pose paths from one or more bag files"""
     fig = plt.figure(figsize=(16, 10))
     
     # 3D plot
@@ -54,7 +54,7 @@ def plot_paths(bag_files, title="Pose Paths"):
     stats = {}
     
     for idx, (bag_file, color) in enumerate(zip(bag_files, colors)):
-        x, y, z, t = extract_poses(bag_file)
+        x, y, z, t = extract_poses(bag_file, topic=topic)
         
         if x is None:
             print(f"Skipping {bag_file}")
@@ -151,10 +151,24 @@ def plot_paths(bag_files, title="Pose Paths"):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: plot_path.py <bag_file> [<bag_file2> ...]")
-        print("\nPlots the pose path from /posePub_merged topic in bag file(s).")
+        print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
+        print("\nPlots the pose path from the selected topic in bag file(s)")
         sys.exit(1)
-    
-    bag_files = sys.argv[1:]
+
+    topic = "/posePub_merged"
+    args = sys.argv[1:]
+
+    if args and args[0] == "--topic":
+        if len(args) < 3:
+            print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
+            sys.exit(1)
+        topic = args[1]
+        args = args[2:]
+
+    if not args:
+        print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
+        sys.exit(1)
+
+    bag_files = args
     title = " vs ".join([f.split('/')[-1] for f in bag_files])
-    plot_paths(bag_files, title=title)
+    plot_paths(bag_files, title=title, topic=topic)
