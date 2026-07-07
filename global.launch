@@ -435,6 +435,14 @@
   </node>
 
 
+      
+    <!-- Laser Self-Motion Distortion Correction -->
+    <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
+      <remap from="points_in" to="$(arg points_in)"/>
+      <remap from="imu_in" to="$(arg imu_in)" />
+      <remap from="points_out" to="$(arg points_out)" />
+      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
+    </node>
 
 <!-- GGF, LIO nodelet manager & parameters -->
 
@@ -537,26 +545,18 @@
          These ensure transforms are immediately available when LIO starts processing. -->
     <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
     <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
-    <!-- <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" /> -->
+     <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" />
     
     <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
     <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
-    <!-- <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" /> -->
+    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />
     
     <!-- Defines the transform between CAM and Center -->
-    <!-- <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
+    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
-    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" /> -->
+    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" /> 
 
     <!-- ========== AUXILIARY NODES (NOT USED CURRENTLY BUT COMMENTED OUT FOR REFERENCE) ========== -->
-    
-    <!-- Laser Self-Motion Distortion Correction -->
-    <!-- <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
-      <remap from="points_in" to="$(arg points_in)"/>
-      <remap from="imu_in" to="$(arg imu_in)" />
-      <remap from="points_out" to="$(arg points_out)" />
-      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
-    </node> -->
 
     <!-- IMU Odometry Filtering Options -->
     <!-- node pkg="imu_odom_phidgets" type="imuJasper" name="imu_jasper_odometry_node" output="screen" / -->
@@ -571,7 +571,7 @@
 
     <!-- Delta Pose Filtering and Visualization -->
     <!-- <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/> -->
-    <!-- <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/> -->
+    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
     <!-- <node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /> -->
 
 
