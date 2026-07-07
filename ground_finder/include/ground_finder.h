@@ -148,7 +148,7 @@ private:
     int plane_counter;
 
     /* Normal calculation */
-    std::vector<double> n = {0.0, 0.0, -1.0}; // Normalized normal vector (n) in pandar_frame
+    std::vector<double> n = {0.0, 0.0, 1.0}; // Normalized normal vector (n) in pandar_frame
     visualization_msgs::Marker n_marker;
 
     /* ROS variables for node */

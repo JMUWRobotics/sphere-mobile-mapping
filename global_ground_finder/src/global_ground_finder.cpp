@@ -36,7 +36,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     global_map_.reset(new pcl::PointCloud<PointType>);
     kdtree_.reset(new pcl::KdTreeFLANN<PointType>);
 
-    n_ = {0.0, 0.0, -1.0};
+    n_ = {0.0, 0.0, 1.0};
 
     // normal computation params
     pnh.param<bool>("quiet", quiet_, false);
@@ -1823,8 +1823,8 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
         // ROS_INFO("  Hull validation PASSED");
     }
 
-    // Make sure it points downward
-    if (dot < 0)
+    // Make sure it points upwards
+    if (dot > 0)
     {
         normal[0] = -normal[0];
         normal[1] = -normal[1];

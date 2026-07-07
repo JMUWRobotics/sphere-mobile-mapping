@@ -762,8 +762,8 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
     tf2::doTransform(n_pandar, n_msg, t);
 
-    // Make sure it always points into ground
-    std::vector<double> down = {0.0, 0.0, -1.0};
+    // Make sure it always points upwards
+    std::vector<double> down = {0.0, 0.0, 1.0};
     std::vector<double> n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
     double dot_prod = dot_product(down, n_map_lio);
 
@@ -811,8 +811,8 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
         return false;
     }
 
-    // Flip normal to point downward if needed
-    if (dot_prod < 0)
+    // Flip normal to point upward if needed
+    if (dot_prod > 0)
     {
         n[0] = -n[0];
         n[1] = -n[1];
