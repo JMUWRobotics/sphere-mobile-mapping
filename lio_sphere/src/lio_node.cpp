@@ -526,7 +526,7 @@ void LIONode::build_map(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pc_in,
         pcl::toROSMsg(*map, map_out);
         map_out.header.frame_id = config_.odom_frame;
         map_out.header.stamp = stamp;
-        map_pub_.publish(map_out);
+        // map_pub_.publish(map_out);
 
         // ROS_INFO("Publishing updated immutable snapshot with %zu points", map->points.size());
         auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
@@ -561,14 +561,14 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
     pcl::toROSMsg(*pc, scan_out);
     scan_out.header.frame_id = config_.lidar_frame;
     scan_out.header.stamp = stamp;
-    pc_pub_.publish(scan_out);
-    // current PointCloud only if registered
+    // pc_pub_.publish(scan_out);
+    //  current PointCloud only if registered
     if (reg_suc)
     {
         pcl::toROSMsg(*pc, scan_out);
         scan_out.header.frame_id = config_.lidar_frame;
         scan_out.header.stamp = stamp;
-        pc_reg_pub_.publish(scan_out);
+        // pc_reg_pub_.publish(scan_out);
     }
 
     // current global map
@@ -581,7 +581,7 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
     pcl::toROSMsg(*map, map_out);
     map_out.header.frame_id = config_.odom_frame;
     map_out.header.stamp = stamp;
-    map_pub_.publish(map_out);
+    // map_pub_.publish(map_out);  // TODO: fix so that this entire function ONLY publishes and does not write anything. otherwise if publish_clouds is false, ground finder doesnt get any points!!!w
 
     // Publish in-process immutable snapshot for GF using the already flattened map.
     auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
