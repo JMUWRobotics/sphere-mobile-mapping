@@ -72,8 +72,7 @@
     <arg name="imu1_z" value="0.0287838"
         doc="in meters" />
     <arg name="imu2_x" value="-0.07202"
-        doc="in meters" />    <!-- ========== T265 cam ARGUMENTS ========== -->
-
+        doc="in meters" />
     <arg name="imu2_y" value="-0.00149266"
         doc="in meters" />
     <arg name="imu2_z" value="0.0325564" /> 
@@ -140,11 +139,11 @@
     <!-- Preprocessing -->
     <arg name="deskewing" value="false"
         doc="true: on, false: off (Set to FALSE if dedicated node is used)" />
-    <arg name="min_range" value="1.0"
+    <arg name="min_range" value="0.5"
         doc="lower limit for accepted point distances in m" />
-    <arg name="max_range" value="100.0" doc="upper limit for accepted point distances in m" />      
+    <arg name="max_range" value="120.0" doc="upper limit for accepted point distances in m" />      
     
-    <arg name="vox_l_map" value="0.05"
+    <arg name="vox_l_map" value="0.1"
         doc="voxel size for point cloud added to map in m" />
     <arg name="vox_l_gicp" value="0.1"
         doc="voxel size for point cloud utilized in GICP in m" />
@@ -160,7 +159,7 @@
     <!-- GICP Scan Matching -->
     <arg name="robust_kernel" value="true"
         doc="true: active, false: inactive" />
-    <arg name="target_NN_k" value="3"
+    <arg name="target_NN_k" value="10"
         doc="number of points found per source point to construct the target set" />
     <arg name="gicp_max_it" value="50"
         doc="maximum allowed number of iterations for the GICP loop" />
@@ -168,7 +167,7 @@
         doc="convergence criterion for the fitness value" />
     <arg name="gicp_th_rmse" value="1e-3"
         doc="convergence criterion for the RMSE value" />
-    <arg name="gicp_max_corr_dist" value="0.5"
+    <arg name="gicp_max_corr_dist" value="0.7"
         doc="maximum correspondence distance for GICP (m) when adaptive thresholding inactive" />
     <arg name="gicp_kernel_value" value="0.3"
         doc="kernel value c" />
@@ -221,19 +220,18 @@
     <!-- LIO Visualization Arguments -->
     <!-- Note: Frame names are hardcoded in lio_node.hpp:
          base_frame=center, odom_frame=map_lio, imu_odom_frame=map_imu, lidar_frame=pandar_frame -->
-    <arg name="visualize" default="true" 
-        doc="Enable LIO visualization outputs"/>
+    <!-- <arg name="visualize" default="true" 
+        doc="Enable LIO visualization outputs"/> -->
     <!-- <arg name="odom_frame" default="odom" 
         doc="LIO odometry frame"/>
     <arg name="base_frame" default="base_link" 
         doc="LIO robot base frame"/> -->
-    <arg name="topic" default="" 
+    <!-- <arg name="topic" default="" 
         doc="Optional LIO topic argument (kept for compatibility)"/>
     <arg name="pose_extractor" default="false" 
         doc="Enable optional pose extraction path in LIO"/>
     <arg name="rviz" default="true" 
-        doc="Start RViz from lio.launch if enabled there"/>
-
+        doc="Start RViz from lio.launch if enabled there"/> -->
 
     <!-- Ground Finder Arguments -->
     <arg name="gf_quiet"     default="false" />
@@ -270,7 +268,7 @@
     <!-- Global Ground Finder Arguments -->
     <arg name="quiet" default="false" 
         doc="Suppress repetitive global_ground_finder logs"/>
-    <arg name="gf_debug" default="false"
+    <arg name="ggf_debug" default="false"
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
@@ -291,7 +289,7 @@
     <arg name="inlier_scale" default="0.55"
         doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
     <param name="score_threshold" value="0.2" />    <!-- fallback triggers only on poor detection -->
-    <arg name="pose_topic" default="/lkf/pose"/>
+    <arg name="pose_topic" default="/all_pose_out"/>
     <arg name="enable_normal_smoothing" default="true" 
         doc="Enable smoothing for estimated normals"/>
     <arg name="use_gaussian_smoothing" default="false" 
@@ -306,6 +304,7 @@
         doc="CSV filename base, default disables logging"/>
     <arg name="debug_publish" default="false"
         doc="Publish rejected intermediate inlier clouds for debugging"/>
+    <arg name="publish_shared_map_debug_" default="false" doc="Publish singleton shared map on GGF side"/>
         
     <!-- Validation toggles -->
     <arg name="enable_eigenvalue_validation" default="false"
@@ -402,6 +401,26 @@
 
 
 
+
+
+    <!-- Camera to center extrinsics -->
+    <param name="offset_x" type="double" value="$(arg offset_x)" />
+    <param name="offset_y" type="double" value="$(arg offset_y)" />
+    <param name="offset_z" type="double" value="$(arg offset_z)" />
+    <param name="enable_fisheye_stream" type="bool" value="$(arg enable_fisheye_stream)" />
+
+<!-- ROSPARAM DEFINITIONS FINISHED -->
+<!-- LAUNCH ALL THE NODES -->
+    
+    <!-- Laser Self-Motion Distortion Correction (DEDICATED NODE DUE TO PAUL HEINISCH) -->
+    <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
+      <remap from="points_in" to="$(arg points_in)"/>
+      <remap from="imu_in" to="$(arg imu_in)" />
+      <remap from="points_out" to="$(arg points_out)" />
+      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
+    </node>
+
+
 <!-- Ground Finder nodes & parameters -->
 
  <node name="ground_finder_node" pkg="ground_finder" type="ground_finder_node" output="screen">
@@ -434,15 +453,6 @@
     <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
   </node>
 
-
-      
-    <!-- Laser Self-Motion Distortion Correction -->
-    <node pkg="laser_motion_distortion" name="laser_motion_distortion_hesai" type="sr_lidar_distortion_correction" output="screen">
-      <remap from="points_in" to="$(arg points_in)"/>
-      <remap from="imu_in" to="$(arg imu_in)" />
-      <remap from="points_out" to="$(arg points_out)" />
-      <param name="radius_filter" type="int" value="$(arg radius_filter)"/>
-    </node>
 
 <!-- GGF, LIO nodelet manager & parameters -->
 
@@ -506,9 +516,11 @@
         <param name="print_runtime" value="$(arg print_runtime)"/>
     </node>
 
+    <!-- GGF -->
+
     <include file="$(find global_ground_finder)/launch/global_ground_finder.launch">
       <arg name="quiet" value="$(arg quiet)"/>
-            <arg name="debug" value="$(arg gf_debug)"/>
+            <arg name="debug" value="$(arg ggf_debug)"/>
       <arg name="plane_algorithm" value="$(arg plane_algorithm)"/>
       <arg name="extraction_radius" value="$(arg extraction_radius)"/>
     <arg name="use_adaptive_extraction_radius" value="$(arg use_adaptive_extraction_radius)"/>
@@ -537,6 +549,8 @@
       <arg name="max_hull_distance" value="$(arg max_hull_distance)"/>
       <arg name="manager" value="$(arg lio_gf_manager)"/>
       <arg name="start_manager" value="false"/>
+      <arg name="publish_shared_map_debug_" value="$(arg publish_shared_map_debug_)"/>
+
     </include>
 
     <!-- ========== TF TREE SETUP ========== -->
@@ -545,16 +559,16 @@
          These ensure transforms are immediately available when LIO starts processing. -->
     <!-- Defines the transform between CAM and IMU coordinate system axes, e.g.: IMU x axis == CAM z axis -->
     <!--  ! THIS TRANSFORM APPLIES EXTRINSICLY, i.e., IT IS POSTMULTIPLIED ! -->
-     <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" />
+    <!-- <node pkg="tf" type="static_transform_publisher" name="left_cam_2_right_imu_stfb" args="0 0 0 1.570796 0 3.141592 cam_axes imu_axes 200" /> -->
     
     <!-- Defines the transform between CAM and IMU coordinate systems in the global map frame, e.g.: IMU moves in x, CAM in y -->
     <!-- ! THIS TRANSFORM APPLIES INTRINSICLY, i.e., IT IS PREMULTIPLIED ! --> 
-    <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />
+    <!-- <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />-->
     
     <!-- Defines the transform between CAM and Center -->
-    <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
+    <!-- <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
     <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
-    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" /> 
+    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />  -->
 
     <!-- ========== AUXILIARY NODES (NOT USED CURRENTLY BUT COMMENTED OUT FOR REFERENCE) ========== -->
 
@@ -571,9 +585,11 @@
 
     <!-- Delta Pose Filtering and Visualization -->
     <!-- <node pkg="delta_pose_filter" type="kalman_filter_node" name="lkf_pose_filter_node" output="screen" launch-prefix="bash -c 'sleep 5; $0 $@' "/> -->
-    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen" launch-prefix="bash -c 'sleep 7; $0 $@' "/>
+    <node pkg="delta_pose_filter" type="vizualizer" name="delta_tf_lidar_pub" output="screen"/>
     <!-- <node pkg="delta_pose_filter" type="filter_node" name="delta_pose_filter_node" output="screen" /> -->
 
 
 
 </launch>
+
+
