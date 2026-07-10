@@ -212,7 +212,7 @@ extern SmoothedDerivative3D *smooth_deriv_kernel2;
 // --- Ground normal stuff ---
 extern bool use_ground_normal;
 extern std::string ground_normal_topic;
-extern float gn_x, gn_y, gn_z; // ground normal vector (default: [0, 0, -1])
+extern float gn_x, gn_y, gn_z; // ground normal vector (default: [0, 0, 1])
 extern std::mutex mtx_gn;
 extern bool ground_normal_available;
 

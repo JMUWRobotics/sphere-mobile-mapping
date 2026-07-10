@@ -90,6 +90,8 @@
   <arg name="max_hull_distance" default="0.3"
        doc="Max 3D distance from robot to hull center [m]"/>
 
+     <arg name="publish_shared_map_debug_" default="false" doc="Publish singleton shared point cloud on GGF side"/>
+
      <arg name="manager" default="LIO_GF_nodelet_manager"
        doc="Name of the nodelet manager process"/>
 
@@ -151,6 +153,7 @@
     <param name="normal_smoothing_alpha" type="double" value="$(arg normal_smoothing_alpha)"/>
     <param name="smoothing_cutoff_freq" type="double" value="$(arg smoothing_cutoff_freq)"/>
     <param name="update_rate" type="double" value="$(arg update_rate)"/>
+    <param name="publish_shared_map_debug_" type="bool" value="$(arg publish_shared_map_debug_)"/>
 
     <!-- File logging -->
     <param name="file" type="string" value="$(arg file)"/>

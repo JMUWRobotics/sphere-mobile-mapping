@@ -513,7 +513,7 @@ void GlobalGroundFinder::processAtCurrentPose()
                  pose_copy.pose.position.z);
     }
 
-    const std::vector<double> fallback_normal = (count_success_ > 0) ? n_ : std::vector<double>{0.0, 0.0, -1.0};
+    const std::vector<double> fallback_normal = (count_success_ > 0) ? n_ : std::vector<double>{0.0, 0.0, 1.0};
 
     std::vector<double> normal = fallback_normal;
     size_t inlier_count = 0;

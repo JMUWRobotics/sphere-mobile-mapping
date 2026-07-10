@@ -142,16 +142,38 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
     case IMU:
         if (!tf2_buffer_._frameExists(config_.imu_odom_frame))
         {
+            ROS_WARN_STREAM_THROTTLE(1.0, "LIO processPoints: missing imu odom frame " << config_.imu_odom_frame);
             return;
         };
-        if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp))
         {
-            return;
+            std::string err_msg;
+            if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp, ros::Duration(5), &err_msg))
+            {
+                std::string latest_err_msg;
+                const bool latest_ok = tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, ros::Time(0), &latest_err_msg);
+                if (!latest_ok)
+                {
+                    ROS_WARN_STREAM_THROTTLE(1.0,
+                                             "LIO processPoints: cannot transform " << config_.imu_odom_frame
+                                                                                    << " -> " << config_.base_frame
+                                                                                    << " at " << msg->header.stamp.toSec()
+                                                                                    << " reason=" << err_msg
+                                                                                    << " latest_ok=" << latest_ok
+                                                                                    << " latest_reason=" << latest_err_msg);
+                    return;
+                }
+                ROS_WARN_STREAM_THROTTLE(1.0,
+                                         "LIO processPoints: exact-time transform unavailable, using latest for "
+                                             << config_.imu_odom_frame << " -> " << config_.base_frame
+                                             << " reason=" << err_msg
+                                             << " latest_reason=" << latest_err_msg);
+            }
         }
         break;
     }
-    if (!tf2_buffer_.canTransform(config_.lidar_frame, config_.base_frame, msg->header.stamp))
+    if (!tf2_buffer_.canTransform(config_.lidar_frame, config_.base_frame, msg->header.stamp, ros::Duration(5)))
     {
+        ROS_WARN_THROTTLE(1.0, "LIO: cannot transform %s to %s at time %.3f", config_.lidar_frame.c_str(), config_.base_frame.c_str(), msg->header.stamp.toSec());
         return;
     }
 
@@ -581,7 +603,7 @@ void LIONode::publishPointClouds(bool reg_suc, const pcl::PointCloud<pcl::PointX
     pcl::toROSMsg(*map, map_out);
     map_out.header.frame_id = config_.odom_frame;
     map_out.header.stamp = stamp;
-    // map_pub_.publish(map_out);  // TODO: fix so that this entire function ONLY publishes and does not write anything. otherwise if publish_clouds is false, ground finder doesnt get any points!!!w
+    // map_pub_.publish(map_out);
 
     // Publish in-process immutable snapshot for GF using the already flattened map.
     auto shared_map_snapshot = std::make_shared<pcl::PointCloud<PointType>>();
