@@ -362,10 +362,11 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
     case RANSAC:
     {
         // NOTE: unter 0.01 kaum besseres ergebnis dafür langsamer, über 0.02 deutlich ungenauer und erst wirklich schneller ab 0.05 (sehr ungenau schon)
-        double dist_thresh = 0.01;
+        double dist_thresh = 0.02;
         std::vector<int> inliers;
         pcl::PointIndices::Ptr inliers_ptr(new pcl::PointIndices());
         pcl::PointCloud<PointType>::Ptr accepted_inliers(new pcl::PointCloud<PointType>);
+        bool plane_found = false;
 
         auto start_plane = std::chrono::high_resolution_clock::now();
         for (int i = 0; i < max_iterations_plane_detection; i++)
@@ -431,7 +432,13 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             {
                 if (last_iteration)
                     return -1000;
-                break;
+
+                delete_points(cur_scan, inliers_ptr, true);
+                inliers = {};
+                inliers_ptr->indices = {};
+                if (cur_scan->size() < 3)
+                    return -1000;
+                continue;
             }
 
             std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
@@ -456,7 +463,13 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             n_msg.vector.z = validation_normal[2];
 
             last_inlier_count = accepted_inliers ? accepted_inliers->size() : 0;
+            plane_found = true;
             break;
+        }
+
+        if (!plane_found)
+        {
+            return -1000;
         }
 
         auto end_plane = std::chrono::high_resolution_clock::now();
@@ -626,7 +639,7 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                     for (int i = 0; i < (*cur_scan).size(); i++)
                     {
                         PointType p_i = cur_scan->points[i];
-                        double distance = fabs(p_i.x * n[0] + p_i.y * n[1] + p_i.z * n[2] - rho);
+                        double distance = fabs(p_i.x * temp_n[0] + p_i.y * temp_n[1] + p_i.z * temp_n[2] - rho);
                         // Check if point lies on detected plane
                         if (distance <= 0.05)
                         {
@@ -1039,6 +1052,67 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     // Determine normal vector of ground in map_lio frame incl. ensuring it represents ground and points into ground
     auto duration_plane = determine_n_ground_plane(cur_scan, plane_alg, n_msg);
 
+    bool plane_recovered_from_history = false;
+    bool recovered_from_segmentation_failure = false;
+    ground_finder_msgs::ScoredNormalStamped history_fallback_msg;
+    auto use_history_fallback = [&]() -> bool
+    {
+        if (!enable_scoring || scored_normals_sliding_window.empty())
+        {
+            return false;
+        }
+
+        auto fallback = std::max_element(scored_normals_sliding_window.begin(),
+                                         scored_normals_sliding_window.end(),
+                                         [](const ground_finder_msgs::ScoredNormalStamped &a,
+                                            const ground_finder_msgs::ScoredNormalStamped &b)
+                                         {
+                                             return a.combined_score < b.combined_score;
+                                         });
+
+        if (fallback == scored_normals_sliding_window.end() || fallback->combined_score < min_score_sliding_window)
+        {
+            if (!quiet)
+            {
+                ROS_WARN("[GF] No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
+            }
+            return false;
+        }
+
+        n_msg.vector.x = fallback->normal.x;
+        n_msg.vector.y = fallback->normal.y;
+        n_msg.vector.z = fallback->normal.z;
+        history_fallback_msg = *fallback;
+
+        if (!quiet)
+        {
+            ROS_WARN("[GF] Using best historical normal (score=%.5f, age=%.1f ms)",
+                     fallback->combined_score,
+                     (msg->header.stamp - fallback->header.stamp).toNSec() / 1e6);
+        }
+
+        return true;
+    };
+
+    if (duration_plane < 0)
+    {
+        if (use_history_fallback())
+        {
+            plane_recovered_from_history = true;
+            recovered_from_segmentation_failure = true;
+            duration_plane = 0;
+        }
+        else
+        {
+            ROS_ERROR("[GF] Plane segmentation fault!\n");
+            count_fail++;
+            // Write to file
+            if (write2file)
+                csv << "-1000,-1,-1,-1," << plane_counter << "\n";
+            return;
+        }
+    }
+
     if (timing_csv_enabled_)
     {
         const bool plane_success = duration_plane >= 0;
@@ -1065,16 +1139,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (write2file)
         csv << duration_plane << ",";
 
-    if (duration_plane < 0)
-    {
-        ROS_ERROR("[GF] Plane segmentation fault!\n");
-        count_fail++;
-        // Write to file
-        if (write2file)
-            csv << "-1000,-1,-1,-1," << plane_counter << "\n";
-        return;
-    }
-
     // ---------------------- Plane Score Computation & Sliding Window ----------------------
 
     ground_finder_msgs::ScoredNormalStamped scored_msg;
@@ -1087,7 +1151,17 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     double inlier_score = 1.0;
     double combined_score = 1.0;
 
-    if (enable_scoring)
+    if (plane_recovered_from_history)
+    {
+        using_fallback = true;
+        scored_msg.visibility_score = history_fallback_msg.visibility_score;
+        scored_msg.inlier_score = history_fallback_msg.inlier_score;
+        scored_msg.combined_score = history_fallback_msg.combined_score;
+        vis_score = history_fallback_msg.visibility_score;
+        inlier_score = history_fallback_msg.inlier_score;
+        combined_score = history_fallback_msg.combined_score;
+    }
+    else if (enable_scoring)
     {
         // compute curr score
         auto [vis_score_computed, inlier_score_computed] = compute_plane_scores(last_lio_pose, last_inlier_count, last_subcloud_size);
@@ -1119,7 +1193,12 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     geometry_msgs::Vector3Stamped final_n = n_msg;
     double final_score = combined_score;
 
-    if (enable_scoring && combined_score < score_threshold)
+    if (plane_recovered_from_history)
+    {
+        final_n = n_msg;
+        final_score = scored_msg.combined_score;
+    }
+    else if (enable_scoring && combined_score < score_threshold)
     {
         if (!quiet)
         {
@@ -1158,10 +1237,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         }
         else
         {
-            if (!quiet)
-            {
-                ROS_WARN("[GF] No suitable normal in sliding window found (min_score=%.3f)", min_score_sliding_window);
-            }
             fallback_unavailable = true;
         }
     }
@@ -1191,7 +1266,8 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
                        << last_subcloud_size << ","
                        << inlier_ratio << ","
                        << (using_fallback ? 1 : 0) << ","
-                       << (fallback_unavailable ? 1 : 0) << "\n"; // 1: fallback tried but no good candidate in window
+                       << (fallback_unavailable ? 1 : 0) << ","
+                       << (recovered_from_segmentation_failure ? 1 : 0) << "\n"; // 1: fallback recovered a segmentation failure
     scored_normals_log.flush();
 
     /*
