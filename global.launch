@@ -105,16 +105,19 @@
     <arg name="pcap_file"  default=""/>
     <arg name="server_ip" default="192.168.1.201"/>
     <arg name="lidar_recv_port"  default="2368"/>
-    <arg name="gps_port"  default="10110"/>
-    <arg name="start_angle"  default="0"/>
-    
-    <arg name="lidar_type" default="PandarXT-32"/>
-    
-    <arg name="frame_id" default="pandar_frame"/>
+        <arg name="tf_cache_time_sec" default="10.0"
+            doc="TF2 cache window in seconds"/>
+        <arg name="topic" default="" 
+            doc="Optional LIO topic argument (kept for compatibility)"/>
+        <arg name="pose_extractor" default="false" 
+            doc="Enable optional pose extraction path in LIO"/>
+        <arg name="rviz" default="true" 
+            doc="Start RViz from lio.launch if enabled there"/>
     <arg name="pcldata_type" default="1"/>
     <arg name="publish_type" default="points"/>
     <arg name="timestamp_type" default="realtime"/>
     <arg name="data_type" default=""/>
+        <param name="tf_cache_time_sec" type="double" value="$(arg tf_cache_time_sec)"/>
     <arg name="namespace" default="hesai"/>
     <!--arg name="lidar_correction_file"  default="$(find hesai_lidar)/config/PandarXT-32.csv"/-->
     <arg name="multicast_ip"  default=""/>
@@ -139,11 +142,11 @@
     <!-- Preprocessing -->
     <arg name="deskewing" value="false"
         doc="true: on, false: off (Set to FALSE if dedicated node is used)" />
-    <arg name="min_range" value="0.5"
+    <arg name="min_range" value="1"
         doc="lower limit for accepted point distances in m" />
     <arg name="max_range" value="100.0" doc="upper limit for accepted point distances in m" />      
     
-    <arg name="vox_l_map" value="0.1"
+    <arg name="vox_l_map" value="0.2"
         doc="voxel size for point cloud added to map in m" />
     <arg name="vox_l_gicp" value="0.1"
         doc="voxel size for point cloud utilized in GICP in m" />
@@ -159,7 +162,7 @@
     <!-- GICP Scan Matching -->
     <arg name="robust_kernel" value="true"
         doc="true: active, false: inactive" />
-    <arg name="target_NN_k" value="10"
+    <arg name="target_NN_k" value="5"
         doc="number of points found per source point to construct the target set" />
     <arg name="gicp_max_it" value="50"
         doc="maximum allowed number of iterations for the GICP loop" />

@@ -147,7 +147,7 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
         };
         {
             std::string err_msg;
-            if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp, ros::Duration(0.1), &err_msg))
+            if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp, ros::Duration(0.5), &err_msg))
             {
                 std::string latest_err_msg;
                 const bool latest_ok = tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, ros::Time(0), &latest_err_msg);
@@ -173,7 +173,7 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
     {
         std::string err_msg;
-        if (tf2_buffer_.canTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp, ros::Duration(0.1), &err_msg))
+        if (tf2_buffer_.canTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp, ros::Duration(0.5), &err_msg))
         {
             tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp);
         }
@@ -198,7 +198,7 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
                               config_.base_frame.c_str(),
                               err_msg.c_str(),
                               latest_err_msg.c_str());
-            tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, ros::Time(0));
+            tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, ros::Time(0.5));
         }
     }
 

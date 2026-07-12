@@ -1098,6 +1098,8 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     {
         if (use_history_fallback())
         {
+            ROS_ERROR("[GF] ERROR segmentation failed, trying fallback");
+            count_fail++;
             plane_recovered_from_history = true;
             recovered_from_segmentation_failure = true;
             duration_plane = 0;
@@ -1408,15 +1410,24 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     }
 
     // Update normal vector n_marker
-    n_marker.header.frame_id = msg->header.frame_id;
+    n_marker.header.frame_id = "map_lio";
     n_marker.header.stamp = msg->header.stamp;
     geometry_msgs::Point start, end;
-    start.x = query_point.x;
-    start.y = query_point.y;
-    start.z = query_point.z;
-    end.x = (start.x + n[0]) / 3.0;
-    end.y = (start.y + n[1]) / 3.0;
-    end.z = (start.z + n[2]) / 3.0;
+    if (last_lio_pose)
+    {
+        start.x = last_lio_pose->pose.pose.position.x;
+        start.y = last_lio_pose->pose.pose.position.y;
+        start.z = last_lio_pose->pose.pose.position.z;
+    }
+    else
+    {
+        start.x = 0.0;
+        start.y = 0.0;
+        start.z = 0.0;
+    }
+    end.x = start.x + final_n.vector.x;
+    end.y = start.y + final_n.vector.y;
+    end.z = start.z + final_n.vector.z;
     n_marker.points = {start, end};
     // Publish n_marker
     pub_vis_n.publish(n_marker);
