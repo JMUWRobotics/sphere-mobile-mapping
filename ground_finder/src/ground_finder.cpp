@@ -763,7 +763,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
     tf2::doTransform(n_pandar, n_msg, t);
 
     // Make sure it always points upwards
-    std::vector<double> down = {0.0, 0.0, 1.0};
+    std::vector<double> down = {0.0, 0.0, -1.0};
     std::vector<double> n_map_lio = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
     double dot_prod = dot_product(down, n_map_lio);
 
@@ -1353,8 +1353,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     if (write2file)
         csv << duration_total << "," << n_msg.vector.x << "," << n_msg.vector.y << "," << n_msg.vector.z << ",";
     auto end_total = std::chrono::high_resolution_clock::now();
-    ROS_WARN("[GF] Total time: %0.6f ms; fails: %d\n",
-             std::chrono::duration_cast<std::chrono::microseconds>(end_total - start_total).count() / 1000.0, count_fail);
     // Plane counter
     if (write2file)
         csv << plane_counter << "\n";

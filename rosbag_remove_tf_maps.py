@@ -15,7 +15,7 @@ def remove_tf_map_lio(input_bag_path, output_bag_path):
                 if topic in ('/tf', '/tf_static'):
                     filtered = [
                         transform for transform in msg.transforms
-                        if transform.child_frame_id not in ('map_lio', 'map_imu', 'map_raw')
+                        if transform.child_frame_id not in ('map_lio', 'map_imu', 'map_raw', 'imu_frame', 'camera_frame', 'pandar_frame')
                     ]
                     removed_transforms += len(msg.transforms) - len(filtered)
                     if filtered:

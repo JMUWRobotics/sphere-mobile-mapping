@@ -1232,18 +1232,38 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
     {
         try
         {
+            const size_t input_size = cloud_work->points.size();
+            const auto iter_start = std::chrono::high_resolution_clock::now();
+
             // RANSAC
             pcl::SampleConsensusModelPlane<PointType>::Ptr model(
                 new pcl::SampleConsensusModelPlane<PointType>(cloud_work));
             pcl::RandomSampleConsensus<PointType> ransac(model);
-            ransac.setDistanceThreshold(0.01); // 1 cm threshold
+            ransac.setDistanceThreshold(0.02); // cm threshold
+            // ransac.setMaxIterations(500); // TODO
+            const auto start_compute = std::chrono::high_resolution_clock::now();
             ransac.computeModel();
+            const auto end_compute = std::chrono::high_resolution_clock::now();
 
             std::vector<int> inliers;
             ransac.getInliers(inliers);
+            const auto end_get_inliers = std::chrono::high_resolution_clock::now();
 
             if (inliers.size() < 3)
             {
+                if (debug_)
+                {
+                    const double compute_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_compute - start_compute).count() / 1000.0;
+                    const double get_inliers_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_get_inliers - end_compute).count() / 1000.0;
+                    const double total_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_get_inliers - iter_start).count() / 1000.0;
+                    ROS_INFO("[GGF] RANSAC iter=%d size=%zu compute=%.3f ms get_inliers=%.3f ms total=%.3f ms (insufficient inliers=%zu)",
+                             iter,
+                             input_size,
+                             compute_ms,
+                             get_inliers_ms,
+                             total_ms,
+                             inliers.size());
+                }
                 return false;
             }
 
@@ -1252,10 +1272,12 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             inlier_indices->indices = inliers;
 
             pcl::PCA<PointType> pca;
+            const auto start_pca = std::chrono::high_resolution_clock::now();
             pca.setInputCloud(cloud_work);
             pca.setIndices(inlier_indices);
             Eigen::Matrix3f eigen_vecs = pca.getEigenVectors(); // e.g. eigen_vecs(2,0) (row 2, col 0 - z component of v1)
             Eigen::Vector3f eigen_vals = pca.getEigenValues();  // eigen_vals(0) (largest), eigen_vals(1), eigen_vals(2) (smallest)
+            const auto end_pca = std::chrono::high_resolution_clock::now();
 
             normal.resize(3);
             normal[0] = eigen_vecs(0, 2);
@@ -1280,20 +1302,57 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             inlier_cloud->width = inlier_cloud->points.size();
             inlier_cloud->height = 1;
             inlier_cloud->is_dense = true;
+            const auto end_copy = std::chrono::high_resolution_clock::now();
 
             // Check if it's ground
             bool is_last = (iter == max_iterations_plane_detection_ - 1);
             std::vector<double> test_normal = normal;
+            const auto start_validate = std::chrono::high_resolution_clock::now();
             const bool valid_ground = validateGroundNormal(test_normal, inlier_cloud, current_pose_.pose.position.z,
                                                            eigen_vals(0), eigen_vals(1), eigen_vals(2),
                                                            eigen_vecs(2, 0), eigen_vecs(2, 1)); // pass z component of 1st and 2nd eigenvectors to check if planes point distribution is majorly in xy plane
+            const auto end_validate = std::chrono::high_resolution_clock::now();
             if (valid_ground)
             {
                 normal = test_normal;
+                if (debug_)
+                {
+                    const double compute_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_compute - start_compute).count() / 1000.0;
+                    const double pca_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_pca - start_pca).count() / 1000.0;
+                    const double copy_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_copy - end_pca).count() / 1000.0;
+                    const double validate_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_validate - start_validate).count() / 1000.0;
+                    const double total_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_validate - iter_start).count() / 1000.0;
+                    ROS_INFO("[GGF] RANSAC iter=%d size=%zu inliers=%zu compute=%.3f ms pca=%.3f ms copy=%.3f ms validate=%.3f ms total=%.3f ms",
+                             iter,
+                             input_size,
+                             inliers.size(),
+                             compute_ms,
+                             pca_ms,
+                             copy_ms,
+                             validate_ms,
+                             total_ms);
+                }
                 return true;
             }
             else if (is_last)
             {
+                if (debug_)
+                {
+                    const double compute_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_compute - start_compute).count() / 1000.0;
+                    const double pca_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_pca - start_pca).count() / 1000.0;
+                    const double copy_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_copy - end_pca).count() / 1000.0;
+                    const double validate_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_validate - start_validate).count() / 1000.0;
+                    const double total_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_validate - iter_start).count() / 1000.0;
+                    ROS_INFO("[GGF] RANSAC iter=%d size=%zu inliers=%zu compute=%.3f ms pca=%.3f ms copy=%.3f ms validate=%.3f ms total=%.3f ms (rejected)",
+                             iter,
+                             input_size,
+                             inliers.size(),
+                             compute_ms,
+                             pca_ms,
+                             copy_ms,
+                             validate_ms,
+                             total_ms);
+                }
                 return false;
             }
 
@@ -1336,6 +1395,26 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             cloud_work->width = cloud_work->points.size();
             cloud_work->height = 1;
             cloud_work->is_dense = true;
+            if (debug_)
+            {
+                const auto end_retry = std::chrono::high_resolution_clock::now();
+                const double compute_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_compute - start_compute).count() / 1000.0;
+                const double pca_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_pca - start_pca).count() / 1000.0;
+                const double copy_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_copy - end_pca).count() / 1000.0;
+                const double validate_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_validate - start_validate).count() / 1000.0;
+                const double retry_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_retry - end_validate).count() / 1000.0;
+                const double total_ms = std::chrono::duration_cast<std::chrono::microseconds>(end_retry - iter_start).count() / 1000.0;
+                ROS_INFO("[GGF] RANSAC iter=%d size=%zu inliers=%zu compute=%.3f ms pca=%.3f ms copy=%.3f ms validate=%.3f ms retry=%.3f ms total=%.3f ms",
+                         iter,
+                         input_size,
+                         inliers.size(),
+                         compute_ms,
+                         pca_ms,
+                         copy_ms,
+                         validate_ms,
+                         retry_ms,
+                         total_ms);
+            }
 
             if (cloud_work->points.size() < 3)
             {

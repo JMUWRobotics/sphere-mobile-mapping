@@ -23,8 +23,31 @@ Sophus::SE3d LIONode::LookupTransform(const std::string &target_frame,
             ROS_WARN("%s", ex.what());
         }
     }
-    ROS_WARN("Failed to find tf between %s and %s. Reason=%s", target_frame.c_str(),
-             source_frame.c_str(), err_msg.c_str());
+
+    std::string latest_err_msg;
+    if (tf2_buffer_._frameExists(source_frame) &&
+        tf2_buffer_._frameExists(target_frame) &&
+        tf2_buffer_.canTransform(target_frame, source_frame, ros::Time(0), &latest_err_msg))
+    {
+        try
+        {
+            auto tf = tf2_buffer_.lookupTransform(target_frame, source_frame, ros::Time(0));
+            ROS_WARN_THROTTLE(1.0,
+                              "Using latest tf for %s -> %s because exact-time lookup failed. reason=%s latest_reason=%s",
+                              source_frame.c_str(),
+                              target_frame.c_str(),
+                              err_msg.c_str(),
+                              latest_err_msg.c_str());
+            return transformToSophus(tf);
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_WARN("%s", ex.what());
+        }
+    }
+
+    ROS_WARN("Failed to find tf between %s and %s. Reason=%s latest_reason=%s", target_frame.c_str(),
+             source_frame.c_str(), err_msg.c_str(), latest_err_msg.c_str());
     return {};
 }
 

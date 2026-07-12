@@ -147,7 +147,7 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
         };
         {
             std::string err_msg;
-            if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp, ros::Duration(5), &err_msg))
+            if (!tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, msg->header.stamp, ros::Duration(0.1), &err_msg))
             {
                 std::string latest_err_msg;
                 const bool latest_ok = tf2_buffer_.canTransform(config_.imu_odom_frame, config_.base_frame, ros::Time(0), &latest_err_msg);
@@ -171,13 +171,36 @@ void LIONode::processPoints(const sensor_msgs::PointCloud2::ConstPtr &msg)
         }
         break;
     }
-    if (!tf2_buffer_.canTransform(config_.lidar_frame, config_.base_frame, msg->header.stamp, ros::Duration(5)))
     {
-        ROS_WARN_THROTTLE(1.0, "LIO: cannot transform %s to %s at time %.3f", config_.lidar_frame.c_str(), config_.base_frame.c_str(), msg->header.stamp.toSec());
-        return;
-    }
+        std::string err_msg;
+        if (tf2_buffer_.canTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp, ros::Duration(0.1), &err_msg))
+        {
+            tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp);
+        }
+        else
+        {
+            std::string latest_err_msg;
+            if (!tf2_buffer_.canTransform(config_.base_frame, config_.lidar_frame, ros::Time(0), &latest_err_msg))
+            {
+                ROS_WARN_THROTTLE(1.0,
+                                  "LIO: cannot transform %s to %s at time %.3f reason=%s latest_reason=%s",
+                                  config_.lidar_frame.c_str(),
+                                  config_.base_frame.c_str(),
+                                  msg->header.stamp.toSec(),
+                                  err_msg.c_str(),
+                                  latest_err_msg.c_str());
+                return;
+            }
 
-    tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, msg->header.stamp);
+            ROS_WARN_THROTTLE(1.0,
+                              "LIO: exact-time transform unavailable, using latest for %s -> %s reason=%s latest_reason=%s",
+                              config_.lidar_frame.c_str(),
+                              config_.base_frame.c_str(),
+                              err_msg.c_str(),
+                              latest_err_msg.c_str());
+            tf_lidar2base_ = LookupTransform(config_.base_frame, config_.lidar_frame, ros::Time(0));
+        }
+    }
 
     auto pc_undist = boost::make_shared<pcl::PointCloud<PointType>>();
 

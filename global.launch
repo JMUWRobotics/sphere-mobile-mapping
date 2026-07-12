@@ -141,7 +141,7 @@
         doc="true: on, false: off (Set to FALSE if dedicated node is used)" />
     <arg name="min_range" value="0.5"
         doc="lower limit for accepted point distances in m" />
-    <arg name="max_range" value="120.0" doc="upper limit for accepted point distances in m" />      
+    <arg name="max_range" value="100.0" doc="upper limit for accepted point distances in m" />      
     
     <arg name="vox_l_map" value="0.1"
         doc="voxel size for point cloud added to map in m" />
@@ -566,9 +566,9 @@
     <!-- <node pkg="tf" type="static_transform_publisher" name="extr_imu_2_cam_stfb" args="0 0 0 -1.570796 0 0 cam_world imu_world 200" />-->
     
     <!-- Defines the transform between CAM and Center -->
-    <!-- <node pkg="tf" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam) 200" />
-    <node pkg="tf" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame) 200" />
-    <node pkg="tf" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame 200" />  -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="center_2_cam" args="$(arg offset_x) $(arg offset_y) $(arg offset_z) 0 0 0 $(arg center_frame) $(arg frame_id_cam)" />
+    <node pkg="tf2_ros" type="static_transform_publisher" name="lidar_2_center_stfb" args="0.00972 0.00064 0.135 3.141592 0 0 $(arg center_frame) $(arg lidar_frame)" />
+    <node pkg="tf2_ros" type="static_transform_publisher" name="center_is_imu_frame_stfb" args="0 0 0 0 0 0 $(arg center_frame) imu_frame" />
 
     <!-- ========== AUXILIARY NODES (NOT USED CURRENTLY BUT COMMENTED OUT FOR REFERENCE) ========== -->
 
