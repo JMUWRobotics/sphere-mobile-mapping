@@ -6,8 +6,8 @@
   <arg name="gf_plane"     default="ran" />
   <arg name="gf_file"      default="default" />
   <arg name="gf_enable_normal_smoothing" default="true" />
-  <arg name="gf_normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
-  <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+  <arg name="gf_normal_smoothing_alpha" default="0.526602" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+  <arg name="gf_smoothing_cutoff_freq" default="2.5" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
   <arg name="gf_use_gaussian_smoothing" default="true" />
   <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
   <arg name="gf_wall_threshold" default="0.707" />
