@@ -1843,7 +1843,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     {
         double center_frame_z = center_pose.pose.position.z;
         double z_mean = 0.0;
-        if (!validateZMeanDeviation(inlier_cloud, center_frame_z, max_z_deviation_, z_mean))
+        if (!validateZMeanDeviation(inlier_cloud, center_frame_z, max_z_deviation_, z_mean, quiet_))
         {
             if (!quiet_)
             {
@@ -1875,7 +1875,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
         double hull_distance = 0.0;
         geometry_msgs::Point hull_center;
-        bool hull_valid = validateConvexHullCenter(inlier_cloud, center_pose.pose.position, max_hull_distance_, hull_distance, hull_center);
+        bool hull_valid = validateConvexHullCenter(inlier_cloud, center_pose.pose.position, max_hull_distance_, hull_distance, hull_center, quiet_);
         // bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
 
         // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",

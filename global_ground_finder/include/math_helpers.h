@@ -73,7 +73,8 @@ bool validatePointDistributionFromEigenvalues(float lambda1, float lambda2, floa
 bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
                             double robot_z,
                             double max_z_deviation,
-                            double &z_mean);
+                            double &z_mean,
+                            bool quiet = false);
 
 /** \brief Calculates the convex hull of a point cloud and returns its center point
  * \param[in] cloud Point cloud
@@ -81,7 +82,8 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
  * \return true if hull calculated successfully, false otherwise
  */
 bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                             geometry_msgs::Point &hull_center);
+                             geometry_msgs::Point &hull_center,
+                             bool quiet = false);
 
 /** \brief Validates convex hull center relative to robot pose
  * Ground plane should have its center spatially close to cur pose
@@ -96,6 +98,7 @@ bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
                               const geometry_msgs::Point &robot_pose,
                               double max_hull_distance,
                               double &hull_distance,
-                              geometry_msgs::Point &hull_center);
+                              geometry_msgs::Point &hull_center,
+                              bool quiet = false);
 
 #endif
