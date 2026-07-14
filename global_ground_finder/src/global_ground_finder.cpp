@@ -50,8 +50,8 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<double>("wall_threshold", wall_threshold_, 0.707);            // cos(45°)
     pnh.param<double>("score_threshold", score_threshold_, 0.4);            // minimum score to accept normal, otherwise fallback to history window
     pnh.param<double>("min_score_window", min_score_window_, 0.5);          // minimum score in history window to consider fallback normal
-    pnh.param<double>("weight_visibility", weight_visibility_, 0.6);        // weight for visibility score in combined scoring
-    pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio_, 0.4);    // weight for inlier ratio score in combined scoring
+    pnh.param<double>("weight_visibility", weight_visibility_, 0.65);       // weight for visibility score in combined scoring
+    pnh.param<double>("weight_inlier_ratio", weight_inlier_ratio_, 0.35);   // weight for inlier ratio score in combined scoring
     pnh.param<double>("min_inliers", min_inliers_, 50.0);                   // minimum inliers required to compute a normal and score it
     pnh.param<double>("inlier_scale", inlier_scale_, 0.5);                  // normalization scale for inlier ratio in scoring: higher = stricter threshold for inlier_score=1.0; if inlier ratio higher than inlier_scale then inlier_score=1.0
     pnh.param<int>("max_iterations_plane_detection", max_iterations_plane_detection_, 3);
@@ -1838,7 +1838,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     // ####### z value validation #######
     // ##################################
 
-    // checks inlier cloud Z coordinate consistency with robot-center Z
+    // checks inlier cloud Z coordinate consistency with robot-center Z (both in curr pose frame)
     if (enable_z_mean_validation_ && inlier_cloud && !inlier_cloud->points.empty())
     {
         double center_frame_z = center_pose.pose.position.z;
@@ -1881,7 +1881,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
         // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
         //          hull_valid ? "true" : "false", hull_distance);
 
-        publishHullCenterMarker(hull_center);
+        publishHullCenterMarker(hull_center, hull_valid);
 
         if (!hull_valid)
         {
@@ -2013,7 +2013,7 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
     pub_n_marker.publish(normal_marker_);
 }
 
-void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hull_center)
+void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hull_center, bool hull_valid)
 {
     if (!quiet_)
     {
@@ -2044,10 +2044,10 @@ void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hul
     hull_marker.scale.y = 0.1;
     hull_marker.scale.z = 0.1;
 
-    // Cyan color, semi-transparent
-    hull_marker.color.r = 0.0;
-    hull_marker.color.g = 1.0;
-    hull_marker.color.b = 1.0;
+    // Green for valid ground planes, red for invalid ones
+    hull_marker.color.r = hull_valid ? 0.0 : 1.0;
+    hull_marker.color.g = hull_valid ? 1.0 : 0.0;
+    hull_marker.color.b = 0.0;
     hull_marker.color.a = 0.7;
 
     // hull_marker.lifetime = ros::Duration(0.5); // disappear after 500ms if not updated

@@ -406,7 +406,7 @@ private:
      * \param[in] stamp Timestamp for marker
      */
     void publish_normal_marker(const std::vector<double> &normal, const ros::Time &stamp);
-    void publishHullCenterMarker(const geometry_msgs::Point &hull_center);
+    void publishHullCenterMarker(const geometry_msgs::Point &hull_center, bool hull_valid);
 
     /** \brief Write computed ground normal vector to CSV file
      * \param[in] stamp Timestamp

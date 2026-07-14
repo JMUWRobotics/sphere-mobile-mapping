@@ -1050,8 +1050,6 @@ bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
 
     if (enable_convex_hull_validation && inlier_cloud && !inlier_cloud->points.empty())
     {
-        geometry_msgs::Point hull_center;
-        double hull_distance = 0.0;
         if (!robot_pose)
         {
             if (!quiet)
@@ -1059,22 +1057,47 @@ bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
                 ROS_WARN_THROTTLE(2.0, "[GF][validate][hull] skipping pose-based hull validation because no robot pose is available");
             }
         }
-        else if (!validateConvexHullCenter(inlier_cloud, *robot_pose, max_hull_distance, hull_distance, hull_center))
+        else
         {
+            geometry_msgs::Point hull_center;
+            double hull_distance = 0.0;
+            const bool hull_valid = validateConvexHullCenter(inlier_cloud, *robot_pose, max_hull_distance, hull_distance, hull_center);
+
+            visualization_msgs::Marker hull_marker;
+            hull_marker.header.stamp = ros::Time::now();
+            hull_marker.header.frame_id = "map_lio";
+            hull_marker.ns = "hull_center";
+            hull_marker.id = 0;
+            hull_marker.type = visualization_msgs::Marker::SPHERE;
+            hull_marker.action = visualization_msgs::Marker::ADD;
+            hull_marker.pose.position = hull_center;
+            hull_marker.pose.orientation.w = 1.0;
+            hull_marker.scale.x = 0.1;
+            hull_marker.scale.y = 0.1;
+            hull_marker.scale.z = 0.1;
+            hull_marker.color.r = hull_valid ? 0.0 : 1.0;
+            hull_marker.color.g = hull_valid ? 1.0 : 0.0;
+            hull_marker.color.b = 0.0;
+            hull_marker.color.a = 0.7;
+            pub_hull_center.publish(hull_marker);
+
+            if (!hull_valid)
+            {
+                if (!quiet)
+                {
+                    ROS_WARN("[GF][validate][hull] rejected: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
+                             hull_center.x, hull_center.y, hull_center.z,
+                             hull_distance, max_hull_distance);
+                }
+                return false;
+            }
+
             if (!quiet)
             {
-                ROS_WARN("[GF][validate][hull] rejected: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
+                ROS_INFO("[GF][validate][hull] pass: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
                          hull_center.x, hull_center.y, hull_center.z,
                          hull_distance, max_hull_distance);
             }
-            return false;
-        }
-
-        if (!quiet)
-        {
-            ROS_INFO("[GF][validate][hull] pass: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
-                     hull_center.x, hull_center.y, hull_center.z,
-                     hull_distance, max_hull_distance);
         }
     }
 
@@ -1216,7 +1239,10 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     {
         if (use_history_fallback())
         {
-            ROS_ERROR("[GF] ERROR segmentation failed, trying fallback");
+            if (!quiet)
+            {
+                ROS_ERROR("[GF] ERROR segmentation failed, trying fallback");
+            }
             count_fail++;
             plane_recovered_from_history = true;
             recovered_from_segmentation_failure = true;
@@ -1719,7 +1745,7 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const state_estimat
 {
 
     // --------------visibility_score----------------
-    // visibility fallback to 1.0 (full vis) if no KF pose available
+    // visibility fallback to 1.0 (full vis) if no lio pose available
     double visibility_score = 1.0;
     if (enable_view_score == false || !msg.get())
     {
