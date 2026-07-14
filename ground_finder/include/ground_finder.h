@@ -331,7 +331,7 @@ private:
      */
     bool validateGroundNormal(std::vector<double> &normal,
                               const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
-                              const geometry_msgs::Point &robot_pose,
+                              const geometry_msgs::Point *robot_pose,
                               float lambda1 = 0.0f,
                               float lambda2 = 0.0f,
                               float lambda3 = 0.0f,

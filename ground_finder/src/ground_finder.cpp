@@ -1,6 +1,7 @@
 #include "ground_finder.h"
 #include <ground_finder_msgs/ScoredNormalStamped.h>
 #include <iomanip>
+#include <pcl/common/transforms.h>
 
 void GroundFinder::initMarker()
 {
@@ -283,43 +284,72 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
 {
     int64_t duration_plane = 0.0;
 
-    // Transform a copy of the robot pose into the current cloud frame for z_mean and convex hull validations.
-    auto robot_pose_in_cloud_frame = [&]() -> geometry_msgs::PoseStamped
+    // Keep the robot pose in map_lio and transform the validation cloud into same frame as pose
+    geometry_msgs::Point robot_pose_map_lio;
+    const geometry_msgs::Point *robot_pose_point = nullptr;
+    if (last_lio_pose)
     {
-        if (!last_lio_pose)
+        robot_pose_map_lio = last_lio_pose->pose.pose.position;
+        robot_pose_point = &robot_pose_map_lio;
+
+        if (!quiet)
         {
-            return geometry_msgs::PoseStamped{};
+            ROS_INFO_THROTTLE(1.0,
+                              "[GF][pose] raw pose header_frame=%s pose_frame=%s map_lio_pos=[%.5f %.5f %.5f]",
+                              last_lio_pose->header.frame_id.c_str(),
+                              last_lio_pose->pose.header.frame_id.c_str(),
+                              robot_pose_map_lio.x,
+                              robot_pose_map_lio.y,
+                              robot_pose_map_lio.z);
         }
+    }
+    else if (!quiet)
+    {
+        ROS_WARN_THROTTLE(2.0, "[GF] No robot pose available yet; skipping pose-based validation checks");
+    }
 
-        geometry_msgs::PoseStamped robot_pose_map;
-        robot_pose_map.header.frame_id = "map_lio";
-        robot_pose_map.header.stamp = ros::Time(0);
-        robot_pose_map.pose = last_lio_pose->pose.pose;
+    const std::string source_frame = cur_scan->header.frame_id.empty() ? "pandar_frame" : cur_scan->header.frame_id;
+    const std::string target_frame = "map_lio";
 
-        const std::string target_frame = cur_scan->header.frame_id.empty() ? "pandar_frame" : cur_scan->header.frame_id;
+    auto transform_cloud_to_map_lio = [&](const pcl::PointCloud<PointType>::Ptr &input,
+                                          pcl::PointCloud<PointType>::Ptr &output) -> bool
+    {
+        output.reset(new pcl::PointCloud<PointType>);
 
         try
         {
-            geometry_msgs::TransformStamped t_robot_to_cloud = tf_buffer.lookupTransform(target_frame, robot_pose_map.header.frame_id, ros::Time(0));
-            geometry_msgs::PoseStamped robot_pose_cloud;
-            tf2::doTransform(robot_pose_map, robot_pose_cloud, t_robot_to_cloud);
-            return robot_pose_cloud;
+            geometry_msgs::TransformStamped t_cloud_to_map = tf_buffer.lookupTransform(target_frame, source_frame, ros::Time(0));
+            const auto &tr = t_cloud_to_map.transform.translation;
+            const auto &rot = t_cloud_to_map.transform.rotation;
+
+            Eigen::Quaternionf q(rot.w, rot.x, rot.y, rot.z);
+            Eigen::Affine3f transform = Eigen::Translation3f(static_cast<float>(tr.x), static_cast<float>(tr.y), static_cast<float>(tr.z)) * q;
+            pcl::transformPointCloud(*input, *output, transform.matrix());
+            output->header.frame_id = target_frame;
+
+            if (!quiet)
+            {
+                ROS_INFO_THROTTLE(1.0,
+                                  "[GF][frame] transformed validation cloud %s -> %s (%zu points)",
+                                  source_frame.c_str(),
+                                  target_frame.c_str(),
+                                  output->points.size());
+            }
+
+            return true;
         }
         catch (tf2::TransformException &ex)
         {
             if (!quiet)
             {
-                ROS_WARN("[GF] Failed to transform robot pose to %s for z or convex hull validation, using raw z: %s",
-                         target_frame.c_str(), ex.what());
+                ROS_ERROR("[GF] Failed to transform validation cloud from %s to %s: %s",
+                          source_frame.c_str(),
+                          target_frame.c_str(),
+                          ex.what());
             }
-
-            geometry_msgs::PoseStamped fallback_pose = robot_pose_map;
-            fallback_pose.header.frame_id = target_frame;
-            return fallback_pose;
+            return false;
         }
     };
-
-    const geometry_msgs::PoseStamped robot_pose_cloud_frame = robot_pose_in_cloud_frame();
 
     // Select Plane algorithm
     switch (type)
@@ -334,13 +364,14 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         n[0] = params[0];
         n[1] = params[1];
         n[2] = params[2];
-        pcl::PointCloud<PointType>::Ptr validation_cloud(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *validation_cloud);
+        pcl::PointCloud<PointType>::Ptr validation_cloud;
+        if (!transform_cloud_to_map_lio(cur_scan, validation_cloud))
+            return -1000;
         if (!convert_n_to_map_frame(n_msg))
             return -1000;
 
         std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-        if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_cloud_frame.pose.position))
+        if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_point))
             return -1000;
         n_msg.vector.x = validation_normal[0];
         n_msg.vector.y = validation_normal[1];
@@ -369,13 +400,14 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
         n[0] = eigen_vecs.coeff(0, 2);
         n[1] = eigen_vecs.coeff(1, 2);
         n[2] = eigen_vecs.coeff(2, 2);
-        pcl::PointCloud<PointType>::Ptr validation_cloud(new pcl::PointCloud<PointType>);
-        pcl::copyPointCloud(*cur_scan, *validation_cloud);
+        pcl::PointCloud<PointType>::Ptr validation_cloud;
+        if (!transform_cloud_to_map_lio(cur_scan, validation_cloud))
+            return -1000;
         if (!convert_n_to_map_frame(n_msg))
             return -1000;
 
         std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-        if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_cloud_frame.pose.position,
+        if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_point,
                                   eigen_vals(0), eigen_vals(1), eigen_vals(2),
                                   eigen_vecs(2, 0), eigen_vecs(2, 1)))
             return -1000;
@@ -479,7 +511,21 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             }
 
             std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-            if (!validateGroundNormal(validation_normal, accepted_inliers, robot_pose_cloud_frame.pose.position,
+            pcl::PointCloud<PointType>::Ptr validation_cloud;
+            if (!transform_cloud_to_map_lio(accepted_inliers, validation_cloud))
+            {
+                if (last_iteration)
+                    return -1000;
+
+                delete_points(cur_scan, inliers_ptr, true);
+                inliers = {};
+                inliers_ptr->indices = {};
+                if (cur_scan->size() < 3)
+                    return -1000;
+                continue;
+            }
+
+            if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_point,
                                       eigen_vals(0), eigen_vals(1), eigen_vals(2),
                                       eigen_vecs(2, 0), eigen_vecs(2, 1)))
             {
@@ -595,7 +641,19 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 }
 
                 std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
-                if (!validateGroundNormal(validation_normal, accepted_inliers, robot_pose_cloud_frame.pose.position,
+                pcl::PointCloud<PointType>::Ptr validation_cloud;
+                if (!transform_cloud_to_map_lio(accepted_inliers, validation_cloud))
+                {
+                    if (last_iteration)
+                        return -1000;
+
+                    delete_points(cur_scan, inliers, true);
+                    if (cur_scan->size() < 3)
+                        return -1000;
+                    continue;
+                }
+
+                if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_point,
                                           eigen_vals(0), eigen_vals(1), eigen_vals(2),
                                           eigen_vecs(2, 0), eigen_vecs(2, 1)))
                 {
@@ -720,7 +778,19 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
             std::vector<double> validation_normal = {n_msg.vector.x, n_msg.vector.y, n_msg.vector.z};
             if (rho != -1)
             {
-                if (!validateGroundNormal(validation_normal, accepted_inliers, robot_pose_cloud_frame.pose.position,
+                pcl::PointCloud<PointType>::Ptr validation_cloud;
+                if (!transform_cloud_to_map_lio(accepted_inliers, validation_cloud))
+                {
+                    if (last_iteration)
+                        return -1000;
+
+                    delete_points(cur_scan, inliers, true);
+                    if (cur_scan->size() < 3)
+                        return -1000;
+                    continue;
+                }
+
+                if (!validateGroundNormal(validation_normal, validation_cloud, robot_pose_point,
                                           eigen_vals(0), eigen_vals(1), eigen_vals(2),
                                           eigen_vecs(2, 0), eigen_vecs(2, 1)))
                 {
@@ -884,7 +954,7 @@ bool GroundFinder::convert_n_to_map_frame(geometry_msgs::Vector3Stamped &n_msg, 
 
 bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
                                         const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
-                                        const geometry_msgs::Point &robot_pose,
+                                        const geometry_msgs::Point *robot_pose,
                                         float lambda1,
                                         float lambda2,
                                         float lambda3,
@@ -950,21 +1020,31 @@ bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
 
     if (enable_z_mean_validation && inlier_cloud && !inlier_cloud->points.empty())
     {
-        double z_mean = 0.0;
-        if (!validateZMeanDeviation(inlier_cloud, robot_pose, max_z_deviation, z_mean))
+        if (!robot_pose)
         {
             if (!quiet)
             {
-                ROS_WARN("[GF][validate][z_mean] rejected: z_mean=%.5f robot_pose_z=%.5f max_z_deviation=%.5f",
-                         z_mean, robot_pose.z, max_z_deviation);
+                ROS_WARN_THROTTLE(2.0, "[GF][validate][z_mean] skipping pose-based z validation because no robot pose is available");
             }
-            return false;
         }
-
-        if (!quiet)
+        else
         {
-            ROS_INFO("[GF][validate][z_mean] pass: z_mean=%.5f robot_pose_z=%.5f max_z_deviation=%.5f",
-                     z_mean, robot_pose.z, max_z_deviation);
+            double z_mean = 0.0;
+            if (!validateZMeanDeviation(inlier_cloud, *robot_pose, max_z_deviation, z_mean))
+            {
+                if (!quiet)
+                {
+                    ROS_WARN("[GF][validate][z_mean] rejected: z_mean=%.5f robot_pose_z=%.5f max_z_deviation=%.5f",
+                             z_mean, robot_pose->z, max_z_deviation);
+                }
+                return false;
+            }
+
+            if (!quiet)
+            {
+                ROS_INFO("[GF][validate][z_mean] pass: z_mean=%.5f robot_pose_z=%.5f max_z_deviation=%.5f",
+                         z_mean, robot_pose->z, max_z_deviation);
+            }
         }
     }
 
@@ -972,7 +1052,14 @@ bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
     {
         geometry_msgs::Point hull_center;
         double hull_distance = 0.0;
-        if (!validateConvexHullCenter(inlier_cloud, robot_pose, max_hull_distance, hull_distance, hull_center))
+        if (!robot_pose)
+        {
+            if (!quiet)
+            {
+                ROS_WARN_THROTTLE(2.0, "[GF][validate][hull] skipping pose-based hull validation because no robot pose is available");
+            }
+        }
+        else if (!validateConvexHullCenter(inlier_cloud, *robot_pose, max_hull_distance, hull_distance, hull_center))
         {
             if (!quiet)
             {
@@ -1494,6 +1581,17 @@ void GroundFinder::scan_callback_count(const std_msgs::EmptyConstPtr &msg)
 void GroundFinder::lio_pose_callback(const state_estimator_msgs::EstimatorConstPtr &msg)
 {
     last_lio_pose = msg;
+
+    if (!quiet)
+    {
+        ROS_INFO_THROTTLE(1.0,
+                          "[GF][pose] callback header_frame=%s pose_frame=%s pose_pos=[%.5f %.5f %.5f]",
+                          msg->header.frame_id.c_str(),
+                          msg->pose.header.frame_id.c_str(),
+                          msg->pose.pose.position.x,
+                          msg->pose.pose.position.y,
+                          msg->pose.pose.position.z);
+    }
 
     if (!enable_view_score)
         enable_view_score = true;
