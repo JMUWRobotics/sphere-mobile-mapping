@@ -99,7 +99,7 @@ public:
         std::ofstream file(filepath);
         if (!file.is_open())
         {
-            ROS_ERROR("Failed to open kernel export file: %s", filepath.c_str());
+            ROS_ERROR("[GF] Failed to open kernel export file: %s", filepath.c_str());
             return;
         }
 
@@ -110,7 +110,7 @@ public:
             file << i << "," << t << "," << kernel_[i] << "\n";
         }
         file.close();
-        ROS_INFO("Gaussian kernel exported to: %s", filepath.c_str());
+        ROS_INFO("[GF] Gaussian kernel exported to: %s", filepath.c_str());
     }
 
 private:
@@ -204,7 +204,7 @@ private:
 
     /* EMA smoothing parameters */
     bool enable_normal_smoothing = true;           // Enable smoothing of normal vector
-    double normal_smoothing_alpha = 0.1;           // Smoothing factor alpha for normal vector smoothing [0,...,1] higher: more responsive, lower: smoother
+    double normal_smoothing_alpha = 0.526602;      // EMA smoothing factor alpha for normal vector smoothing [0,...,1] higher: more responsive, lower: smoother
     geometry_msgs::Vector3Stamped smoothed_normal; // internally stored smoothed normal (map_lio frame)
     bool have_smoothed_normal = false;             // flag if smoothed vector is initialized
 
@@ -214,17 +214,16 @@ private:
     bool use_gaussian_smoothing = false;                 // overrided by rosparam server
     double lidar_rate = 20.0f;                           // taken from rostopic hz /hesai/pandar
 
-    // TODO:tune after final implementation in .cpp
     /* Viewability score variables*/
     bool enable_view_score = false;                                                    // Set to true when first lio pose is received
     bool enable_scoring = true;                                                        // Enable/disable scoring and fallback mechanism (ROS param)
     double last_visibility_score = 1.0;                                                // most recent viewability score (1.0 = best, 0.0 = worst)
     size_t min_inliers = 20;                                                           // minimum inliers for plane fitting -> every plane below is too unreliable (?)
-    double inlier_scale = 0.3;                                                         // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
+    double inlier_scale = 0.1;                                                         // normalization scale: inlier_norm = clamp(inlier_ratio / inlier_scale, 0..1) | choose e.g. 0.5 => 50% inliers means best inlier ratio score (1.0)
     std::deque<ground_finder_msgs::ScoredNormalStamped> scored_normals_sliding_window; // sliding window of scored normals
     static constexpr size_t MAX_WINDOW_SIZE = 40;                                      // for 20Hz normal vecotr rate -> 2s history
-    double weight_visibility = 0.6;                                                    // weight for visibility score in combined score calculation
-    double weight_inlier_ratio = 0.4;                                                  // weight for inlier ratio score in combined score calculation
+    double weight_visibility = 0.65;                                                   // weight for visibility score in combined score calculation
+    double weight_inlier_ratio = 0.35;                                                 // weight for inlier ratio score in combined score calculation
     double score_threshold = 0.2;                                                      // normals with score below this threshold are not used but rather fallback value
     double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
 
@@ -322,7 +321,7 @@ private:
     /** \brief Validate that the current plane represents ground
      * \param[in,out] normal Normal vector to check
      * \param[in] inlier_cloud Point cloud used for validation checks
-     * \param[in] robot_z Robot-center Z coordinate
+     * \param[in] robot_pose Robot-center position in the cloud frame
      * \param[in] lambda1 Largest eigenvalue from PCA
      * \param[in] lambda2 Middle eigenvalue from PCA
      * \param[in] lambda3 Smallest eigenvalue from PCA
@@ -332,7 +331,7 @@ private:
      */
     bool validateGroundNormal(std::vector<double> &normal,
                               const pcl::PointCloud<PointType>::Ptr &inlier_cloud,
-                              double robot_z,
+                              const geometry_msgs::Point &robot_pose,
                               float lambda1 = 0.0f,
                               float lambda2 = 0.0f,
                               float lambda3 = 0.0f,
@@ -418,9 +417,13 @@ public:
             timing_csv_path_ = ros::package::getPath("ground_finder") + "/data/timings.csv";
         }
 
-        ROS_INFO("[GF] Smoothing params: enable_ema=%s alpha=%.3f use_gauss=%s cutoff=%.3f lidar_rate=%.3f",
-                 enable_normal_smoothing ? "true" : "false", normal_smoothing_alpha,
-                 use_gaussian_smoothing ? "true" : "false", smoothing_cutoff_freq, lidar_rate);
+        const char *smoothing_mode = !enable_normal_smoothing
+                                         ? "disabled"
+                                         : (use_gaussian_smoothing ? "Gaussian" : "EMA");
+
+        ROS_INFO("[GF] Smoothing params: enable=%s (%s) ema_alpha=%.3f cutoff=%.3f lidar_rate=%.3f",
+                 enable_normal_smoothing ? "true" : "false", smoothing_mode,
+                 normal_smoothing_alpha, smoothing_cutoff_freq, lidar_rate);
 
         ROS_INFO("[GF] Scoring and fallback: %s", enable_scoring ? "ENABLED" : "DISABLED");
         if (enable_scoring)
@@ -573,7 +576,7 @@ public:
             scored_normals_path = default_dir + "scored_normals.csv";
         }
         scored_normals_log.open(scored_normals_path, std::ios::out | std::ios::trunc);
-        scored_normals_log << "timestamp,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable\n";
+        scored_normals_log << "timestamp,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable,recovered_from_segmentation_failure\n";
         ROS_INFO("[GF] Scored normals log: %s", scored_normals_path.c_str());
     }
 };

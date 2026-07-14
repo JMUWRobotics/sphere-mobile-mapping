@@ -118,13 +118,13 @@ bool validatePointDistributionFromEigenvalues(float lambda1, float lambda2, floa
 }
 
 bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
-                            double robot_z,
+                            const geometry_msgs::Point &robot_pose,
                             double max_z_deviation,
                             double &z_mean)
 {
     if (!cloud || cloud->points.empty())
     {
-        z_mean = robot_z;
+        z_mean = robot_pose.z;
         return false;
     }
 
@@ -146,12 +146,12 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
 
     if (valid_count == 0)
     {
-        z_mean = robot_z;
+        z_mean = robot_pose.z;
         return false;
     }
 
     z_mean = z_sum / static_cast<double>(valid_count);
-    double mean_deviation = std::abs(z_mean - robot_z);
+    double mean_deviation = std::abs(z_mean - robot_pose.z);
     double z_spread = z_max - z_min;
     double max_z_spread = max_z_deviation * 2.0;
 

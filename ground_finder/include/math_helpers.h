@@ -61,10 +61,10 @@ bool validatePointDistributionFromEigenvalues(float lambda1, float lambda2, floa
                                               double eigenvalue_ratio_threshold,
                                               double &eigenvalue_ratio);
 
-/** rief Validates Z-coordinate mean relative to robot pose (ground plane check)
+/** \brief Validates Z-coordinate mean relative to robot pose (ground plane check)
  */
 bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
-                            double robot_z,
+                            const geometry_msgs::Point &robot_pose,
                             double max_z_deviation,
                             double &z_mean);
 
