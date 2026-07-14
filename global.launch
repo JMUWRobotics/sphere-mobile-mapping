@@ -142,11 +142,11 @@
     <!-- Preprocessing -->
     <arg name="deskewing" value="false"
         doc="true: on, false: off (Set to FALSE if dedicated node is used)" />
-    <arg name="min_range" value="1"
+    <arg name="min_range" value="0.5"
         doc="lower limit for accepted point distances in m" />
-    <arg name="max_range" value="100.0" doc="upper limit for accepted point distances in m" />      
+    <arg name="max_range" value="120.0" doc="upper limit for accepted point distances in m" />      
     
-    <arg name="vox_l_map" value="0.2"
+    <arg name="vox_l_map" value="0.25"
         doc="voxel size for point cloud added to map in m" />
     <arg name="vox_l_gicp" value="0.1"
         doc="voxel size for point cloud utilized in GICP in m" />
@@ -243,28 +243,28 @@
     <arg name="gf_plane"     default="ran" />
     <arg name="gf_file"      default="default" />
     <arg name="gf_enable_normal_smoothing" default="true" />
-    <arg name="gf_normal_smoothing_alpha" default="0.1" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
-    <arg name="gf_smoothing_cutoff_freq" default="2.0" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
+    <arg name="gf_normal_smoothing_alpha" default="0.526602" />   <!-- [0,...,1] higher: more responsive, lower: smoother -->
+    <arg name="gf_smoothing_cutoff_freq" default="2.5" />    <!-- cut off freq for gaussian kernel smoothing: 1Hz means signals with trends that take >1s to complete cycle pass while filtering out higher freq. changes  -->
     <arg name="gf_use_gaussian_smoothing" default="true" />
     <arg name="gf_enable_scoring" default="true"/>     <!-- bool to disable scoring of normal vector and fallback mechanism-->
-    <arg name="gf_wall_threshold" default="0.707" />
     <arg name="gf_enable_eigenvalue_validation" default="false"
         doc="Enable eigenvalue ratio and eigenvector z-component checks"/>
-    <arg name="gf_enable_plane_angle_validation" default="true"
-        doc="Enable angle-based wall rejection"/>
-    <arg name="gf_enable_z_mean_validation" default="false"
-        doc="Enable Z-mean deviation check"/>
-    <arg name="gf_enable_convex_hull_validation" default="false"
-        doc="Enable convex hull center distance check"/>
     <arg name="gf_eigenvalue_ratio_threshold" default="0.1"
         doc="Threshold for λ3/(λ1+λ2) planarity check"/>
-    <arg name="gf_max_eigenvector_z_component" default="0.1"
+    <arg name="gf_max_eigenvector_z_component" default="0.2"
         doc="Max z-component of dominant eigenvectors (v1, v2) -- use 0.2 if environment has slope"/>
-    <arg name="gf_max_hull_distance" default="1.0"
-        doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
+    <arg name="gf_enable_plane_angle_validation" default="true"
+        doc="Enable angle-based wall rejection"/>
+    <arg name="gf_wall_threshold" default="0.707" />
+    <arg name="gf_enable_z_mean_validation" default="false"
+        doc="Enable Z-mean deviation check"/>
     <arg name="gf_max_z_deviation" default="0.2"
         doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max is twice this)."/>
-    <arg name="gf_timing_csv_enabled" default="true" />
+    <arg name="gf_enable_convex_hull_validation" default="false"
+        doc="Enable convex hull center distance check"/>
+    <arg name="gf_max_hull_distance" default="1.0"
+        doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
+    <arg name="gf_timing_csv_enabled" default="false" />
     <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
 
 
@@ -275,7 +275,7 @@
         doc="Enable DBG ROS_INFO traces in global_ground_finder"/>
     <arg name="plane_algorithm" default="ransac" 
         doc="Ground plane algorithm: pca|ransac|rht|rht2"/>
-    <arg name="timing_csv_enabled" default="true" doc="Enable timing CSV logging"/>
+    <arg name="timing_csv_enabled" default="false" doc="Enable timing CSV logging"/>
     <arg name="timing_csv_file" default="$(env HOME)/catkin_ws/src/global_ground_finder/data/timings.csv" doc="Timing CSV file path"/>
     <arg name="extraction_radius" default="1.0" 
         doc="Local map extraction radius in meters"/>
@@ -285,27 +285,26 @@
         doc="Vertical extraction limit in meters"/>
     <arg name="enable_scoring" default="true" 
         doc="Enable scored normal output and fallback logic"/>
-    <arg name="score_threshold" default="0.2" 
+    <arg name="score_threshold" default="0.1" 
         doc="Minimum acceptable score for current normal"/>
     <arg name="min_score_window" default="0.3" 
         doc="Minimum fallback score from history window"/>
-    <arg name="inlier_scale" default="0.55"
+    <arg name="inlier_scale" default="0.5"
         doc="Inlier ratio scale for scoring: higher = stricter threshold for inlier_score=1.0"/>
-    <param name="score_threshold" value="0.2" />    <!-- fallback triggers only on poor detection -->
     <arg name="pose_topic" default="/all_pose_out"/>
     <arg name="enable_normal_smoothing" default="true" 
         doc="Enable smoothing for estimated normals"/>
-    <arg name="use_gaussian_smoothing" default="false" 
+    <arg name="use_gaussian_smoothing" default="true" 
         doc="Use Gaussian smoothing instead of EMA"/>
-    <arg name="normal_smoothing_alpha" default="0.1" 
+    <arg name="normal_smoothing_alpha" default="0.526602" 
         doc="EMA alpha parameter"/>
-    <arg name="smoothing_cutoff_freq" default="2.0" 
+    <arg name="smoothing_cutoff_freq" default="2.5" 
         doc="Gaussian cutoff frequency in Hz"/>
     <arg name="update_rate" default="20.0" 
         doc="Expected update rate in Hz"/>
     <arg name="file" default="default" 
         doc="CSV filename base, default disables logging"/>
-    <arg name="debug_publish" default="false"
+    <arg name="debug_publish" default="true"
         doc="Publish rejected intermediate inlier clouds for debugging"/>
     <arg name="publish_shared_map_debug_" default="false" doc="Publish singleton shared map on GGF side"/>
         
@@ -322,9 +321,9 @@
     <!-- Validation thresholds -->
     <arg name="eigenvalue_ratio_threshold" default="0.1"
         doc="Threshold for λ3/(λ1+λ2) planarity check"/>
-    <arg name="max_eigenvector_z_component" default="0.1"
+    <arg name="max_eigenvector_z_component" default="0.2"
         doc="Max z-component of dominant eigenvectors (v1, v2) -- use 0.2 if environment has slope"/>
-    <arg name="max_hull_distance" default="1.0"
+    <arg name="max_hull_distance" default="0.5"
         doc="Max 3D distance from robot to hull center [m]. Should be ~25-30% of extraction_radius."/>
     <arg name="max_z_deviation" default="0.2"
         doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max is twice this)."/>
@@ -438,10 +437,10 @@
     <param name="gf_normal_smoothing_alpha" type="double" value="$(arg gf_normal_smoothing_alpha)" />
     <param name="gf_smoothing_cutoff_freq" type="double" value="$(arg gf_smoothing_cutoff_freq)" />
     <param name="gf_use_gaussian_smoothing" type="bool" value="$(arg gf_use_gaussian_smoothing)" />
-    <param name="gf_weight_visibility" type="double" value="0.6" />
-    <param name="gf_weight_inlier_ratio" type="double" value="0.4" />
-    <param name="gf_score_threshold" value="0.2" type="double" />
-    <param name="gf_min_score_sliding_window" value="0.3" type="double "/>
+    <param name="gf_weight_visibility" type="double" value="0.65" />
+    <param name="gf_weight_inlier_ratio" type="double" value="0.35" />
+    <param name="gf_score_threshold" value="0.4" type="double" />
+    <param name="gf_min_score_sliding_window" value="0.6" type="double "/>
     <param name="gf_enable_scoring" value="$(arg gf_enable_scoring)" type="bool"/>
     <param name="gf_enable_eigenvalue_validation" type="bool" value="$(arg gf_enable_eigenvalue_validation)" />
     <param name="gf_enable_plane_angle_validation" type="bool" value="$(arg gf_enable_plane_angle_validation)" />
@@ -523,10 +522,10 @@
 
     <include file="$(find global_ground_finder)/launch/global_ground_finder.launch">
       <arg name="quiet" value="$(arg quiet)"/>
-            <arg name="debug" value="$(arg ggf_debug)"/>
+      <arg name="debug" value="$(arg ggf_debug)"/>
       <arg name="plane_algorithm" value="$(arg plane_algorithm)"/>
       <arg name="extraction_radius" value="$(arg extraction_radius)"/>
-    <arg name="use_adaptive_extraction_radius" value="$(arg use_adaptive_extraction_radius)"/>
+      <arg name="use_adaptive_extraction_radius" value="$(arg use_adaptive_extraction_radius)"/>
       <arg name="extraction_height" value="$(arg extraction_height)"/>
       <arg name="enable_scoring" value="$(arg enable_scoring)"/>
       <arg name="score_threshold" value="$(arg score_threshold)"/>
@@ -539,8 +538,8 @@
       <arg name="smoothing_cutoff_freq" value="$(arg smoothing_cutoff_freq)"/>
       <arg name="update_rate" value="$(arg update_rate)"/>
       <arg name="file" value="$(arg file)"/>
-        <arg name="timing_csv_enabled" value="$(arg timing_csv_enabled)"/>
-        <arg name="timing_csv_file" value="$(arg timing_csv_file)"/>
+      <arg name="timing_csv_enabled" value="$(arg timing_csv_enabled)"/>
+      <arg name="timing_csv_file" value="$(arg timing_csv_file)"/>
       <arg name="debug_publish" value="$(arg debug_publish)"/>
       <arg name="enable_eigenvalue_validation" value="$(arg enable_eigenvalue_validation)"/>
       <arg name="eigenvalue_ratio_threshold" value="$(arg eigenvalue_ratio_threshold)"/>
