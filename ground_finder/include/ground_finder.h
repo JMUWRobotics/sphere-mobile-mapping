@@ -13,6 +13,7 @@
 #include "hough.h"
 // System
 #include <chrono>
+#include <fstream>
 // ROS
 #include <ros/ros.h>
 #include <ros/package.h>
@@ -180,9 +181,10 @@ private:
     PlaneSegm plane_alg; // Algorithm used for plane segmentation
 
     /* Writing to file varibales */
-    std::string filename;             // Filename of csv
-    std::ofstream csv;                // File stream
-    std::ofstream scored_normals_log; // File stream for scored normals log
+    std::string filename;                // Filename of csv
+    std::ofstream csv;                   // File stream
+    std::ofstream scored_normals_log;    // File stream for scored normals log
+    std::ofstream published_normals_log; // File stream for all published normals
     bool write2file;
 
     // Timing CSV logging (separate from gf_file profiling CSV)
@@ -485,7 +487,7 @@ public:
                 timing_csv_path_ += suffix + ".csv";
             }
 
-            timing_csv_file_.open(timing_csv_path_, std::ios::out | std::ios::app);
+            timing_csv_file_.open(timing_csv_path_, std::ios::out | std::ios::trunc);
             if (timing_csv_file_.is_open())
             {
                 timing_csv_file_.seekp(0, std::ios::end);
@@ -556,30 +558,22 @@ public:
         // Open file stream
         if (write2file)
         {
-            csv.open(path);
+            csv.open(path, std::ios::out | std::ios::trunc);
             // Write header (times)
             csv << "Downsample[ns],BuildFilTree[ns],SearchFil[ns],DeleteFil[ns],BuildTreeSub[ns],SearchSub[ns],DeleteSub[ns],PreProcTotal[ns],Plane[ns],Total[ns],";
             // Wirte header (result = n in map_lio)
             csv << "nx,ny,nz,planeCount\n";
         }
 
-        // Always write scored normals log
-        // trunc to overwrite existing file
-        std::string scored_normals_path;
-        if (!path.empty() && path.find_last_of('/') != std::string::npos)
+        std::string gf_file_param;
+        if (nh.getParam("/ground_finder_node/gf_file", gf_file_param) &&
+            !gf_file_param.empty() && gf_file_param != "default")
         {
-            scored_normals_path = path.substr(0, path.find_last_of('/')) + "/scored_normals.csv";
+            std::string published_normals_path = ros::package::getPath("ground_finder") + "/data/" + gf_file_param + "_scored_normals.csv";
+            published_normals_log.open(published_normals_path, std::ios::out | std::ios::trunc);
+            published_normals_log << "timestamp,normal_type,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable,recovered_from_segmentation_failure\n";
+            ROS_INFO("[GF] Published normals log: %s", published_normals_path.c_str());
         }
-        else
-        {
-            // Default path when no file is specified
-            const char *home_dir = std::getenv("HOME");
-            std::string default_dir = home_dir ? std::string(home_dir) + "/catkin_ws/src/ground_finder/data/" : "/tmp/";
-            scored_normals_path = default_dir + "scored_normals.csv";
-        }
-        scored_normals_log.open(scored_normals_path, std::ios::out | std::ios::trunc);
-        scored_normals_log << "timestamp,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable,recovered_from_segmentation_failure\n";
-        ROS_INFO("[GF] Scored normals log: %s", scored_normals_path.c_str());
     }
 };
 

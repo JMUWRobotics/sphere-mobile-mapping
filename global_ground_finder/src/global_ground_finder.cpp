@@ -121,6 +121,29 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
             log_file_ << "timestamp,nx,ny,nz,qx,qy,qz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
             log_file_.flush();
             ROS_INFO("[GGF] Logging to file: %s", log_file_path_.c_str());
+
+            published_normals_path_ = log_file_path_;
+            const std::size_t dot_pos = published_normals_path_.find_last_of('.');
+            if (dot_pos != std::string::npos)
+            {
+                published_normals_path_.insert(dot_pos, "_published_normals");
+            }
+            else
+            {
+                published_normals_path_ += "_published_normals.csv";
+            }
+
+            published_normals_log.open(published_normals_path_, std::ios::out | std::ios::trunc);
+            if (published_normals_log.is_open())
+            {
+                published_normals_log << "timestamp,normal_type,nx,ny,nz,qx,qy,qz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
+                published_normals_log.flush();
+                ROS_INFO("[GGF] Published normals log: %s", published_normals_path_.c_str());
+            }
+            else
+            {
+                ROS_ERROR("[GGF] Failed to open published normals log: %s", published_normals_path_.c_str());
+            }
         }
         else
         {
@@ -198,6 +221,11 @@ GlobalGroundFinder::~GlobalGroundFinder()
     {
         log_file_.close();
         ROS_INFO("[GGF] Closed log file: %s", log_file_path_.c_str());
+    }
+    if (published_normals_log.is_open())
+    {
+        published_normals_log.close();
+        ROS_INFO("[GGF] Closed published normals log: %s", published_normals_path_.c_str());
     }
     ROS_INFO("[GGF] Global Ground Finder shutting down");
     ROS_INFO("  [GGF] Success: %d, Failures: %d", count_success_, count_fail_);
@@ -712,6 +740,47 @@ void GlobalGroundFinder::processAtCurrentPose()
         }
     }
 
+    auto log_published_normal = [&](const char *normal_type,
+                                    const geometry_msgs::Vector3Stamped &normal_msg,
+                                    double pub_vis_score,
+                                    double pub_inlier_score,
+                                    double pub_combined_score,
+                                    double curr_vis,
+                                    double curr_inlier,
+                                    double curr_combined)
+    {
+        if (!published_normals_log.is_open())
+        {
+            return;
+        }
+
+        const double inlier_ratio = (local_cloud->points.size() > 0)
+                                        ? static_cast<double>(inlier_count) / static_cast<double>(local_cloud->points.size())
+                                        : 0.0;
+
+        published_normals_log << std::fixed << std::setprecision(9) << pose_copy.header.stamp.toSec() << ","
+                              << normal_type << ","
+                              << std::setprecision(6) << normal_msg.vector.x << ","
+                              << normal_msg.vector.y << ","
+                              << normal_msg.vector.z << ","
+                              << pose_copy.pose.position.x << ","
+                              << pose_copy.pose.position.y << ","
+                              << pose_copy.pose.position.z << ","
+                              << last_roll_ * 180.0 / M_PI << ","
+                              << last_pitch_ * 180.0 / M_PI << ","
+                              << std::setprecision(4) << pub_vis_score << ","
+                              << pub_inlier_score << ","
+                              << pub_combined_score << ","
+                              << curr_vis << ","
+                              << curr_inlier << ","
+                              << curr_combined << ","
+                              << inlier_count << ","
+                              << local_cloud->points.size() << ","
+                              << std::setprecision(6) << inlier_ratio << ","
+                              << (using_fallback ? 1 : 0) << ","
+                              << last_search_radius_ << "\n";
+    };
+
     if (write2file)
     {
         log_results(pose_copy.header.stamp,
@@ -735,7 +804,14 @@ void GlobalGroundFinder::processAtCurrentPose()
     n_msg.vector.y = normal[1];
     n_msg.vector.z = normal[2];
     pub_n.publish(n_msg);
+    log_published_normal("raw", n_msg, vis_score, inlier_score, combined_score, vis_score, inlier_score, combined_score);
+
     pub_scored_n.publish(scored_msg);
+    geometry_msgs::Vector3Stamped scored_n_msg;
+    scored_n_msg.header = scored_msg.header;
+    scored_n_msg.vector = scored_msg.normal;
+    log_published_normal("scored", scored_n_msg, scored_msg.visibility_score, scored_msg.inlier_score, scored_msg.combined_score, vis_score, inlier_score, combined_score);
+
 
     ground_finder_msgs::ScoredNormalStamped scored_msg_pandar;
     scored_msg_pandar.header.stamp = scored_msg.header.stamp;
@@ -785,6 +861,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         smoothed_raw_n.header.stamp = n_msg.header.stamp;
         smoothed_raw_n.header.frame_id = n_msg.header.frame_id;
         pub_smoothed_n.publish(smoothed_raw_n);
+        log_published_normal("smoothed_raw", smoothed_raw_n, vis_score, inlier_score, combined_score, vis_score, inlier_score, combined_score);
 
         // Smoothed scored normal
         geometry_msgs::Vector3Stamped scored_n_stamped;
@@ -812,6 +889,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         smoothed_scored_msg.header.frame_id = scored_msg.header.frame_id;
 
         pub_smoothed_scored_n.publish(smoothed_scored_msg);
+        log_published_normal("smoothed_scored", scored_n_stamped, smoothed_scored_msg.visibility_score, smoothed_scored_msg.inlier_score, smoothed_scored_msg.combined_score, vis_score, inlier_score, combined_score);
 
         // Transform and publish smoothed & scored normal in local pandar_frame
         ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg_pandar;

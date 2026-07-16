@@ -13,6 +13,7 @@
 #include <deque>
 #include <memory>
 #include <chrono>
+#include <fstream>
 #include <mutex>
 #include <cstdint>
 
@@ -173,6 +174,8 @@ private:
     // CSV timing logging
     bool timing_csv_enabled_ = false;
     std::string timing_csv_path_;
+    std::string published_normals_path_;
+    std::ofstream published_normals_log;
     bool timing_csv_header_written_ = false;
     bool timing_csv_initialized_ = false;
     std::ofstream timing_csv_file_;

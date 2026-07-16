@@ -1395,26 +1395,42 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     double curr_combined_score = combined_score;
 
     double inlier_ratio = (last_subcloud_size > 0) ? static_cast<double>(last_inlier_count) / static_cast<double>(last_subcloud_size) : 0.0;
-    scored_normals_log << std::fixed << std::setprecision(6) << msg->header.stamp.toSec() << ","
-                       << std::defaultfloat
-                       << scored_msg.normal.x << ","
-                       << scored_msg.normal.y << ","
-                       << scored_msg.normal.z << ","
-                       << (last_roll * 180.0 / M_PI) << ","
-                       << (last_pitch * 180.0 / M_PI) << ","
-                       << scored_msg.visibility_score << "," // could be overwritten by fallback msg
-                       << scored_msg.inlier_score << ","     // could be overwritten by fallback msg
-                       << scored_msg.combined_score << ","   // could be overwritten by fallback msg
-                       << curr_vis_score << ","
-                       << curr_inlier_score << ","
-                       << curr_combined_score << ","
-                       << last_inlier_count << ","
-                       << last_subcloud_size << ","
-                       << inlier_ratio << ","
-                       << (using_fallback ? 1 : 0) << ","
-                       << (fallback_unavailable ? 1 : 0) << ","
-                       << (recovered_from_segmentation_failure ? 1 : 0) << "\n"; // 1: fallback recovered a segmentation failure
-    scored_normals_log.flush();
+
+    auto log_published_normal = [&](const char *normal_type,
+                                    const geometry_msgs::Vector3Stamped &normal_msg,
+                                    double pub_vis_score,
+                                    double pub_inlier_score,
+                                    double pub_combined_score,
+                                    double curr_vis,
+                                    double curr_inlier,
+                                    double curr_combined)
+    {
+        if (!published_normals_log.is_open())
+        {
+            return;
+        }
+
+        published_normals_log << std::fixed << std::setprecision(6) << msg->header.stamp.toSec() << ","
+                              << normal_type << ","
+                              << std::defaultfloat
+                              << normal_msg.vector.x << ","
+                              << normal_msg.vector.y << ","
+                              << normal_msg.vector.z << ","
+                              << (last_roll * 180.0 / M_PI) << ","
+                              << (last_pitch * 180.0 / M_PI) << ","
+                              << pub_vis_score << ","
+                              << pub_inlier_score << ","
+                              << pub_combined_score << ","
+                              << curr_vis << ","
+                              << curr_inlier << ","
+                              << curr_combined << ","
+                              << last_inlier_count << ","
+                              << last_subcloud_size << ","
+                              << inlier_ratio << ","
+                              << (using_fallback ? 1 : 0) << ","
+                              << (fallback_unavailable ? 1 : 0) << ","
+                              << (recovered_from_segmentation_failure ? 1 : 0) << "\n";
+    };
 
     /*
     Raw Normal Vector
@@ -1462,6 +1478,13 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
 
     pub_scored_n_pandar.publish(scored_msg_pandar);
 
+    log_published_normal("raw", n_msg, vis_score, inlier_score, combined_score, curr_vis_score, curr_inlier_score, curr_combined_score);
+
+    geometry_msgs::Vector3Stamped scored_n_stamped;
+    scored_n_stamped.header = scored_msg.header;
+    scored_n_stamped.vector = scored_msg.normal;
+    log_published_normal("scored", scored_n_stamped, scored_msg.visibility_score, scored_msg.inlier_score, scored_msg.combined_score, curr_vis_score, curr_inlier_score, curr_combined_score);
+
     if (!quiet)
     {
         if (!enable_scoring)
@@ -1497,6 +1520,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         smoothed_raw_n.header.stamp = n_msg.header.stamp;
         smoothed_raw_n.header.frame_id = n_msg.header.frame_id;
         pub_smoothed_n.publish(smoothed_raw_n);
+        log_published_normal("smoothed_raw", smoothed_raw_n, vis_score, inlier_score, combined_score, curr_vis_score, curr_inlier_score, curr_combined_score);
 
         // Smooth scored normal (current or fallback)
         geometry_msgs::Vector3Stamped scored_n_stamped;
@@ -1521,6 +1545,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         smoothed_scored_msg.inlier_score = scored_msg.inlier_score;
         smoothed_scored_msg.combined_score = scored_msg.combined_score;
         pub_smoothed_scored_n.publish(smoothed_scored_msg);
+        log_published_normal("smoothed_scored", scored_n_stamped, smoothed_scored_msg.visibility_score, smoothed_scored_msg.inlier_score, smoothed_scored_msg.combined_score, curr_vis_score, curr_inlier_score, curr_combined_score);
 
         // Transform and publish smoothed & scored normal in local pandar_frame
         ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg_pandar;
