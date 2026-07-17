@@ -165,22 +165,24 @@ int main(int argc, char **argv)
                 filename = "none-kdt-" + filename + ".csv";
             }
 
+            std::string data_root = ros::package::getPath("ground_finder") + "/data/";
+
             switch (plane_alg)
             {
             case LSF:
-                path = "/home/t2/catkin_ws/src/ground_finder/data/lsf/" + filename;
+                path = data_root + "lsf/" + filename;
                 break;
             case PCA:
-                path = "/home/t2/catkin_ws/src/ground_finder/data/pca/" + filename;
+                path = data_root + "pca/" + filename;
                 break;
             case RANSAC:
-                path = "/home/t2/catkin_ws/src/ground_finder/data/ran/" + filename;
+                path = data_root + "ran/" + filename;
                 break;
             case RHT:
-                path = "/home/t2/catkin_ws/src/ground_finder/data/rht/" + filename;
+                path = data_root + "rht/" + filename;
                 break;
             case RHT2:
-                path = "/home/t2/catkin_ws/src/ground_finder/data/rht2/" + filename;
+                path = data_root + "rht2/" + filename;
                 break;
             }
             ROS_WARN("[GF] Writing to file: %s\n", path.c_str());

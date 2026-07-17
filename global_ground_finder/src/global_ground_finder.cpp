@@ -136,7 +136,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
             published_normals_log.open(published_normals_path_, std::ios::out | std::ios::trunc);
             if (published_normals_log.is_open())
             {
-                published_normals_log << "timestamp,normal_type,nx,ny,nz,qx,qy,qz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
+                published_normals_log << "timestamp,normal_type,nx,ny,nz,px,py,pz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,search_radius\n";
                 published_normals_log.flush();
                 ROS_INFO("[GGF] Published normals log: %s", published_normals_path_.c_str());
             }
@@ -458,6 +458,12 @@ void GlobalGroundFinder::processAtCurrentPose()
             ros::param::param<std::string>("/global_ground_finder/timing_csv_file", path, std::string(""));
 
         timing_csv_enabled_ = enabled;
+
+        if (!path.empty() && path.front() != '/')
+        {
+            path = ros::package::getPath("global_ground_finder") + "/data/" + path;
+        }
+
         timing_csv_path_ = path;
 
         if (timing_csv_enabled_ && !timing_csv_path_.empty())
@@ -763,9 +769,9 @@ void GlobalGroundFinder::processAtCurrentPose()
                               << std::setprecision(6) << normal_msg.vector.x << ","
                               << normal_msg.vector.y << ","
                               << normal_msg.vector.z << ","
-                              << pose_copy.pose.position.x << ","
-                              << pose_copy.pose.position.y << ","
-                              << pose_copy.pose.position.z << ","
+                      << pose_copy.pose.position.x << ","
+                      << pose_copy.pose.position.y << ","
+                      << pose_copy.pose.position.z << ","
                               << last_roll_ * 180.0 / M_PI << ","
                               << last_pitch_ * 180.0 / M_PI << ","
                               << std::setprecision(4) << pub_vis_score << ","
@@ -779,6 +785,7 @@ void GlobalGroundFinder::processAtCurrentPose()
                               << std::setprecision(6) << inlier_ratio << ","
                               << (using_fallback ? 1 : 0) << ","
                               << last_search_radius_ << "\n";
+        published_normals_log.flush();
     };
 
     if (write2file)
@@ -963,7 +970,12 @@ void GlobalGroundFinder::processAtCurrentPose()
         if (timing_csv_file_.is_open())
         {
             double total_ms = static_cast<double>(total_time_us) / 1000.0;
-            double ts = ros::Time::now().toSec();
+            double ts;
+            if (!pose_copy.header.stamp.isZero())
+                ts = pose_copy.header.stamp.toSec();
+            else
+                ts = ros::Time::now().toSec();
+
             timing_csv_file_ << std::fixed << std::setprecision(4) << ts << ","
                              << (extraction_time_us / 1000.0) << ","
                              << (plane_fit_time_us / 1000.0) << ","

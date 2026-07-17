@@ -416,6 +416,11 @@ public:
         pnh.param<double>("gf_max_hull_distance", max_hull_distance, max_hull_distance);
         pnh.param<bool>("gf_timing_csv_enabled", timing_csv_enabled_, true);
         pnh.param<std::string>("gf_timing_csv_file", timing_csv_path_, std::string(""));
+        // If user provided a relative filename, write into the package data directory
+        if (!timing_csv_path_.empty() && timing_csv_path_.front() != '/')
+        {
+            timing_csv_path_ = ros::package::getPath("ground_finder") + "/data/" + timing_csv_path_;
+        }
         if (timing_csv_path_.empty())
         {
             timing_csv_path_ = ros::package::getPath("ground_finder") + "/data/timings.csv";
@@ -566,10 +571,11 @@ public:
         }
 
         std::string gf_file_param;
-        if (nh.getParam("/ground_finder_node/gf_file", gf_file_param) &&
-            !gf_file_param.empty() && gf_file_param != "default")
+        // Read the gf_file from the node's private namespace (robust against node renames)
+        pnh.param<std::string>("gf_file", gf_file_param, std::string("default"));
+        if (!gf_file_param.empty() && gf_file_param != "default")
         {
-            std::string published_normals_path = ros::package::getPath("ground_finder") + "/data/" + gf_file_param + "_scored_normals.csv";
+            std::string published_normals_path = ros::package::getPath("ground_finder") + "/data/" + gf_file_param + ".csv";
             published_normals_log.open(published_normals_path, std::ios::out | std::ios::trunc);
             published_normals_log << "timestamp,normal_type,nx,ny,nz,roll,pitch,pub_vis_score,pub_inlier_score,pub_combined_score,curr_vis_score,curr_inlier_score,curr_combined_score,inlier_count,subcloud_size,inlier_ratio,using_fallback,fallback_unavailable,recovered_from_segmentation_failure\n";
             ROS_INFO("[GF] Published normals log: %s", published_normals_path.c_str());

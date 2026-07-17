@@ -1430,6 +1430,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
                               << (using_fallback ? 1 : 0) << ","
                               << (fallback_unavailable ? 1 : 0) << ","
                               << (recovered_from_segmentation_failure ? 1 : 0) << "\n";
+        published_normals_log.flush();
     };
 
     /*
