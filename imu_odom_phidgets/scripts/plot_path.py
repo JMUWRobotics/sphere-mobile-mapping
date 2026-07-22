@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Plot the pose path from /posePub_merged topic
+Plot the pose path from a specified ROS bag topic
 """
 import sys
 import os
+import argparse
 import rosbag
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -60,7 +61,8 @@ def plot_paths(bag_files, title="Pose Paths", topic="/posePub_merged"):
             print(f"Skipping {bag_file}")
             continue
         
-        label = bag_file.split('/')[-1]
+        bag_name = bag_file.split('/')[-1]
+        label = f"{bag_name} ({topic})"
         
         # 3D plot
         ax3d.plot(x, y, z, color=color, label=label, linewidth=2)
@@ -125,21 +127,23 @@ def plot_paths(bag_files, title="Pose Paths", topic="/posePub_merged"):
     ax_yz.grid(True)
     ax_yz.axis('equal')
     
-    fig.suptitle(title, fontsize=16, fontweight='bold')
+    fig.suptitle(f"{title}\nTopic: {topic}", fontsize=16, fontweight='bold')
     plt.tight_layout()
     
     # Save fig in the same directory as script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = title.replace(" vs ", "_vs_").replace(" ", "_") + ".png"
+    clean_topic = topic.strip("/").replace("/", "_")
+    clean_title = title.replace(" vs ", "_vs_").replace(" ", "_").replace("/", "_")
+    filename = f"{clean_title}_{clean_topic}.png"
     filepath = os.path.join(script_dir, filename)
     plt.savefig(filepath, dpi=150, bbox_inches='tight')
     print(f"\nFigure saved to: {filepath}")
     
     print("\n" + "="*80)
-    print(f"Path Stats for {title}")
+    print(f"Path Stats for {title} (Topic: {topic})")
     print("="*80)
     for label, stat in stats.items():
-        print(f"\nFile: {label}")
+        print(f"\nTarget: {label}")
         print(f"  Samples: {stat['samples']}")
         print(f"  Duration: {stat['duration']:.2f} seconds")
         print(f"  Path distance: {stat['distance']:.3f} m")
@@ -150,25 +154,21 @@ def plot_paths(bag_files, title="Pose Paths", topic="/posePub_merged"):
     plt.show()
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
-        print("\nPlots the pose path from the selected topic in bag file(s)")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Plots the pose path from a specified topic in ROS bag file(s)."
+    )
+    parser.add_argument(
+        "bag_files", 
+        nargs="+", 
+        help="One or more ROS bag files to process"
+    )
+    parser.add_argument(
+        "-t", "--topic", 
+        default="/posePub_merged", 
+        help="ROS topic name containing the pose data (default: /posePub_merged)"
+    )
 
-    topic = "/posePub_merged"
-    args = sys.argv[1:]
+    args = parser.parse_args()
 
-    if args and args[0] == "--topic":
-        if len(args) < 3:
-            print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
-            sys.exit(1)
-        topic = args[1]
-        args = args[2:]
-
-    if not args:
-        print("Usage: plot_path.py [--topic <topic>] <bag_file> [<bag_file2> ...]")
-        sys.exit(1)
-
-    bag_files = args
-    title = " vs ".join([f.split('/')[-1] for f in bag_files])
-    plot_paths(bag_files, title=title, topic=topic)
+    title = " vs ".join([f.split('/')[-1] for f in args.bag_files])
+    plot_paths(args.bag_files, title=title, topic=args.topic)
