@@ -733,11 +733,11 @@ void apply_attitude_filter(double stamp_ms, bool reuse_dt)
     quaternion_multiply(&qFiltered, &qLastInv, &relative_rotation);
     double axis[3];
     double angle;
-    quaternion_to_axis_angle(&relative_rotation, axis, &angle);
-    angle *= precalc_180_BY_M_PI;
-    gx_filtered = axis[0] * angle;
-    gy_filtered = axis[1] * angle;
-    gz_filtered = axis[2] * angle;
+    quaternion_to_axis_angle(&relative_rotation, axis, &angle); // returns angle in radians
+    // angle *= precalc_180_BY_M_PI;                               // convert to degrees
+    gx_filtered = axis[0] * angle / dt; // expects degrees per second (?)
+    gy_filtered = axis[1] * angle / dt;
+    gz_filtered = axis[2] * angle / dt;
 
     // Compute position
     if (!reuse_dt)
@@ -1049,7 +1049,7 @@ int argumentHandler(ros::NodeHandle &nh)
     float n_data_dt = 1.0f / 20; // 20Hz da Lidar daten in 20hz kommen (TODO: checken)
     int win_size = static_cast<int>(6 * sigma / imu_data_dt);
     win_size = (win_size % 2 == 0) ? win_size + 1 : win_size;
-    ROS_WARN("Derivative kernel: window=%d, cutoff=%.1f Hz, sigma=%.4f, dt=%.4f",
+    ROS_WARN("[IMU Filter] Derivative kernel: window=%d, cutoff=%.1f Hz, sigma=%.4f, dt=%.4f",
              win_size, freq_cut, sigma, imu_data_dt);
 
     // One independent kernel per IMU so their ring-buffer histories never mix
