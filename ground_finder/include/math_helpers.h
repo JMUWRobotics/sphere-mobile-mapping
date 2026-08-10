@@ -51,7 +51,7 @@ void normalize_vector(std::vector<double> &v);
  */
 std::vector<double> convert2polar(std::vector<double> cartesian_vector);
 
-/** rief Validates point distribution from PCA eigenvalues (ground plane check)
+/** \brief Validates point distribution from PCA eigenvalues (ground plane check)
  * Ground planes should have 2 large eigenvalues (XY spread) and 1 small (Z thickness).
  * Walls have more uniform eigenvalue distribution.
  *
@@ -68,18 +68,18 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
                             double max_z_deviation,
                             double &z_mean);
 
-/** rief Calculates the convex hull of a point cloud and returns its center point
+/** \brief Calculates the plane centroid of a point cloud and returns its center point
  */
-bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                             geometry_msgs::Point &hull_center);
+bool computePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                geometry_msgs::Point &centroid_center);
 
-/** rief Validates convex hull center relative to robot pose
+/** \brief Validates plane centroid center relative to robot pose
  */
-bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                              const geometry_msgs::Point &robot_pose,
-                              double max_hull_distance,
-                              double &hull_distance,
-                              geometry_msgs::Point &hull_center);
+bool validatePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                 const geometry_msgs::Point &robot_pose,
+                                 double max_centroid_distance,
+                                 double &centroid_distance,
+                                 geometry_msgs::Point &centroid_center);
 
 // void calculate_mean(const std::vector<std::vector<double>> &list_vectors, std::vector<double> &mean);
 

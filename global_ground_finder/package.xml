@@ -7,7 +7,7 @@
     Extracts local region from global map at current pose and computes ground normal.
   </description>
 
-  <maintainer email="user@example.com">Your Name</maintainer>
+  <maintainer email="tim.schubert@stud-mail.uni-wuerzburg.de">Your Name</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>catkin</buildtool_depend>

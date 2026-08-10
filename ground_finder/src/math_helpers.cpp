@@ -168,8 +168,8 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
     return true;
 }
 
-bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                             geometry_msgs::Point &hull_center)
+bool computePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                geometry_msgs::Point &centroid_center)
 {
     if (!cloud || cloud->points.empty())
     {
@@ -195,40 +195,28 @@ bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
         return false;
     }
 
-    hull_center.x = x_sum / static_cast<double>(valid_count);
-    hull_center.y = y_sum / static_cast<double>(valid_count);
-    hull_center.z = z_sum / static_cast<double>(valid_count);
+    centroid_center.x = x_sum / static_cast<double>(valid_count);
+    centroid_center.y = y_sum / static_cast<double>(valid_count);
+    centroid_center.z = z_sum / static_cast<double>(valid_count);
     return true;
 }
 
-bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                              const geometry_msgs::Point &robot_pose,
-                              double max_hull_distance,
-                              double &hull_distance,
-                              geometry_msgs::Point &hull_center)
+bool validatePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                 const geometry_msgs::Point &robot_pose,
+                                 double max_centroid_distance,
+                                 double &centroid_distance,
+                                 geometry_msgs::Point &centroid_center)
 {
-    if (!computeConvexHullCenter(cloud, hull_center))
+    if (!computePlaneCentroidCenter(cloud, centroid_center))
     {
-        hull_distance = std::numeric_limits<double>::max();
+        centroid_distance = std::numeric_limits<double>::max();
         return false;
     }
 
-    double dx = hull_center.x - robot_pose.x;
-    double dy = hull_center.y - robot_pose.y;
-    double dz = hull_center.z - robot_pose.z;
-    hull_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    double dx = centroid_center.x - robot_pose.x;
+    double dy = centroid_center.y - robot_pose.y;
+    double dz = centroid_center.z - robot_pose.z;
+    centroid_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
 
-    return hull_distance <= max_hull_distance;
+    return centroid_distance <= max_centroid_distance;
 }
-
-// void calculate_mean(const std::vector<std::vector<double>> &list_vectors, std::vector<double> &mean){
-//     mean = {0.0, 0.0, 0.0};
-//     for(int i = 0; i < list_vectors.size(); i++){
-//         mean[0] += list_vectors[i][0];
-//         mean[1] += list_vectors[i][1];
-//         mean[2] += list_vectors[i][2];
-//     }
-//     mean[0] = mean[0] / list_vectors.size();
-//     mean[1] = mean[1] / list_vectors.size();
-//     mean[2] = mean[2] / list_vectors.size();
-// }

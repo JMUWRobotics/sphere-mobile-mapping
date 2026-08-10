@@ -215,20 +215,20 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
     return true; // Accepted: reasonable Z distribution
 }
 
-bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                             geometry_msgs::Point &hull_center,
-                             bool quiet)
+bool computeConvexCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                 geometry_msgs::Point &centroid_center,
+                                 bool quiet)
 {
     if (!cloud || cloud->points.empty())
     {
         if (!quiet)
         {
-            ROS_WARN("computeConvexHullCenter: Invalid cloud");
+            ROS_WARN("computeConvexCentroidCenter: Invalid cloud");
         }
         return false;
     }
 
-    // Compute centroid of inlier cloud directly (not hull vertices)
+    // Compute centroid of inlier cloud directly (not centroid vertices)
     // This gives the true center of mass of all points on the plane
     double x_sum = 0.0, y_sum = 0.0, z_sum = 0.0;
     double x_min = std::numeric_limits<double>::max();
@@ -262,94 +262,94 @@ bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
     {
         if (!quiet)
         {
-            ROS_WARN("computeConvexHullCenter: No valid points in cloud");
+            ROS_WARN("computeConvexCentroidCenter: No valid points in cloud");
         }
         return false;
     }
 
-    hull_center.x = x_sum / static_cast<double>(valid_count);
-    hull_center.y = y_sum / static_cast<double>(valid_count);
-    hull_center.z = z_sum / static_cast<double>(valid_count);
+    centroid_center.x = x_sum / static_cast<double>(valid_count);
+    centroid_center.y = y_sum / static_cast<double>(valid_count);
+    centroid_center.z = z_sum / static_cast<double>(valid_count);
 
     if (!quiet)
     {
-        ROS_INFO("computeConvexHullCenter: Cloud size=%zu, valid=%zu",
+        ROS_INFO("computeConvexCentroidCenter: Cloud size=%zu, valid=%zu",
                  cloud->points.size(), valid_count);
         ROS_INFO("  Bounds: X[%.3f, %.3f], Y[%.3f, %.3f], Z[%.3f, %.3f]",
                  x_min, x_max, y_min, y_max, z_min, z_max);
         ROS_INFO("  Centroid: [%.3f, %.3f, %.3f]",
-                 hull_center.x, hull_center.y, hull_center.z);
+                 centroid_center.x, centroid_center.y, centroid_center.z);
     }
     return true;
 }
 
-bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                              const geometry_msgs::Point &robot_pose,
-                              double max_hull_distance,
-                              double &hull_distance,
-                              geometry_msgs::Point &hull_center,
-                              bool quiet)
+bool validatePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                 const geometry_msgs::Point &robot_pose,
+                                 double max_centroid_distance,
+                                 double &centroid_distance,
+                                 geometry_msgs::Point &centroid_center,
+                                 bool quiet)
 {
     if (!cloud || cloud->points.empty())
     {
-        hull_distance = std::numeric_limits<double>::max();
-        hull_center.x = 0.0;
-        hull_center.y = 0.0;
-        hull_center.z = 0.0;
+        centroid_distance = std::numeric_limits<double>::max();
+        centroid_center.x = 0.0;
+        centroid_center.y = 0.0;
+        centroid_center.z = 0.0;
         if (!quiet)
         {
-            ROS_WARN("validateConvexHullCenter: Invalid inlier cloud");
+            ROS_WARN("validatePlaneCentroidCenter: Invalid inlier cloud");
         }
         return false;
     }
 
-    geometry_msgs::Point local_hull_center;
-    if (!computeConvexHullCenter(cloud, local_hull_center, quiet))
+    geometry_msgs::Point local_centroid_center;
+    if (!computeConvexCentroidCenter(cloud, local_centroid_center, quiet))
     {
-        hull_distance = std::numeric_limits<double>::max();
-        hull_center.x = 0.0;
-        hull_center.y = 0.0;
-        hull_center.z = 0.0;
+        centroid_distance = std::numeric_limits<double>::max();
+        centroid_center.x = 0.0;
+        centroid_center.y = 0.0;
+        centroid_center.z = 0.0;
         if (!quiet)
         {
-            ROS_WARN("validateConvexHullCenter: Failed to compute hull center");
+            ROS_WARN("validatePlaneCentroidCenter: Failed to compute centroid");
         }
         return false;
     }
 
-    hull_center = local_hull_center;
-    // Compute 3D Euclidean distance from robot to hull center
-    double dx = hull_center.x - robot_pose.x;
-    double dy = hull_center.y - robot_pose.y;
-    double dz = hull_center.z - robot_pose.z;
+    centroid_center = local_centroid_center;
+    // Compute 3D Euclidean distance from robot to centroid
+    double dx = centroid_center.x - robot_pose.x;
+    double dy = centroid_center.y - robot_pose.y;
+    double dz = centroid_center.z - robot_pose.z;
 
-    hull_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    centroid_distance = std::sqrt(dx * dx + dy * dy + dz * dz);
 
     if (!quiet)
     {
-        ROS_INFO("validateConvexHullCenter: robot at [%.3f, %.3f, %.3f]",
+        ROS_INFO("validatePlaneCentroidCenter: robot at [%.3f, %.3f, %.3f]",
                  robot_pose.x, robot_pose.y, robot_pose.z);
         ROS_INFO("  centroid at [%.3f, %.3f, %.3f]",
-                 hull_center.x, hull_center.y, hull_center.z);
+                 centroid_center.x, centroid_center.y, centroid_center.z);
         ROS_INFO("  delta: dx=%.3f, dy=%.3f, dz=%.3f",
                  dx, dy, dz);
         ROS_INFO("  distance=%.3f m (threshold=%.3f m)",
-                 hull_distance, max_hull_distance);
+                 centroid_distance, max_centroid_distance);
     }
 
-    // Check if hull center is within max distance thresh
-    if (hull_distance > max_hull_distance)
+    // Check if centroid is within max distance thresh
+    if (centroid_distance > max_centroid_distance)
     {
         if (!quiet)
         {
-            ROS_INFO("  REJECTED: distance %.3f > threshold %.3f", hull_distance, max_hull_distance);
+            ROS_INFO("  REJECTED: distance %.3f > threshold %.3f", centroid_distance, max_centroid_distance);
         }
-        return false; // hull center too far from robot
+        return false; // centroid too far from robot
     }
 
     if (!quiet)
     {
-        ROS_INFO("  ACCEPTED: distance %.3f <= threshold %.3f", hull_distance, max_hull_distance);
+        ROS_INFO("  ACCEPTED: distance %.3f <= threshold %.3f", centroid_distance, max_centroid_distance);
     }
     return true;
 }

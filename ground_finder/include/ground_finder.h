@@ -159,10 +159,9 @@ private:
     ros::Subscriber sub_lio;
     ros::Publisher pub_subcloud; // Publisher of subcloud
     ros::Publisher pub_inliers;
-    // ros::Publisher pub_test2;                 // TODO take out!
     ros::Publisher pub_n;                        // Publisher of normal vector in map_lio frame
     ros::Publisher pub_vis_n;                    // Publisher of normal vector marker for rviz
-    ros::Publisher pub_hull_center;              // Publisher of convex hull center marker for rviz
+    ros::Publisher pub_centroid_center;          // Publisher of plane centroid center marker for rviz
     ros::Publisher pub_smoothed_n;               // Publisher of smoothed normal vector in map_lio frame
     ros::Publisher pub_scored_n;                 // Publisher of scored normal vector in map_lio frame
     ros::Publisher pub_smoothed_scored_n;        // Publisher of smoothed scored normal vector in map_lio frame
@@ -202,7 +201,7 @@ private:
     const float radius_subcloud = 2.0; // radius used for geometrical subcloud
     const float height_subcloud = 0.2; // height used for geometrical subcloud
     const float ds_size = 0.10;        // leaf size used for downsampling after filtering
-    const int k = 150;                 // k used for kNN for kd tree subcloud //TODO: 150 = for ransac; 50 = better for rht
+    const int k = 150;                 // k used for kNN for kd tree subcloud
     const int max_iterations_plane_detection = 3;
 
     /* EMA smoothing parameters */
@@ -231,15 +230,15 @@ private:
     double min_score_sliding_window = 0.3;                                             // minimum acceptable score from sliding window
 
     // Validation parameters (GGF-style)
-    bool enable_eigenvalue_validation = false;  // Enable combined eigenvalue + eigenvector check
-    double eigenvalue_ratio_threshold = 0.1;    // Threshold for λ3/(λ1+λ2)
-    double max_eigenvector_z_component = 0.1;   // Max z-component of dominant eigenvectors
-    bool enable_plane_angle_validation = true;  // Enable angle-based wall rejection
-    double wall_threshold = 0.707;              // Threshold for |dot(normal,down)|; cos(45°)=0.707
-    bool enable_z_mean_validation = false;      // Enable Z-mean deviation check
-    double max_z_deviation = 0.2;               // Max deviation from robot Z [m]
-    bool enable_convex_hull_validation = false; // Enable convex hull center distance check
-    double max_hull_distance = 1.0;             // Max 3D distance from robot to hull center [m]
+    bool enable_eigenvalue_validation = false;     // Enable combined eigenvalue + eigenvector check
+    double eigenvalue_ratio_threshold = 0.1;       // Threshold for λ3/(λ1+λ2)
+    double max_eigenvector_z_component = 0.1;      // Max z-component of dominant eigenvectors
+    bool enable_plane_angle_validation = true;     // Enable angle-based wall rejection
+    double wall_threshold = 0.707;                 // Threshold for |dot(normal,down)|; cos(45°)=0.707
+    bool enable_z_mean_validation = false;         // Enable Z-mean deviation check
+    double max_z_deviation = 0.2;                  // Max deviation from robot Z [m]
+    bool enable_plane_centroid_validation = false; // Enable plane centroid center distance check
+    double max_centroid_distance = 1.0;            // Max 3D distance from robot to centroid center [m]
 
     state_estimator_msgs::EstimatorConstPtr last_lio_pose; // most recent lio pose
     size_t last_inlier_count = 0;                          // #inliers from last plane detection
@@ -360,7 +359,7 @@ private:
     geometry_msgs::Vector3Stamped gaussian_smoothing(const geometry_msgs::Vector3Stamped &ground_vector);
 
     // ---------------------- Score calculation ----------------------
-    /** \brief compute ground visibility [0.1...1] from latest lio pose and normalized inlier ratio #inlier / #subcloud_points (TODO: currently assumed inliers only contains ground plane)
+    /** \brief compute ground visibility [0.1...1] from latest lio pose and normalized inlier ratio #inlier / #subcloud_points
      *  returns {visibility, inlier_ratio} */
     std::pair<double, double> compute_plane_scores(const state_estimator_msgs::EstimatorConstPtr &msg, size_t inlier_count, size_t subcloud_size);
 
@@ -385,7 +384,7 @@ public:
         // pub_test2 = nh.advertise<sensor_msgs::PointCloud2>("/ground_finder/cur_scan_del", 1);
         pub_n = nh.advertise<geometry_msgs::Vector3Stamped>("/ground_finder/normal_vector", 1);
         pub_vis_n = nh.advertise<visualization_msgs::Marker>("/ground_finder/normal_marker", 1);
-        pub_hull_center = nh.advertise<visualization_msgs::Marker>("/ground_finder/hull_center", 1);
+        pub_centroid_center = nh.advertise<visualization_msgs::Marker>("/ground_finder/centroid_center", 1);
         pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("ground_finder/smoothed_normal_vector", 1);
         pub_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/scored_normal_vector", 1);
         pub_smoothed_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("ground_finder/smoothed_scored_normal_vector", 1);
@@ -394,7 +393,7 @@ public:
 
         // Initialize smoothing parameter
         // read smoothing params from rosparam serve
-        ros::NodeHandle pnh("~"); // TODO: check if needed (anonymous node handle for private params)
+        ros::NodeHandle pnh("~");
         pnh.param<bool>("gf_enable_normal_smoothing", enable_normal_smoothing, enable_normal_smoothing);
         pnh.param<double>("gf_normal_smoothing_alpha", normal_smoothing_alpha, normal_smoothing_alpha);
         pnh.param<bool>("gf_use_gaussian_smoothing", use_gaussian_smoothing, use_gaussian_smoothing);
@@ -412,11 +411,11 @@ public:
         pnh.param<double>("gf_wall_threshold", wall_threshold, wall_threshold);
         pnh.param<bool>("gf_enable_z_mean_validation", enable_z_mean_validation, enable_z_mean_validation);
         pnh.param<double>("gf_max_z_deviation", max_z_deviation, max_z_deviation);
-        pnh.param<bool>("gf_enable_convex_hull_validation", enable_convex_hull_validation, enable_convex_hull_validation);
-        pnh.param<double>("gf_max_hull_distance", max_hull_distance, max_hull_distance);
+        pnh.param<bool>("gf_enable_plane_centroid_validation", enable_plane_centroid_validation, enable_plane_centroid_validation);
+        pnh.param<double>("gf_max_centroid_distance", max_centroid_distance, max_centroid_distance);
         pnh.param<bool>("gf_timing_csv_enabled", timing_csv_enabled_, true);
         pnh.param<std::string>("gf_timing_csv_file", timing_csv_path_, std::string(""));
-        // If user provided a relative filename, write into the package data directory
+
         if (!timing_csv_path_.empty() && timing_csv_path_.front() != '/')
         {
             timing_csv_path_ = ros::package::getPath("ground_finder") + "/data/" + timing_csv_path_;
@@ -441,13 +440,13 @@ public:
                      score_threshold, min_score_sliding_window);
         }
 
-        ROS_INFO("[GF] Validation: angle=%s eigen=%s z_mean=%s hull=%s",
+        ROS_INFO("[GF] Validation: angle=%s eigen=%s z_mean=%s centroid=%s",
                  enable_plane_angle_validation ? "enabled" : "disabled",
                  enable_eigenvalue_validation ? "enabled" : "disabled",
                  enable_z_mean_validation ? "enabled" : "disabled",
-                 enable_convex_hull_validation ? "enabled" : "disabled");
-        ROS_INFO("[GF] Validation thresholds: wall=%.3f eigen_ratio=%.3f max_dom_z=%.3f max_z_dev=%.3f max_hull_dist=%.3f",
-                 wall_threshold, eigenvalue_ratio_threshold, max_eigenvector_z_component, max_z_deviation, max_hull_distance);
+                 enable_plane_centroid_validation ? "enabled" : "disabled");
+        ROS_INFO("[GF] Validation thresholds: wall=%.3f eigen_ratio=%.3f max_dom_z=%.3f max_z_dev=%.3f max_centroid_dist=%.3f",
+                 wall_threshold, eigenvalue_ratio_threshold, max_eigenvector_z_component, max_z_deviation, max_centroid_distance);
 
         if (timing_csv_enabled_ && !timing_csv_path_.empty())
         {
@@ -571,7 +570,6 @@ public:
         }
 
         std::string gf_file_param;
-        // Read the gf_file from the node's private namespace (robust against node renames)
         pnh.param<std::string>("gf_file", gf_file_param, std::string("default"));
         if (!gf_file_param.empty() && gf_file_param != "default")
         {

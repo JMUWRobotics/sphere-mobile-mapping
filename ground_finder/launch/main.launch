@@ -17,8 +17,8 @@
   <arg name="gf_enable_plane_angle_validation" default="true" />
   <arg name="gf_enable_z_mean_validation" default="false" />
   <arg name="gf_max_z_deviation" default="0.2" />
-  <arg name="gf_enable_convex_hull_validation" default="false" />
-  <arg name="gf_max_hull_distance" default="1.0" />
+  <arg name="gf_enable_plane_centroid_validation" default="false" />
+  <arg name="gf_max_centroid_distance" default="1.0" />
   <arg name="gf_timing_csv_enabled" default="true" />
   <arg name="gf_timing_csv_file" default="$(env HOME)/catkin_ws/src/ground_finder/data/timings.csv" />
 
@@ -47,8 +47,8 @@
     <param name="gf_enable_plane_angle_validation" value="$(arg gf_enable_plane_angle_validation)" type="bool"/>
     <param name="gf_enable_z_mean_validation" value="$(arg gf_enable_z_mean_validation)" type="bool"/>
     <param name="gf_max_z_deviation" value="$(arg gf_max_z_deviation)" type="double"/>
-    <param name="gf_enable_convex_hull_validation" value="$(arg gf_enable_convex_hull_validation)" type="bool"/>
-    <param name="gf_max_hull_distance" value="$(arg gf_max_hull_distance)" type="double"/>
+    <param name="gf_enable_plane_centroid_validation" value="$(arg gf_enable_plane_centroid_validation)" type="bool"/>
+    <param name="gf_max_centroid_distance" value="$(arg gf_max_centroid_distance)" type="double"/>
     <param name="gf_timing_csv_enabled" value="$(arg gf_timing_csv_enabled)" type="bool"/>
     <param name="gf_timing_csv_file" value="$(arg gf_timing_csv_file)" type="string"/>
   </node>

@@ -138,7 +138,7 @@ private:
     ros::Publisher pub_scored_n_pandar;          // Scored normal transformed to pandar_frame
     ros::Publisher pub_smoothed_scored_n_pandar; // Smoothed & scored normal transformed to pandar_frame
     ros::Publisher pub_n_marker;                 // Visualization marker
-    ros::Publisher pub_hull_center;              // Convex hull center point visualization
+    ros::Publisher pub_centroid_center;          //  centroid center point visualization
     ros::Publisher pub_shared_map_debug;         // Debug map reconstructed from shared IKD-tree
     ros::Publisher pub_cropped_map_debug;        // Debug cropped map around current pose
 
@@ -152,8 +152,8 @@ private:
     bool debug_publish_;
     std::string shared_map_debug_topic_;
 
-    double crop_radius_; // Radius der CropBox um aktuelle Pose für KD-Tree [m]
-    double crop_height_; // Halbe Höhe der CropBox [m]
+    double crop_radius_; // width of cropbox [m]
+    double crop_height_; // half height of cropbox [m]
 
     geometry_msgs::PoseStamped current_pose_; // latest pose
     bool pose_received_;
@@ -202,14 +202,14 @@ private:
     int max_iterations_plane_detection_;  // Max iterations for RANSAC wall rejection
 
     // Point distribution validation (improved wall rejection)
-    bool enable_eigenvalue_validation_;  // Enable combined eigenvalue + eigenvector check (planarity + xy-plane dominance)
-    double eigenvalue_ratio_threshold_;  // Threshold for λ3/(λ1+λ2) to detect non-planar (wall)
-    double max_eigenvector_z_component_; // Max z-component of dominant eigenvectors (v1, v2) to ensure xy-plane spread
-    bool enable_plane_angle_validation_; // Enable angle-based validation (wall threshold check)
-    bool enable_z_mean_validation_;      // Enable Z-mean deviation check
-    double max_z_deviation_;             // Maximum allowed deviation of Z-mean from robot Z [m]
-    bool enable_convex_hull_validation_; // Enable convex hull center distance check (tunnel mode)
-    double max_hull_distance_;           // Maximum 3D distance from robot to hull center [m]
+    bool enable_eigenvalue_validation_;     // Enable combined eigenvalue + eigenvector check (planarity + xy-plane dominance)
+    double eigenvalue_ratio_threshold_;     // Threshold for λ3/(λ1+λ2) to detect non-planar (wall)
+    double max_eigenvector_z_component_;    // Max z-component of dominant eigenvectors (v1, v2) to ensure xy-plane spread
+    bool enable_plane_angle_validation_;    // Enable angle-based validation (wall threshold check)
+    bool enable_z_mean_validation_;         // Enable Z-mean deviation check
+    double max_z_deviation_;                // Maximum allowed deviation of Z-mean from robot Z [m]
+    bool enable_plane_centroid_validation_; // Enable centroid center distance check
+    double max_centroid_distance_;          // Maximum 3D distance from robot to centroid center [m]
 
     int count_success_;
     int count_fail_;
@@ -339,7 +339,7 @@ private:
 
     /** \brief Validate that normal represents ground (not wall/ceiling)
      * Performs multi-layer validation: angle check (wall rejection), combined eigenvalue+eigenvector check
-     * (planarity + xy-plane dominance), and Z-mean check (height deviation from robot center).
+     * (planarity + xy-plane dominance), and Z-mean check (height deviation from robot center)
      * \param[in,out] normal Normal vector to check
      * \param[in] inlier_cloud Point cloud of inliers (for Z-mean validation)
      * \param[in] robot_z Robot-center Z coordinate (for Z-mean validation)
@@ -409,7 +409,7 @@ private:
      * \param[in] stamp Timestamp for marker
      */
     void publish_normal_marker(const std::vector<double> &normal, const ros::Time &stamp);
-    void publishHullCenterMarker(const geometry_msgs::Point &hull_center, bool hull_valid);
+    void publishCentroidCenterMarker(const geometry_msgs::Point &centroid_center, bool centroid_valid);
 
     /** \brief Write computed ground normal vector to CSV file
      * \param[in] stamp Timestamp

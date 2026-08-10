@@ -84,11 +84,11 @@
   <arg name="max_z_deviation" default="0.1"
        doc="Max deviation of Z-mean from robot Z [m]. Also limits vertical spread (z-spread max = 2x this value)."/>
   
-  <arg name="enable_convex_hull_validation" default="false"
-       doc="Enable convex hull center distance check"/>
+  <arg name="enable_plane_centroid_validation" default="false"
+       doc="Enable convex centroid center distance check"/>
   
-  <arg name="max_hull_distance" default="0.3"
-       doc="Max 3D distance from robot to hull center [m]"/>
+  <arg name="max_centroid_distance" default="0.3"
+       doc="Max 3D distance from robot to centroid center [m]"/>
 
      <arg name="publish_shared_map_debug_" default="false" doc="Publish singleton shared point cloud on GGF side"/>
 
@@ -144,8 +144,8 @@
     <param name="enable_plane_angle_validation" type="bool" value="$(arg enable_plane_angle_validation)"/>
     <param name="enable_z_mean_validation" type="bool" value="$(arg enable_z_mean_validation)"/>
     <param name="max_z_deviation" type="double" value="$(arg max_z_deviation)"/>
-    <param name="enable_convex_hull_validation" type="bool" value="$(arg enable_convex_hull_validation)"/>
-    <param name="max_hull_distance" type="double" value="$(arg max_hull_distance)"/>
+    <param name="enable_plane_centroid_validation" type="bool" value="$(arg enable_plane_centroid_validation)"/>
+    <param name="max_centroid_distance" type="double" value="$(arg max_centroid_distance)"/>
 
     <!-- Smoothing parameters -->
     <param name="enable_normal_smoothing" type="bool" value="$(arg enable_normal_smoothing)"/>

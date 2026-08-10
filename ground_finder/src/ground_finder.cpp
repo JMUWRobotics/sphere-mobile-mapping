@@ -454,14 +454,6 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 ransac.computeModel();
                 ransac.getInliers(inliers);
 
-                // /* LSF */
-                // pcl::copyPointCloud(*cur_scan, inliers, *tmp);
-                // pcl::computePointNormal(*tmp, params, curv); // NOTE: eigenvector = already normalized :)
-                // Set new normal vector
-                // n[0] = params[0];
-                // n[1] = params[1];
-                // n[2] = params[2];
-
                 /* PCA */
                 inliers_ptr->indices = inliers;
                 accepted_inliers.reset(new pcl::PointCloud<PointType>);
@@ -680,14 +672,6 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                 pub_inliers.publish(sub_cloud_msg);
 
                 break;
-
-                // TODO comment out!
-                // Publish new subcloud for next try
-                // sensor_msgs::PointCloud2 sub_cloud_msg_2;
-                // pcl::toROSMsg(*cur_scan, sub_cloud_msg_2);
-                // sub_cloud_msg_2.header.stamp = n_msg.header.stamp;
-                // sub_cloud_msg_2.header.frame_id = "pandar_frame";
-                // pub_test2.publish(sub_cloud_msg_2);
             }
         }
         auto end_plane = std::chrono::high_resolution_clock::now();
@@ -831,14 +815,6 @@ int64_t GroundFinder::determine_n_ground_plane(pcl::PointCloud<PointType>::Ptr &
                     convert_n_to_map_frame(n_msg, true);
                     return -1000;
                 }
-
-                // TODO comment out!
-                // Publish (filtered) subcloud
-                //     sensor_msgs::PointCloud2 sub_cloud_msg;
-                //     pcl::toROSMsg(*cur_scan, sub_cloud_msg);
-                //     sub_cloud_msg.header.stamp = n_msg.header.stamp;
-                //     sub_cloud_msg.header.frame_id = "pandar_frame";
-                //     pub_test2.publish(sub_cloud_msg);
             }
         }
 
@@ -1048,55 +1024,55 @@ bool GroundFinder::validateGroundNormal(std::vector<double> &normal,
         }
     }
 
-    if (enable_convex_hull_validation && inlier_cloud && !inlier_cloud->points.empty())
+    if (enable_plane_centroid_validation && inlier_cloud && !inlier_cloud->points.empty())
     {
         if (!robot_pose)
         {
             if (!quiet)
             {
-                ROS_WARN_THROTTLE(2.0, "[GF][validate][hull] skipping pose-based hull validation because no robot pose is available");
+                ROS_WARN_THROTTLE(2.0, "[GF][validate][centroid] skipping pose-based centroid validation because no robot pose is available");
             }
         }
         else
         {
-            geometry_msgs::Point hull_center;
-            double hull_distance = 0.0;
-            const bool hull_valid = validateConvexHullCenter(inlier_cloud, *robot_pose, max_hull_distance, hull_distance, hull_center);
+            geometry_msgs::Point centroid_center;
+            double centroid_distance = 0.0;
+            const bool centroid_valid = validatePlaneCentroidCenter(inlier_cloud, *robot_pose, max_centroid_distance, centroid_distance, centroid_center);
 
-            visualization_msgs::Marker hull_marker;
-            hull_marker.header.stamp = ros::Time::now();
-            hull_marker.header.frame_id = "map_lio";
-            hull_marker.ns = "hull_center";
-            hull_marker.id = 0;
-            hull_marker.type = visualization_msgs::Marker::SPHERE;
-            hull_marker.action = visualization_msgs::Marker::ADD;
-            hull_marker.pose.position = hull_center;
-            hull_marker.pose.orientation.w = 1.0;
-            hull_marker.scale.x = 0.1;
-            hull_marker.scale.y = 0.1;
-            hull_marker.scale.z = 0.1;
-            hull_marker.color.r = hull_valid ? 0.0 : 1.0;
-            hull_marker.color.g = hull_valid ? 1.0 : 0.0;
-            hull_marker.color.b = 0.0;
-            hull_marker.color.a = 0.7;
-            pub_hull_center.publish(hull_marker);
+            visualization_msgs::Marker centroid_marker;
+            centroid_marker.header.stamp = ros::Time::now();
+            centroid_marker.header.frame_id = "map_lio";
+            centroid_marker.ns = "centroid_center";
+            centroid_marker.id = 0;
+            centroid_marker.type = visualization_msgs::Marker::SPHERE;
+            centroid_marker.action = visualization_msgs::Marker::ADD;
+            centroid_marker.pose.position = centroid_center;
+            centroid_marker.pose.orientation.w = 1.0;
+            centroid_marker.scale.x = 0.1;
+            centroid_marker.scale.y = 0.1;
+            centroid_marker.scale.z = 0.1;
+            centroid_marker.color.r = centroid_valid ? 0.0 : 1.0;
+            centroid_marker.color.g = centroid_valid ? 1.0 : 0.0;
+            centroid_marker.color.b = 0.0;
+            centroid_marker.color.a = 0.7;
+            pub_centroid_center.publish(centroid_marker);
 
-            if (!hull_valid)
+            if (!centroid_valid)
             {
                 if (!quiet)
                 {
-                    ROS_WARN("[GF][validate][hull] rejected: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
-                             hull_center.x, hull_center.y, hull_center.z,
-                             hull_distance, max_hull_distance);
+                    ROS_WARN("[GF][validate][centroid] rejected: centroid_center=(%.5f, %.5f, %.5f) centroid_distance=%.5f max_centroid_distance=%.5f",
+                             centroid_center.x, centroid_center.y, centroid_center.z,
+                             centroid_distance, max_centroid_distance);
                 }
                 return false;
             }
 
             if (!quiet)
             {
-                ROS_INFO("[GF][validate][hull] pass: hull_center=(%.5f, %.5f, %.5f) hull_distance=%.5f max_hull_distance=%.5f",
-                         hull_center.x, hull_center.y, hull_center.z,
-                         hull_distance, max_hull_distance);
+                ROS_INFO("[GF][validate][centroid] pass: centroid_center=(%.5f, %.5f, %.5f) centroid_distance=%.5f max_centroid_distance=%.5f",
+                         centroid_center.x, centroid_center.y, centroid_center.z,
+                         centroid_distance, max_centroid_distance);
             }
         }
     }
@@ -1180,9 +1156,9 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     pcl::toROSMsg(*cur_scan, sub_cloud_msg);
     sub_cloud_msg.header.stamp = msg->header.stamp;
     sub_cloud_msg.header.frame_id = msg->header.frame_id;
-    pub_subcloud.publish(sub_cloud_msg); // evtl pointer auf subcloud für inliers mit gutem score merken um mehrere zu größerer inlier cloud zu bauen und davon normalenvektor
+    pub_subcloud.publish(sub_cloud_msg);
 
-    last_subcloud_size = sub_cloud_msg.data.size(); // TODO: double check
+    last_subcloud_size = sub_cloud_msg.data.size();
 
     // ---------------------- Plane segmentation ----------------------
     const int64_t duration_preprocessing = duration_total;
@@ -1190,7 +1166,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
     geometry_msgs::Vector3Stamped n_msg;
     n_msg.header.frame_id = "map_lio";
     n_msg.header.stamp = msg->header.stamp;
-    // Determine normal vector of ground in map_lio frame incl. ensuring it represents ground and points into ground
     auto duration_plane = determine_n_ground_plane(cur_scan, plane_alg, n_msg);
 
     bool plane_recovered_from_history = false;
@@ -1252,7 +1227,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         {
             ROS_ERROR("[GF] Plane segmentation fault!\n");
             count_fail++;
-            // Write to file
             if (write2file)
                 csv << "-1000,-1,-1,-1," << plane_counter << "\n";
             return;
@@ -1281,7 +1255,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         }
     }
 
-    // Write to file
     if (write2file)
         csv << duration_plane << ",";
 
@@ -1324,8 +1297,6 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         {
             scored_normals_sliding_window.pop_front();
         }
-
-        // ROS_INFO_THROTTLE(1.0, "[GF] Current normal score: %.3f (vis=%.3f, inlier=%.3f) | inliers=%zu/%zu", combined_score, vis_score, inlier_score, last_inlier_count, last_subcloud_size);
     }
     else
     {
@@ -1433,16 +1404,9 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         published_normals_log.flush();
     };
 
-    /*
-    Raw Normal Vector
-    */
-
     // Publish raw normal vector
     pub_n.publish(n_msg);
 
-    /*
-    Scored Normal Vector
-    */
     // Publish scored normal (contains current or fallback scores)
     pub_scored_n.publish(scored_msg);
 
@@ -1504,7 +1468,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         }
     }
 
-    // Publish smoothed normal vectors (same timestamp)
+    // Publish smoothed normal vectors
     if (enable_normal_smoothing)
     {
         // Smooth raw normal
@@ -1523,7 +1487,7 @@ void GroundFinder::scan_callback(const sensor_msgs::PointCloud2ConstPtr &msg)
         pub_smoothed_n.publish(smoothed_raw_n);
         log_published_normal("smoothed_raw", smoothed_raw_n, vis_score, inlier_score, combined_score, curr_vis_score, curr_inlier_score, curr_combined_score);
 
-        // Smooth scored normal (current or fallback)
+        // Smooth scored normal
         geometry_msgs::Vector3Stamped scored_n_stamped;
         scored_n_stamped.header = scored_msg.header;
         scored_n_stamped.vector = scored_msg.normal;
@@ -1780,10 +1744,9 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const state_estimat
     else
     {
         // ----
-        // Robot Pose in local (pandar) frame used for score
+        // Robot Pose in pandar frame used for score
         // ----
 
-        //  Get transformation from map_lio to pandar_frame
         geometry_msgs::TransformStamped t_map_lio_to_pandar;
         try
         {
@@ -1795,7 +1758,6 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const state_estimat
             return std::make_pair(1.0, 0.0);
         }
 
-        // Debug: Extract original angles in map_lio frame
         tf2::Quaternion q_temp;
         tf2::fromMsg(t_map_lio_to_pandar.transform.rotation, q_temp);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
@@ -1823,13 +1785,10 @@ std::pair<double, double> GroundFinder::compute_plane_scores(const state_estimat
     if (inliers_count >= min_inliers && inlier_ratio > 0.0)
         inlier_normalized = std::min(std::max(inlier_ratio / inlier_scale, 0.0), 1.0); // clamp to [0,1] -> 1.0 if min inlier_scale reached
 
-    // ROS_INFO_THROTTLE(5.0, "[GF] Plane Scores -- visibility_score: %.5f, inlier_ratio: %.5f, inlier_normalized: %.5f (inliers=%zu, min_inliers=%zu, inlier_scale=%.3f)",
-    //                   visibility_score, inlier_ratio, inlier_normalized, inliers_count, min_inliers, inlier_scale);
     return std::make_pair(visibility_score, inlier_normalized);
 }
 
 double GroundFinder::combine_scores(double visibility_score, double inlier_score)
 {
-    // Weighted sum (TODO: finetune weights)
     return weight_visibility * visibility_score + weight_inlier_ratio * inlier_score;
 }

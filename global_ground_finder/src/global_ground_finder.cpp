@@ -2,6 +2,8 @@
  * Implementation of global map-based ground normal finder
  * Based on ground_finder.cpp by Carolin Bösch
  * Adapted for lio_sphere node, providing a global map
+ *
+ * Author: Tim Schubert
  */
 
 #include "global_ground_finder.h"
@@ -56,16 +58,15 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<double>("inlier_scale", inlier_scale_, 0.5);                  // normalization scale for inlier ratio in scoring: higher = stricter threshold for inlier_score=1.0; if inlier ratio higher than inlier_scale then inlier_score=1.0
     pnh.param<int>("max_iterations_plane_detection", max_iterations_plane_detection_, 3);
 
-    // Point distribution validation parameters (improved wall rejection)
-    // TODO:adapt max components since they now use much smaller local clouds"!!
+    // Point distribution validation parameters
     pnh.param<bool>("enable_eigenvalue_validation", enable_eigenvalue_validation_, false);
     pnh.param<double>("eigenvalue_ratio_threshold", eigenvalue_ratio_threshold_, 0.1);    // threshold for λ3/(λ1+λ2) - smaller -> stricter -> rejects more non planar structures
     pnh.param<double>("max_eigenvector_z_component_", max_eigenvector_z_component_, 0.1); // max z-component of v1, v2 eigenvectors to ensure xy-plane spread -- smaller means stricter
     pnh.param<bool>("enable_plane_angle_validation", enable_plane_angle_validation_, true);
     pnh.param<bool>("enable_z_mean_validation", enable_z_mean_validation_, false);
     pnh.param<double>("max_z_deviation", max_z_deviation_, 0.2); // max deviation from robot Z [m]
-    pnh.param<bool>("enable_convex_hull_validation", enable_convex_hull_validation_, false);
-    pnh.param<double>("max_hull_distance", max_hull_distance_, 1.0); // maximum 3D distance from robot to hull center [m]
+    pnh.param<bool>("enable_plane_centroid_validation", enable_plane_centroid_validation_, false);
+    pnh.param<double>("max_centroid_distance", max_centroid_distance_, 1.0); // maximum 3D distance from robot to centroid center [m]
 
     // Smoothing params
     pnh.param<bool>("enable_normal_smoothing", enable_normal_smoothing_, true);
@@ -75,9 +76,9 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pnh.param<double>("update_rate", update_rate_, 20.0);
     have_smoothed_normal_ = false;
 
-    // cropbox params (applied before kdtree is built)
-    pnh.param<double>("crop_radius", crop_radius_, 2.0); // +-5m horizontal
-    pnh.param<double>("crop_height", crop_height_, 1.0); // +-3m vertical
+    // cropbox params
+    pnh.param<double>("crop_radius", crop_radius_, 2.0); // +-2m horizontal
+    pnh.param<double>("crop_height", crop_height_, 1.0); // +-1m vertical
 
     if (use_gaussian_smoothing_)
     {
@@ -167,9 +168,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
 
     tf_listener = std::make_shared<tf2_ros::TransformListener>(tf_buffer);
 
-    // sub_map = nh.subscribe("/map_out", 10, &GlobalGroundFinder::mapCallback, this);
     sub_trigger = nh.subscribe(trigger_topic_, 10, &GlobalGroundFinder::triggerCallback, this);
-    // sub_pose = nh.subscribe("/lkf/pose", 10, &GlobalGroundFinder::poseCallback, this);
 
     pub_local_cloud = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/local_cloud", 1);
     pub_inliers = nh.advertise<sensor_msgs::PointCloud2>("/global_ground_finder/inliers", 1);
@@ -179,7 +178,7 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     pub_smoothed_n = nh.advertise<geometry_msgs::Vector3Stamped>("/global_ground_finder/smoothed_normal", 1);
     pub_smoothed_scored_n = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/smoothed_scored_normal", 1);
     pub_n_marker = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/normal_marker", 1);
-    pub_hull_center = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/hull_center", 1);
+    pub_centroid_center = nh.advertise<visualization_msgs::Marker>("/global_ground_finder/centroid_center", 1);
     pub_shared_map_debug = nh.advertise<sensor_msgs::PointCloud2>(shared_map_debug_topic_, 1);
     pub_cropped_map_debug = nh.advertise<sensor_msgs::PointCloud2>(cropped_map_topic, 1);
     pub_scored_n_pandar = nh.advertise<ground_finder_msgs::ScoredNormalStamped>("/global_ground_finder/scored_normal_pandar", 1);
@@ -210,9 +209,9 @@ GlobalGroundFinder::GlobalGroundFinder(ros::NodeHandle &nh, ros::NodeHandle &pnh
     ROS_INFO("  [GGF] Z-mean validation: %s (max deviation: %.2f m)",
              enable_z_mean_validation_ ? "enabled" : "disabled",
              max_z_deviation_);
-    ROS_INFO("  [GGF] Convex hull validation: %s (max distance: %.2f m)",
-             enable_convex_hull_validation_ ? "enabled" : "disabled",
-             max_hull_distance_);
+    ROS_INFO("  [GGF] Plane centroid validation: %s (max distance: %.2f m)",
+             enable_plane_centroid_validation_ ? "enabled" : "disabled",
+             max_centroid_distance_);
 }
 
 GlobalGroundFinder::~GlobalGroundFinder()
@@ -247,46 +246,6 @@ void GlobalGroundFinder::initMarker()
     normal_marker_.header.frame_id = "map_lio";
 }
 
-// old callback which calculated normal as soon as new registered point cloud arrives but now via memory sharing of global map
-/*
-void GlobalGroundFinder::mapCallback(const sensor_msgs::PointCloud2ConstPtr &msg)
-{
-    if (!quiet_)
-    {
-        ROS_INFO("Received global map: %d points", msg->width * msg->height);
-    }
-
-    // Convert to PCL
-    pcl::fromROSMsg(*msg, *global_map_);
-
-    if (global_map_->points.size() < min_points_for_plane_)
-    {
-        ROS_WARN("Global map too small (%zu points)", global_map_->points.size());
-        return;
-    }
-
-    auto start = std::chrono::high_resolution_clock::now();
-    kdtree_->setInputCloud(global_map_);
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-
-    map_received_ = true;
-    map_timestamp_ = msg->header.stamp;
-
-    if (!quiet_)
-    {
-        ROS_INFO("Built KdTree in %ld ms", duration);
-    }
-
-    if (pose_received_)
-    {
-        // always block on processing
-        std::lock_guard<std::mutex> lock(processing_mutex_);
-        processAtCurrentPose();
-    }
-}
-    */
-
 void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorConstPtr &msg)
 {
     if (!msg)
@@ -304,7 +263,7 @@ void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorCo
         latest_pose.header.frame_id = msg->header.frame_id;
     }
 
-    // Use newest pose from registered path as query pose.
+    // Use newest pose as query pose
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
         current_pose_ = latest_pose;
@@ -323,12 +282,10 @@ void GlobalGroundFinder::triggerCallback(const state_estimator_msgs::EstimatorCo
         }
     }
 
-    // process on scan cadence while avoiding callback pile-up
     auto start_lock = std::chrono::high_resolution_clock::now();
     std::unique_lock<std::mutex> lock(processing_mutex_, std::try_to_lock);
     auto end_lock = std::chrono::high_resolution_clock::now();
 
-    // ROS_INFO("owning lock: %s", lock.owns_lock() ? "true" : "false");
     if (lock.owns_lock())
     {
         processAtCurrentPose();
@@ -364,7 +321,6 @@ void GlobalGroundFinder::publishSharedMapDebug(const ros::Time &trigger_stamp)
     sensor_msgs::PointCloud2 map_msg;
     pcl::toROSMsg(*shared_map, map_msg);
     map_msg.header.frame_id = handle.frame_id;
-    // ROS_INFO("Frame: %s, publishing shared map debug with %zu points", map_msg.header.frame_id.c_str(), shared_map->points.size());
     map_msg.header.stamp = handle.stamp.isZero() ? trigger_stamp : handle.stamp;
     pub_shared_map_debug.publish(map_msg);
 }
@@ -399,19 +355,6 @@ void GlobalGroundFinder::publishRejectedInliers(const pcl::PointCloud<PointType>
     pub_rejected_inliers.publish(rejected_msg);
 }
 
-// cur not used and sub commented out
-void GlobalGroundFinder::poseCallback(const geometry_msgs::PoseStampedConstPtr &msg)
-{
-    // Update current pose with protection
-    {
-        std::lock_guard<std::mutex> lock(pose_mutex_);
-        current_pose_ = *msg; // pose arrives in pandar_frame currently but i need it in map_lio //TODO: check frames
-        pose_received_ = true;
-    }
-
-    // Processing is triggered by scan callback so this callback remains lightweight.
-}
-
 geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry_msgs::PoseStamped &pose_frame)
 {
     geometry_msgs::PoseStamped center_pose;
@@ -419,7 +362,6 @@ geometry_msgs::PoseStamped GlobalGroundFinder::getRobotCenterPose(const geometry
 
     try
     {
-        // Lookup transform that maps points from center_frame into the pose_frame's frame
         geometry_msgs::TransformStamped t = tf_buffer.lookupTransform(pose_frame.header.frame_id, "center", ros::Time(0));
 
         center_pose.pose.position.x = t.transform.translation.x;
@@ -446,7 +388,7 @@ void GlobalGroundFinder::processAtCurrentPose()
     long long smoothing_time_us = 0;
     validation_time_us_ = 0;
 
-    // Lazy-initialize CSV logging parameters and file (read ROS params once)
+    // init CSV logging parameters and file
     if (!timing_csv_initialized_)
     {
         timing_csv_initialized_ = true;
@@ -897,7 +839,7 @@ void GlobalGroundFinder::processAtCurrentPose()
         pub_smoothed_scored_n.publish(smoothed_scored_msg);
         log_published_normal("smoothed_scored", scored_n_stamped, smoothed_scored_msg.visibility_score, smoothed_scored_msg.inlier_score, smoothed_scored_msg.combined_score, vis_score, inlier_score, combined_score);
 
-        // Transform and publish smoothed & scored normal in local pandar_frame
+        // Transform and publish smoothed & scored normal in pandar_frame
         ground_finder_msgs::ScoredNormalStamped smoothed_scored_msg_pandar;
         smoothed_scored_msg_pandar.header.stamp = smoothed_scored_msg.header.stamp;
         smoothed_scored_msg_pandar.header.frame_id = "pandar_frame";
@@ -920,7 +862,6 @@ void GlobalGroundFinder::processAtCurrentPose()
         catch (tf2::TransformException &ex)
         {
             ROS_WARN("[GGF] Failed to transform smoothed scored normal to pandar_frame: %s", ex.what());
-            // Use n from algos as fallback if transform fails -> skip scoring and sliding_window fallback
             smoothed_scored_msg_pandar.normal.x = n_[0];
             smoothed_scored_msg_pandar.normal.y = n_[1];
             smoothed_scored_msg_pandar.normal.z = n_[2];
@@ -1012,12 +953,10 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
                                            double search_radius,
                                            pcl::PointCloud<PointType>::Ptr &local_cloud)
 {
-    PointType query_point; // TOOD:check in which frame i am
+    PointType query_point;
     query_point.x = pose.pose.position.x;
     query_point.y = pose.pose.position.y;
     query_point.z = pose.pose.position.z;
-
-    // ROS_INFO("Extracting local cloud around query point: [%.2f, %.2f, %.2f]", query_point.x, query_point.y, query_point.z);
 
     // Access immutable shared map snapshot and refresh local KdTree
     const auto handle = lio_gf_nodelet_manager::SharedIKDTree::instance().snapshot();
@@ -1038,13 +977,13 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
                          shared_map->points.size());
             }
 
-            // CropBox um aktuelle Pose — nur relevante Region in den KD-Tree laden
+            // CropBox around latest pose
             const float cx = static_cast<float>(pose.pose.position.x);
             const float cy = static_cast<float>(pose.pose.position.y);
             const float cz = static_cast<float>(pose.pose.position.z);
 
             pcl::CropBox<PointType> crop;
-            crop.setInputCloud(boost::shared_ptr<const pcl::PointCloud<PointType>>(shared_map.get(), [](const pcl::PointCloud<PointType> *) {})); // no op delete at the end (Does nothing but avoids error)
+            crop.setInputCloud(boost::shared_ptr<const pcl::PointCloud<PointType>>(shared_map.get(), [](const pcl::PointCloud<PointType> *) {})); // no op delete at end to avoid error, idk why exactly?
             crop.setMin(Eigen::Vector4f(cx - crop_radius_, cy - crop_radius_, cz - crop_height_, 1.0f));
             crop.setMax(Eigen::Vector4f(cx + crop_radius_, cy + crop_radius_, cz + crop_height_, 1.0f));
             crop.filter(*global_map_);
@@ -1110,7 +1049,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
             const double height_diff = std::abs(pt.z - query_point.z); // vertical dist to curr pose's z component
             if (height_diff <= extraction_height_)                     // only keep the points within +- 0.5m vertically
             {
-                local_cloud->points.push_back(pt); // add to local cloud if within height threshold
+                local_cloud->points.push_back(pt);
             }
         }
 
@@ -1131,7 +1070,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         return true;
     }
 
-    // Fallback: use latest /map_out cloud when shared tree is not available.
+    // Fallback: use latest global map when shared tree is not available.
     if (!map_received_ || global_map_->points.size() == 0)
     {
         if (debug_)
@@ -1150,16 +1089,15 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
         return false;
     }
 
-    // Filter by height relative to curr z
     local_cloud->points.reserve(indices.size());
     for (size_t i = 0; i < indices.size(); ++i)
     {
         const auto &pt = global_map_->points[indices[i]];
-        if (!pcl::isFinite(pt)) // drop invalid pts
+        if (!pcl::isFinite(pt))
         {
             continue;
         }
-        double height_diff = std::abs(pt.z - query_point.z); // vertical dist to curr pose's z component
+        double height_diff = std::abs(pt.z - query_point.z);
 
         if (height_diff <= extraction_height_) // only keep the points within +- 0.5m vertically
         {
@@ -1168,7 +1106,7 @@ bool GlobalGroundFinder::extractLocalCloud(const geometry_msgs::PoseStamped &pos
     }
 
     local_cloud->width = local_cloud->points.size();
-    local_cloud->height = 1; // tells pcl it's "unorganized" so no rows/column structure like camera data
+    local_cloud->height = 1; // tells pcl that data is "unorganized" so no rows/column structure like camera data
     local_cloud->is_dense = true;
 
     if (local_cloud->points.size() < min_points_for_plane_)
@@ -1294,8 +1232,6 @@ bool GlobalGroundFinder::fitPlanePCA(const pcl::PointCloud<PointType>::Ptr &clou
         }
         *inlier_cloud = *cloud;
 
-        // ROS_DEBUG("[GGF] PCA: Computed normal [%.6f, %.6f, %.6f]", normal[0], normal[1], normal[2]);
-
         // Validate ground plane (not wall / ceiling, good point distribution, reasonable Z values)
         return validateGroundNormal(normal, inlier_cloud, current_pose_.pose.position.z,
                                     eigen_vals(0), eigen_vals(1), eigen_vals(2),
@@ -1337,7 +1273,6 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
                 new pcl::SampleConsensusModelPlane<PointType>(cloud_work));
             pcl::RandomSampleConsensus<PointType> ransac(model);
             ransac.setDistanceThreshold(0.02); // cm threshold
-            // ransac.setMaxIterations(500); // TODO
             const auto start_compute = std::chrono::high_resolution_clock::now();
             ransac.computeModel();
             const auto end_compute = std::chrono::high_resolution_clock::now();
@@ -1467,7 +1402,7 @@ bool GlobalGroundFinder::fitPlaneRANSAC(const pcl::PointCloud<PointType>::Ptr &c
             rejected_cloud->is_dense = true;
             publishRejectedInliers(rejected_cloud);
 
-            // Remove inliers and try again (wall removal)
+            // Remove inliers and try again
             pcl::PointCloud<PointType>::Ptr cloud_filtered(new pcl::PointCloud<PointType>);
             cloud_filtered->points.reserve(cloud_work->points.size() - inliers.size());
 
@@ -1564,7 +1499,6 @@ bool GlobalGroundFinder::fitPlaneRHT(const pcl::PointCloud<PointType>::Ptr &clou
             // Found a plane candidate, extract inliers first
             std::vector<double> test_normal = n;
 
-            // Extract inlier points before validation
             inlier_count = 0;
             if (!inlier_cloud)
             {
@@ -1775,7 +1709,6 @@ bool GlobalGroundFinder::fitPlaneRHT2(const pcl::PointCloud<PointType>::Ptr &clo
                     {
                         return false;
                     }
-                    // Continue to next iteration
                 }
             }
             else if (last_iteration)
@@ -1821,8 +1754,6 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
         }
     } timer(validation_time_us_);
 
-    // ROS_INFO("validateGroundNormal: Called with normal=[%.3f, %.3f, %.3f]", normal[0], normal[1], normal[2]);
-
     // Validate normal vector before processing
     if (normal.size() != 3)
     {
@@ -1844,7 +1775,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
     // Check if vector is near zero
     double norm_sq = normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2];
-    if (norm_sq < 1e-12) // Avoid division by near-zero
+    if (norm_sq < 1e-12)
     {
         ROS_ERROR("[GGF] Normal vector is nearly zero: norm_sq=%.2e", norm_sq);
         count_invalid_planes_++;
@@ -1853,7 +1784,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
 
     normalize_vector(normal);
 
-    // Lookup robot center pose (center_frame) expressed in current pose frame
+    // Lookup center pose (center_frame) expressed in current pose frame
     geometry_msgs::PoseStamped center_pose;
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
@@ -1865,7 +1796,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     double dot = dot_product(normal, down);
 
     // #############################################
-    // ####### Angle-based validation (Caro) #######
+    // ####### Angle-based validation ##############
     // #############################################
 
     // Check if it's a wall (perpendicular to down) - angle-based validation
@@ -1899,7 +1830,7 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
                                                                          eigenvalue_ratio_threshold_,
                                                                          eigenvalue_ratio);
 
-        // Check that dominant eigenvectors don't point upward (z-dominance would indicate wall)
+        // Check that dominant eigenvectors don't point upward (z-dominance would indicate e.g. wall)
         float max_dominant_z = std::max(std::abs(v1_z), std::abs(v2_z));
         bool eigenvector_valid = max_dominant_z < max_eigenvector_z_component_;
 
@@ -1958,45 +1889,33 @@ bool GlobalGroundFinder::validateGroundNormal(std::vector<double> &normal,
     }
 
     // ######################################
-    // ####### Convex hull validation #######
+    // ####### Plane centroid validation ####
     // ######################################
 
-    // ROS_INFO("validateGroundNormal: Reaching convex hull validation section. enabled=%s, has_cloud=%s, cloud_size=%zu",
-    //          enable_convex_hull_validation_ ? "true" : "false",
-    //          (inlier_cloud ? "true" : "false"),
-    //          (inlier_cloud ? inlier_cloud->points.size() : 0));
-
-    if (enable_convex_hull_validation_ && inlier_cloud && !inlier_cloud->points.empty())
+    if (enable_plane_centroid_validation_ && inlier_cloud && !inlier_cloud->points.empty())
     {
-        // ROS_INFO("  Calling validateConvexHullCenter with cloud size=%zu", inlier_cloud->points.size());
 
-        double hull_distance = 0.0;
-        geometry_msgs::Point hull_center;
-        bool hull_valid = validateConvexHullCenter(inlier_cloud, center_pose.pose.position, max_hull_distance_, hull_distance, hull_center, quiet_);
-        // bool hull_valid = validateConvexHullCenter(inlier_cloud, current_pose_.pose.position, max_hull_distance_, hull_distance, hull_center);
+        double centroid_distance = 0.0;
+        geometry_msgs::Point centroid_center;
+        bool centroid_valid = validatePlaneCentroidCenter(inlier_cloud, center_pose.pose.position, max_centroid_distance_, centroid_distance, centroid_center, quiet_);
 
-        // ROS_INFO("  validateConvexHullCenter returned: valid=%s, distance=%.3f",
-        //          hull_valid ? "true" : "false", hull_distance);
+        publishCentroidCenterMarker(centroid_center, centroid_valid);
 
-        publishHullCenterMarker(hull_center, hull_valid);
-
-        if (!hull_valid)
+        if (!centroid_valid)
         {
             if (!quiet_)
             {
-                ROS_WARN("[GGF] Rejecting plane: Convex hull center too far from robot (distance=%.3f m, max=%.3f m)",
-                         hull_distance, max_hull_distance_);
+                ROS_WARN("[GGF] Rejecting plane: Plane Centroid center too far from robot (distance=%.3f m, max=%.3f m)",
+                         centroid_distance, max_centroid_distance_);
             }
             count_invalid_planes_++;
             return false;
         }
         else if (debug_)
         {
-            ROS_INFO("[GGF] hull validation passed distance=%.4f max=%.4f",
-                     hull_distance, max_hull_distance_);
+            ROS_INFO("[GGF] centroid validation passed distance=%.4f max=%.4f",
+                     centroid_distance, max_centroid_distance_);
         }
-
-        // ROS_INFO("  Hull validation PASSED");
     }
 
     // Make sure it points upwards
@@ -2098,7 +2017,7 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
         start.z = current_pose_.pose.position.z;
     }
 
-    geometry_msgs::Point end; // here no mutex lock needed since only dependent on start
+    geometry_msgs::Point end;
     end.x = start.x + normal[0];
     end.y = start.y + normal[1];
     end.z = start.z + normal[2];
@@ -2110,46 +2029,44 @@ void GlobalGroundFinder::publish_normal_marker(const std::vector<double> &normal
     pub_n_marker.publish(normal_marker_);
 }
 
-void GlobalGroundFinder::publishHullCenterMarker(const geometry_msgs::Point &hull_center, bool hull_valid)
+void GlobalGroundFinder::publishCentroidCenterMarker(const geometry_msgs::Point &centroid_center, bool centroid_valid)
 {
     if (!quiet_)
     {
-        ROS_INFO("[GGF] publishHullCenterMarker: Publishing hull center at [%.3f, %.3f, %.3f]", hull_center.x, hull_center.y, hull_center.z);
+        ROS_INFO("[GGF] publishCentroidCenterMarker: Publishing centroid center at [%.3f, %.3f, %.3f]", centroid_center.x, centroid_center.y, centroid_center.z);
     }
 
-    visualization_msgs::Marker hull_marker;
-    hull_marker.header.stamp = ros::Time::now();
+    visualization_msgs::Marker centroid_marker;
+    centroid_marker.header.stamp = ros::Time::now();
 
     {
         std::lock_guard<std::mutex> lock(pose_mutex_);
         if (!current_pose_.header.frame_id.empty())
-            hull_marker.header.frame_id = current_pose_.header.frame_id;
+            centroid_marker.header.frame_id = current_pose_.header.frame_id;
         else
-            hull_marker.header.frame_id = "map_lio";
+            centroid_marker.header.frame_id = "map_lio";
     }
 
-    hull_marker.ns = "hull_center";
-    hull_marker.id = 0;
-    hull_marker.type = visualization_msgs::Marker::SPHERE;
-    hull_marker.action = visualization_msgs::Marker::ADD;
+    centroid_marker.ns = "centroid_center";
+    centroid_marker.id = 0;
+    centroid_marker.type = visualization_msgs::Marker::SPHERE;
+    centroid_marker.action = visualization_msgs::Marker::ADD;
 
-    hull_marker.pose.position = hull_center;
-    hull_marker.pose.orientation.w = 1.0;
+    centroid_marker.pose.position = centroid_center;
+    centroid_marker.pose.orientation.w = 1.0;
 
     // Sphere with 0.1m radius
-    hull_marker.scale.x = 0.1;
-    hull_marker.scale.y = 0.1;
-    hull_marker.scale.z = 0.1;
+    centroid_marker.scale.x = 0.1;
+    centroid_marker.scale.y = 0.1;
+    centroid_marker.scale.z = 0.1;
 
     // Green for valid ground planes, red for invalid ones
-    hull_marker.color.r = hull_valid ? 0.0 : 1.0;
-    hull_marker.color.g = hull_valid ? 1.0 : 0.0;
-    hull_marker.color.b = 0.0;
-    hull_marker.color.a = 0.7;
+    centroid_marker.color.r = centroid_valid ? 0.0 : 1.0;
+    centroid_marker.color.g = centroid_valid ? 1.0 : 0.0;
+    centroid_marker.color.b = 0.0;
+    centroid_marker.color.a = 0.7;
 
-    // hull_marker.lifetime = ros::Duration(0.5); // disappear after 500ms if not updated
-
-    pub_hull_center.publish(hull_marker);
+    pub_centroid_center.publish(centroid_marker);
 }
 geometry_msgs::Vector3Stamped GlobalGroundFinder::ema_smoothing(const geometry_msgs::Vector3Stamped &ground_vector)
 {

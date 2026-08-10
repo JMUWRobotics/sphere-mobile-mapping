@@ -76,29 +76,29 @@ bool validateZMeanDeviation(const pcl::PointCloud<PointType>::Ptr &cloud,
                             double &z_mean,
                             bool quiet = false);
 
-/** \brief Calculates the convex hull of a point cloud and returns its center point
+/** \brief Calculates the plane centroid of a point cloud and returns its center point
  * \param[in] cloud Point cloud
- * \param[out] hull_center Center point of the convex hull (mean of hull vertices)
- * \return true if hull calculated successfully, false otherwise
+ * \param[out] centroid_center Center point of the plane centroid (mean of centroid vertices)
+ * \return true if centroid calculated successfully, false otherwise
  */
-bool computeConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                             geometry_msgs::Point &hull_center,
-                             bool quiet = false);
+bool computePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                geometry_msgs::Point &centroid_center,
+                                bool quiet = false);
 
-/** \brief Validates convex hull center relative to robot pose
+/** \brief Validates plane centroid center relative to robot pose
  * Ground plane should have its center spatially close to cur pose
  * Ceiling/walls have center far from robot
  * \param[in] cloud Point cloud of inliers
  * \param[in] robot_pose Robot position (x, y, z)
- * \param[in] max_hull_distance Maximum allowed 3D distance from robot to hull center
- * \param[out] hull_distance 3D Euclidean distance from robot to hull center
- * \return true if hull center is within max_hull_distance, false otherwise
+ * \param[in] max_centroid_distance Maximum allowed 3D distance from robot to centroid center
+ * \param[out] centroid_distance 3D Euclidean distance from robot to centroid center
+ * \return true if centroid center is within max_centroid_distance, false otherwise
  */
-bool validateConvexHullCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
-                              const geometry_msgs::Point &robot_pose,
-                              double max_hull_distance,
-                              double &hull_distance,
-                              geometry_msgs::Point &hull_center,
-                              bool quiet = false);
+bool validatePlaneCentroidCenter(const pcl::PointCloud<PointType>::Ptr &cloud,
+                                 const geometry_msgs::Point &robot_pose,
+                                 double max_centroid_distance,
+                                 double &centroid_distance,
+                                 geometry_msgs::Point &centroid_center,
+                                 bool quiet = false);
 
 #endif
