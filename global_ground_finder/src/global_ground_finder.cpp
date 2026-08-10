@@ -769,9 +769,9 @@ void GlobalGroundFinder::processAtCurrentPose()
                               << std::setprecision(6) << normal_msg.vector.x << ","
                               << normal_msg.vector.y << ","
                               << normal_msg.vector.z << ","
-                      << pose_copy.pose.position.x << ","
-                      << pose_copy.pose.position.y << ","
-                      << pose_copy.pose.position.z << ","
+                              << pose_copy.pose.position.x << ","
+                              << pose_copy.pose.position.y << ","
+                              << pose_copy.pose.position.z << ","
                               << last_roll_ * 180.0 / M_PI << ","
                               << last_pitch_ * 180.0 / M_PI << ","
                               << std::setprecision(4) << pub_vis_score << ","
@@ -818,7 +818,6 @@ void GlobalGroundFinder::processAtCurrentPose()
     scored_n_msg.header = scored_msg.header;
     scored_n_msg.vector = scored_msg.normal;
     log_published_normal("scored", scored_n_msg, scored_msg.visibility_score, scored_msg.inlier_score, scored_msg.combined_score, vis_score, inlier_score, combined_score);
-
 
     ground_finder_msgs::ScoredNormalStamped scored_msg_pandar;
     scored_msg_pandar.header.stamp = scored_msg.header.stamp;
@@ -976,6 +975,14 @@ void GlobalGroundFinder::processAtCurrentPose()
             else
                 ts = ros::Time::now().toSec();
 
+            /*
+            extraction_time: extract local at curr pose using radius search
+            plane_fit: fitGroundPlane and processAtCurrentPose ransac+pca extraction of planes
+            validation: how long until all validations are checked
+            post_fit: scoring, fallback + publishing
+            smoothing: smoothing aglo
+            total: all combined
+            */
             timing_csv_file_ << std::fixed << std::setprecision(4) << ts << ","
                              << (extraction_time_us / 1000.0) << ","
                              << (plane_fit_time_us / 1000.0) << ","
