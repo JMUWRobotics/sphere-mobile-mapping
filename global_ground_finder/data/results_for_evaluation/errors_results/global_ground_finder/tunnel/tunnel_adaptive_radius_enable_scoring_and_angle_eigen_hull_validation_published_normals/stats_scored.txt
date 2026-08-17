@@ -1,0 +1,36 @@
+============================================================
+NORMAL VECTOR ERROR STATISTICS: SCORED
+============================================================
+Matches found:         8943
+Number of samples:     8943
+Mean error:            12.100924°
+Median error:          8.925067°
+RMSE:                  15.773145°
+Std deviation:         10.117865°
+Min error:             0.112917°
+Max error:             58.067241° (at matched row 3141)
+  [DEBUG MAX ERROR]
+    Orig Comp Row Index: 13857
+    Orig GT Row Index:   3136
+    Timestamp:           1782805654.976042747
+    Computed Normal:     [-0.148836, 0.622323, 0.768480]
+    GT Normal:           [0.169614, -0.277309, 0.945691]
+    Timestamp Diff:      0.000000s
+95th percentile:       34.843290°
+99th percentile:       44.234926°
+
+FALLBACK & SEGMENTATION METRICS:
+  using_fallback                          : 186/8943 (2.08%)
+
+  Metrics Active During Fallback (Samples: 186):
+    Scores:
+      pub_vis_score          -> Mean: 0.8058 | Min: 0.2523 | Max: 0.9999
+      pub_inlier_score       -> Mean: 0.9516 | Min: 0.0000 | Max: 1.0000
+      pub_combined_score     -> Mean: 0.8641 | Min: 0.3062 | Max: 0.9999
+      curr_vis_score         -> Mean: 0.1018 | Min: 0.0184 | Max: 0.1663
+      curr_inlier_score      -> Mean: 0.0000 | Min: 0.0000 | Max: 0.0000
+      curr_combined_score    -> Mean: 0.0611 | Min: 0.0110 | Max: 0.0998
+    Orientation (RP):
+      roll                   -> Mean: -25.058694° | Min: -179.991806° | Max: 179.940794°
+      pitch                  -> Mean: -1.621114° | Min: -87.795996° | Max: 81.092880°
+============================================================

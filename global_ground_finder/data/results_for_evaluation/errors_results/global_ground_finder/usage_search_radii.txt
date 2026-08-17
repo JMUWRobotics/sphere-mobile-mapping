@@ -1,0 +1,18 @@
+File: /home/t2/catkin_ws/src/global_ground_finder/data/eval/input_eval_tool/adaptive_radius/gaussian_smoothing/tunnel/tunnel_adaptive_radius_enable_scoring_and_angle_eigen_validation.csv
+Total rows with search_radius: 9596
+  search_radius      count    percent
+         0.2900       6994     72.88%
+         0.1450       2602     27.12%
+
+File: /home/t2/catkin_ws/src/global_ground_finder/data/eval/input_eval_tool/adaptive_radius/gaussian_smoothing/rampe_runter_hoch/rampe_runter_hoch_adaptive_radius_enable_scoring_and_angle_eigen_validation.csv
+Total rows with search_radius: 985
+  search_radius      count    percent
+         0.2900        839     85.18%
+         0.1450        146     14.82%
+
+File: /home/t2/catkin_ws/src/global_ground_finder/data/eval/input_eval_tool/adaptive_radius/gaussian_smoothing/huegel_2/huegel_2_adaptive_radius_enable_scoring_and_angle_eigen_hull_z_mean_validation.csv
+Total rows with search_radius: 749
+  search_radius      count    percent
+         0.2900        611     81.58%
+         0.1450        138     18.42%
+

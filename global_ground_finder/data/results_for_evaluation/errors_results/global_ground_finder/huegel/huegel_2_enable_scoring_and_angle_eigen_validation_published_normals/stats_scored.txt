@@ -1,0 +1,26 @@
+============================================================
+NORMAL VECTOR ERROR STATISTICS: SCORED
+============================================================
+Matches found:         718
+Number of samples:     718
+Mean error:            3.853799°
+Median error:          3.141394°
+RMSE:                  4.632821°
+Std deviation:         2.573031°
+Min error:             0.135563°
+Max error:             15.685424° (at matched row 385)
+  [DEBUG MAX ERROR]
+    Orig Comp Row Index: 1545
+    Orig GT Row Index:   385
+    Timestamp:           1783000610.475178003
+    Computed Normal:     [-0.148857, -0.075136, 0.986000]
+    GT Normal:           [-0.045478, 0.177417, 0.983084]
+    Timestamp Diff:      0.000000s
+95th percentile:       9.118310°
+99th percentile:       12.351059°
+
+FALLBACK & SEGMENTATION METRICS:
+  using_fallback                          : 0/718 (0.00%)
+
+  (No samples active under fallback state to compute Score/RP metrics)
+============================================================

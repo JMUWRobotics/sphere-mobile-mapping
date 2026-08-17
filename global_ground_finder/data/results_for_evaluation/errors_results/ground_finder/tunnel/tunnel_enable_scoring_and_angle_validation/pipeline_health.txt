@@ -1,0 +1,15 @@
+============================================================
+GLOBAL SEGMENTATION & PIPELINE HEALTH
+============================================================
+Expected frames (from GT):                   8812
+Actual published frames:                     9451
+Case: Input count < GT count (Missing):      0
+Case: Input count > GT count (Surplus):      639
+Case: No timestamp found within 50ms:       26
+Recovered via fallback segfault:             302
+Combined Failures (Unmatched + Segfault):    328
+Pure Count Drop Failure Rate:                0.00%
+Unmatched Timestamp Failure Rate:            0.30%
+Segfault Recovery Failure Rate:              3.43%
+Combined Segmentation Failure Rate:          3.72%
+============================================================
